@@ -1,0 +1,200 @@
+# 아키텍처
+
+## 1. 설계 목표
+
+- 편집은 즉시 반응한다.
+- 로컬 저장이 원격 동기화보다 우선한다.
+- 동시 편집은 CRDT로 병합한다.
+- 외부 라이브러리는 adapter로 감싼다.
+- 핵심 트리 조작은 UI 없이 테스트 가능해야 한다.
+
+## 2. 계층 구조
+
+```txt
+UI Components
+  -> Editor Adapter
+  -> Domain Commands
+  -> Yjs Document Adapter
+  -> Persistence / Remote Sync
+```
+
+### UI Components
+
+- 화면 렌더링과 사용자 입력을 담당한다.
+- 직접 트리를 변경하지 않는다.
+- command 함수를 호출하고 결과 상태를 표시한다.
+
+### Editor Adapter
+
+- Lexical과 앱 도메인 사이의 번역 계층이다.
+- Lexical command를 domain command로 연결한다.
+- Lexical selection과 앱 selection state를 동기화한다.
+- MVP에서는 선택된 active row에만 Lexical editor를 마운트하고, 나머지 visible row는 plain text로 렌더링한다.
+
+### Domain Commands
+
+- outline tree를 변경하는 순수 함수 모음이다.
+- 가장 많은 단위 테스트를 가진다.
+- React, Lexical, Yjs, Firebase를 import하지 않는다.
+
+### Yjs Document Adapter
+
+- domain state와 Y.Doc 사이의 변환/적용을 담당한다.
+- update encode/decode를 담당한다.
+- UndoManager 연결을 담당한다.
+
+### Persistence / Remote Sync
+
+- 로컬 저장과 원격 업데이트 송수신을 담당한다.
+- sync status를 계산한다.
+- 네트워크 실패와 재시도를 관리한다.
+
+## 3. 도메인 모델
+
+```ts
+type NodeId = string;
+
+type OutlineNode = {
+  id: NodeId;
+  text: string;
+  children: NodeId[];
+  collapsed: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+type OutlineDocument = {
+  rootId: NodeId;
+  nodes: Record<NodeId, OutlineNode>;
+};
+
+type ViewState = {
+  zoomNodeId: NodeId;
+  selectedNodeId?: NodeId;
+};
+```
+
+초기 도메인 모델은 테스트 용이성을 위해 normalized tree를 사용한다. Lexical/Yjs 통합 과정에서 실제 저장 구조가 달라져도 domain command의 관찰 동작은 유지한다.
+
+## 4. Yjs 구조 초안
+
+```ts
+type WorkspaceYDoc = {
+  lexical: XmlText | XmlFragment;
+  nodeMeta: Y.Map<NodeMeta>;
+  appState: Y.Map<AppState>;
+};
+
+type NodeMeta = {
+  id: string;
+  collapsed: boolean;
+  createdAt: number;
+  updatedAt: number;
+};
+
+type AppState = {
+  zoomNodeId: string;
+  selectionNodeId?: string;
+};
+```
+
+주의:
+
+- `@lexical/yjs`가 요구하는 구조가 우선이다.
+- 텍스트 AST와 노드 메타데이터는 분리한다.
+- 노드 ID 매핑 규칙은 Phase 3에서 프로토타입으로 확정한다.
+
+## 5. 원격 동기화 구조
+
+전체 문서 blob을 계속 덮어쓰지 않는다. 동시 업데이트 유실을 피하기 위해 snapshot과 updates를 분리한다.
+
+```txt
+users/{userId}/workspaces/root/
+  snapshot/
+    state: string
+    vector: string
+    updatedAt: number
+  updates/{updateId}/
+    clientId: string
+    seq: number
+    update: string
+    createdAt: number
+```
+
+동작:
+
+1. 앱은 로컬 persistence에서 먼저 Y.Doc를 복원한다.
+2. 원격 snapshot을 가져와 `Y.applyUpdate` 한다.
+3. 아직 적용하지 않은 updates를 적용한다.
+4. 로컬 변경은 update log에 append한다.
+5. 일정 기준을 넘으면 snapshot을 다시 만들고 오래된 updates를 정리한다.
+
+## 6. Sync 상태
+
+```ts
+type SyncStatus =
+  | "local-only"
+  | "offline"
+  | "syncing"
+  | "synced"
+  | "error";
+```
+
+- `local-only`: Phase 0~2의 기본 상태. 로그인 또는 원격 설정 없이 로컬만 사용
+- `offline`: 원격 설정은 있으나 네트워크 없음
+- `syncing`: 원격 update 송수신 중
+- `synced`: 로컬 대기 update 없음
+- `error`: 마지막 원격 작업 실패
+
+## 7. 주요 인터페이스 초안
+
+```ts
+type RemoteUpdate = {
+  id: string;
+  clientId: string;
+  seq: number;
+  update: Uint8Array;
+  createdAt: number;
+};
+
+interface RemoteStore {
+  readSnapshot(): Promise<Uint8Array | null>;
+  writeSnapshot(snapshot: Uint8Array, vector: Uint8Array): Promise<void>;
+  appendUpdate(update: RemoteUpdate): Promise<void>;
+  listUpdates(after?: string): Promise<RemoteUpdate[]>;
+  subscribe(onUpdate: (update: RemoteUpdate) => void): () => void;
+}
+```
+
+Firebase Realtime Database adapter는 이 인터페이스를 구현한다. 테스트에서는 fake remote store를 사용한다.
+
+## 8. 오프라인 큐
+
+- 로컬 변경은 즉시 Y.Doc와 로컬 DB에 반영된다.
+- 원격 전송 실패 시 update를 queue에 남긴다.
+- 재연결 시 seq 순서대로 전송을 시도한다.
+- 전송 성공 후 queue에서 제거한다.
+- 중복 전송되어도 Yjs 병합 결과는 같아야 한다.
+
+## 9. 성능 전략
+
+- visible node list는 memoized selector로 계산한다.
+- 접힌 subtree는 flatten 대상에서 제외한다.
+- 줌인 상태에서는 zoom root의 subtree만 계산한다.
+- 대량 문서는 virtual list로 렌더링한다.
+- 입력 중 전체 tree object를 매번 새로 만들지 않도록 변경 범위를 제한한다.
+
+## 10. 확정된 제품 방향과 남은 구조 검증
+
+확정:
+
+- 원격 저장소는 Firebase Realtime Database를 사용한다.
+- 모바일 앱은 웹 MVP 이후로 분리한다.
+- MVP는 플레인 텍스트와 키보드 속도를 우선한다.
+- 협업 범위는 개인 다기기 동기화다.
+
+검증 필요:
+
+- Lexical custom node를 사용할지 여부. MVP는 active row Lexical adapter와 plain row rendering으로 시작한다.
+- Yjs에 outline tree를 직접 모델링할지, Lexical binding을 중심으로 둘지
+- 모바일 단계에서 IndexedDB를 유지할지 SQLite로 전환할지
