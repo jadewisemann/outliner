@@ -22,6 +22,7 @@ src/
     SyncStatusBadge.tsx
   domain/
     outline.ts
+    bulkOutline.ts
     outlineSelectors.ts
     outlineTypes.ts
   editor/
@@ -49,6 +50,9 @@ src/
   - `indentNode`
   - `outdentNode`
   - `toggleCollapse`
+  - `bulkIndentNodes`
+  - `bulkOutdentNodes`
+  - `bulkDeleteNodes`
 - selector 함수는 관찰 결과를 이름에 드러낸다.
   - `getVisibleNodes`
   - `getBreadcrumbPath`

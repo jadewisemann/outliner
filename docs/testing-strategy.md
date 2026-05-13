@@ -18,6 +18,9 @@
 대상:
 
 - outline tree command
+- bulk outline command
+- indentation paste parser
+- clipboard serializer
 - visible node selector
 - breadcrumb selector
 - export serializer
@@ -44,6 +47,7 @@
 
 - 첫 화면 진입
 - 노드 작성/들여쓰기/접기/줌인
+- 멀티라인 붙여넣기와 다중 노드 일괄 편집
 - 새로고침 복원
 - 두 브라우저 컨텍스트 동시 편집
 - 오프라인 후 재연결 동기화
@@ -55,6 +59,8 @@ src/
   domain/
     outline.ts
     outline.test.ts
+    bulkOutline.ts
+    bulkOutline.test.ts
   editor/
     lexicalAdapter.ts
     lexicalAdapter.test.ts
@@ -93,7 +99,23 @@ describe("outline commands", () => {
 });
 ```
 
-### 4.2 Visible node 테스트
+### 4.2 벌크 편집 테스트
+
+```ts
+describe("bulk outline commands", () => {
+  it("parses indented multiline text into outline drafts", () => {});
+  it("inserts pasted multiline text while preserving indentation", () => {});
+  it("selects a visible range with shift arrow navigation", () => {});
+  it("excludes hidden descendants from range selection", () => {});
+  it("normalizes nested selections to top-level selected subtrees", () => {});
+  it("indents selected sibling blocks while preserving order", () => {});
+  it("outdents selected sibling blocks while preserving order", () => {});
+  it("deletes selected top-level subtrees", () => {});
+  it("serializes selected nodes as indented plain text", () => {});
+});
+```
+
+### 4.3 Visible node 테스트
 
 ```ts
 describe("visible outline nodes", () => {
@@ -104,7 +126,7 @@ describe("visible outline nodes", () => {
 });
 ```
 
-### 4.3 Persistence 테스트
+### 4.4 Persistence 테스트
 
 ```ts
 describe("local persistence", () => {
@@ -114,7 +136,7 @@ describe("local persistence", () => {
 });
 ```
 
-### 4.4 Sync 테스트
+### 4.5 Sync 테스트
 
 ```ts
 describe("remote sync", () => {
@@ -126,10 +148,12 @@ describe("remote sync", () => {
 });
 ```
 
-### 4.5 E2E 테스트
+### 4.6 E2E 테스트
 
 ```ts
 test("creates and structures an outline with the keyboard", async ({ page }) => {});
+test("pastes an indented outline as multiple nodes", async ({ page }) => {});
+test("bulk indents and deletes a selected visible range", async ({ page }) => {});
 test("restores the outline after reload", async ({ page }) => {});
 test("syncs edits between two browser contexts", async ({ browser }) => {});
 test("keeps offline edits and syncs them after reconnect", async ({ page }) => {});

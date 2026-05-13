@@ -72,3 +72,11 @@ Architecture Decision Record 형식으로 제품/기술 결정을 남긴다. 결
 - 결정: 자식이 있는 빈 노드에서 `Backspace`를 누르면 빈 부모를 제거하고 자식들을 같은 레벨로 승격한다.
 - 이유: 키보드 중심 편집에서 구조를 빠르게 정리하되 데이터 삭제 위험을 피한다.
 - 영향: `removeEmptyParentAndPromoteChildren` 계열 도메인 테스트가 필요하다.
+
+## ADR-011: Dynalist식 벌크 편집을 MVP 핵심 범위에 포함한다
+
+- 상태: 확정
+- 결정: 멀티라인 붙여넣기, 다중 visible range 선택, 선택 범위 일괄 들여쓰기/내어쓰기/삭제/접기, clipboard round-trip을 MVP 핵심 범위에 포함한다.
+- 이유: Dynalist 대안에서 속도는 단일 노드 편집만으로 부족하다. 사용자는 외부 텍스트와 기존 outline을 빠르게 가져오고, 여러 노드를 키보드로 한 번에 구조화할 수 있어야 한다.
+- 영향: 기본 키보드 편집과 Lexical active row 통합 이후, persistence/Yjs 동기화 전에 bulk domain command와 UI selection state를 구현한다.
+- 제약: 벌크 편집은 현재 visible node list 기준으로 동작하며, 접힌 subtree 내부 노드는 범위 선택에 포함하지 않는다.
