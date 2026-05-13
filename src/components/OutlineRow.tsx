@@ -14,8 +14,11 @@ import {
   KEY_ARROW_DOWN_COMMAND,
   KEY_ARROW_UP_COMMAND,
   KEY_BACKSPACE_COMMAND,
+  KEY_DELETE_COMMAND,
   KEY_ENTER_COMMAND,
   KEY_TAB_COMMAND,
+  PASTE_COMMAND,
+  COPY_COMMAND,
   type EditorState
 } from "lexical";
 import { useEffect, type CSSProperties } from "react";
@@ -25,22 +28,30 @@ type OutlineRowProps = {
   node: OutlineNode;
   depth: number;
   active: boolean;
+  selected: boolean;
+  hasBulkSelection: boolean;
   onSelect: () => void;
   onTextChange: (text: string) => void;
   onCreateAfter: (offset?: number) => void;
+  onPasteText: (offset: number, text: string) => void;
   onIndent: () => void;
   onOutdent: () => void;
   onRemoveEmpty: () => void;
   onMoveSelection: (direction: "previous" | "next") => void;
+  onExtendSelection: (direction: "previous" | "next") => void;
   onToggleCollapse: () => void;
+  onCopySelection: () => string | undefined;
   onZoom: () => void;
 };
 
 export function OutlineRow(props: OutlineRowProps) {
-  const { node, depth, active, onSelect, onToggleCollapse, onZoom } = props;
+  const { node, depth, active, selected, onSelect, onToggleCollapse, onZoom } = props;
   const hasChildren = node.children.length > 0;
   return (
-    <div className={`outline-row ${active ? "outline-row-active" : ""}`} style={{ "--depth": depth } as CSSProperties}>
+    <div
+      className={`outline-row ${active ? "outline-row-active" : ""} ${selected ? "outline-row-selected" : ""}`}
+      style={{ "--depth": depth } as CSSProperties}
+    >
       <button
         className="collapse-button"
         type="button"
@@ -73,10 +84,14 @@ function ActiveRowEditor({
   node,
   onTextChange,
   onCreateAfter,
+  onPasteText,
   onIndent,
   onOutdent,
   onRemoveEmpty,
-  onMoveSelection
+  onMoveSelection,
+  onExtendSelection,
+  onCopySelection,
+  hasBulkSelection
 }: OutlineRowProps) {
   const initialConfig = {
     namespace: `outline-row-${node.id}`,
@@ -116,6 +131,10 @@ function ActiveRowEditor({
         onOutdent={onOutdent}
         onRemoveEmpty={onRemoveEmpty}
         onMoveSelection={onMoveSelection}
+        onExtendSelection={onExtendSelection}
+        onPasteText={onPasteText}
+        onCopySelection={onCopySelection}
+        hasBulkSelection={hasBulkSelection}
       />
       <FocusPlugin />
     </LexicalComposer>
@@ -128,7 +147,11 @@ function KeyboardPlugin({
   onIndent,
   onOutdent,
   onRemoveEmpty,
-  onMoveSelection
+  onMoveSelection,
+  onExtendSelection,
+  onPasteText,
+  onCopySelection,
+  hasBulkSelection
 }: {
   nodeText: string;
   onCreateAfter: (offset?: number) => void;
@@ -136,22 +159,29 @@ function KeyboardPlugin({
   onOutdent: () => void;
   onRemoveEmpty: () => void;
   onMoveSelection: (direction: "previous" | "next") => void;
+  onExtendSelection: (direction: "previous" | "next") => void;
+  onPasteText: (offset: number, text: string) => void;
+  onCopySelection: () => string | undefined;
+  hasBulkSelection: boolean;
 }) {
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
+    const readOffset = () => {
+      let offset = nodeText.length;
+      editor.getEditorState().read(() => {
+        const selection = $getSelection();
+        if ($isRangeSelection(selection)) {
+          offset = selection.anchor.offset;
+        }
+      });
+      return offset;
+    };
     const unregisterEnter = editor.registerCommand<KeyboardEvent>(
       KEY_ENTER_COMMAND,
       (event) => {
         event?.preventDefault();
-        let offset = nodeText.length;
-        editor.getEditorState().read(() => {
-          const selection = $getSelection();
-          if ($isRangeSelection(selection)) {
-            offset = selection.anchor.offset;
-          }
-        });
-        onCreateAfter(offset);
+        onCreateAfter(readOffset());
         return true;
       },
       COMMAND_PRIORITY_HIGH
@@ -172,7 +202,18 @@ function KeyboardPlugin({
     const unregisterBackspace = editor.registerCommand<KeyboardEvent>(
       KEY_BACKSPACE_COMMAND,
       () => {
-        if (nodeText.length === 0) {
+        if (hasBulkSelection || nodeText.length === 0) {
+          onRemoveEmpty();
+          return true;
+        }
+        return false;
+      },
+      COMMAND_PRIORITY_HIGH
+    );
+    const unregisterDelete = editor.registerCommand<KeyboardEvent>(
+      KEY_DELETE_COMMAND,
+      () => {
+        if (hasBulkSelection) {
           onRemoveEmpty();
           return true;
         }
@@ -182,7 +223,12 @@ function KeyboardPlugin({
     );
     const unregisterUp = editor.registerCommand<KeyboardEvent>(
       KEY_ARROW_UP_COMMAND,
-      () => {
+      (event) => {
+        if (event?.shiftKey) {
+          event.preventDefault();
+          onExtendSelection("previous");
+          return true;
+        }
         onMoveSelection("previous");
         return false;
       },
@@ -190,9 +236,40 @@ function KeyboardPlugin({
     );
     const unregisterDown = editor.registerCommand<KeyboardEvent>(
       KEY_ARROW_DOWN_COMMAND,
-      () => {
+      (event) => {
+        if (event?.shiftKey) {
+          event.preventDefault();
+          onExtendSelection("next");
+          return true;
+        }
         onMoveSelection("next");
         return false;
+      },
+      COMMAND_PRIORITY_HIGH
+    );
+    const unregisterPaste = editor.registerCommand<ClipboardEvent>(
+      PASTE_COMMAND,
+      (event) => {
+        const text = event.clipboardData?.getData("text/plain") ?? "";
+        if (!text.includes("\n")) {
+          return false;
+        }
+        event.preventDefault();
+        onPasteText(readOffset(), text);
+        return true;
+      },
+      COMMAND_PRIORITY_HIGH
+    );
+    const unregisterCopy = editor.registerCommand<ClipboardEvent>(
+      COPY_COMMAND,
+      (event) => {
+        const text = onCopySelection();
+        if (!text) {
+          return false;
+        }
+        event.preventDefault();
+        event.clipboardData?.setData("text/plain", text);
+        return true;
       },
       COMMAND_PRIORITY_HIGH
     );
@@ -200,10 +277,25 @@ function KeyboardPlugin({
       unregisterEnter();
       unregisterTab();
       unregisterBackspace();
+      unregisterDelete();
       unregisterUp();
       unregisterDown();
+      unregisterPaste();
+      unregisterCopy();
     };
-  }, [editor, nodeText, onCreateAfter, onIndent, onMoveSelection, onOutdent, onRemoveEmpty]);
+  }, [
+    editor,
+    hasBulkSelection,
+    nodeText,
+    onCopySelection,
+    onCreateAfter,
+    onExtendSelection,
+    onIndent,
+    onMoveSelection,
+    onOutdent,
+    onPasteText,
+    onRemoveEmpty
+  ]);
 
   return null;
 }

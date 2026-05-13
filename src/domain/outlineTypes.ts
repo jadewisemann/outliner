@@ -17,6 +17,8 @@ export type OutlineDocument = {
 export type ViewState = {
   zoomNodeId: NodeId;
   selectedNodeId?: NodeId;
+  selectionAnchorNodeId?: NodeId;
+  selectionFocusNodeId?: NodeId;
 };
 
 export type IdGenerator = () => NodeId;
