@@ -11,6 +11,27 @@
 
 ## 2. 테스트 피라미드
 
+### 현재 통과 중인 영역
+
+- 앱 첫 화면 smoke E2E
+- outline domain command
+- bulk outline command
+- React Outliner component command mapping
+- IndexedDB 기반 local persistence snapshot 복원
+- Yjs snapshot encode/apply/idempotency 기초
+- sync queue 기초 상태 전이
+- FakeRemoteStore를 통한 remote snapshot/update pull-push 기초
+- 벌크 편집 E2E: indented paste, range indent, range delete
+
+### 다음 테스트 우선순위
+
+1. reload 후 문서, collapsed state, zoom state 복원 E2E
+2. Yjs-backed app state와 Undo/Redo 통합 테스트
+3. Fake two-client remote sync 병합 테스트
+4. offline queue reconnect flush 테스트
+5. duplicate remote update idempotency 테스트
+6. 10,000 node visible selector 성능 테스트
+
 ### 단위 테스트
 
 가장 많이 작성한다. 빠르고 결정적이어야 한다.
@@ -42,6 +63,7 @@
 ### E2E 테스트
 
 핵심 사용자 흐름만 검증한다. 너무 많은 케이스를 E2E로 몰지 않는다.
+sync 세부 병합, update 중복 처리, queue 상태 전이는 단위/통합 테스트 중심으로 검증하고, E2E는 사용자가 관찰할 수 있는 최종 흐름만 남긴다.
 
 대상:
 
@@ -79,7 +101,7 @@ src/
     Outliner.test.tsx
 e2e/
   smoke.spec.ts
-  outliner.spec.ts
+  bulk-editing.spec.ts
   persistence.spec.ts
   sync.spec.ts
 ```
@@ -133,10 +155,22 @@ describe("local persistence", () => {
   it("restores the local document before remote sync completes", () => {});
   it("restores collapsed state and zoom state", () => {});
   it("does not block editing while remote sync is unavailable", () => {});
+  it("restores a Yjs-backed outline snapshot into the app runtime", () => {});
 });
 ```
 
-### 4.5 Sync 테스트
+### 4.5 Yjs와 Undo/Redo 테스트
+
+```ts
+describe("yjs workspace runtime", () => {
+  it("renders the current outline snapshot from a Yjs workspace", () => {});
+  it("records text and structure commands as undoable transactions", () => {});
+  it("undoes and redoes text edits", () => {});
+  it("undoes and redoes structure edits", () => {});
+});
+```
+
+### 4.6 Sync 테스트
 
 ```ts
 describe("remote sync", () => {
@@ -148,7 +182,7 @@ describe("remote sync", () => {
 });
 ```
 
-### 4.6 E2E 테스트
+### 4.7 E2E 테스트
 
 ```ts
 test("creates and structures an outline with the keyboard", async ({ page }) => {});

@@ -50,7 +50,7 @@ Architecture Decision Record 형식으로 제품/기술 결정을 남긴다. 결
 - 결정: MVP는 active row에만 Lexical editor를 마운트하고, 선택되지 않은 row는 plain text로 렌더링한다.
 - 이유: Lexical의 IME/selection 안정성과 향후 리치 포맷 확장성을 얻으면서, 노드마다 editor를 마운트하는 비용을 피한다.
 - 영향: 도메인 outline tree가 행동의 기준이고, Lexical은 선택된 row의 텍스트 편집 adapter로 동작한다.
-- 후속 검증: 리치텍스트 단계에서 custom node 또는 `@lexical/yjs` 중심 구조가 필요한지 다시 평가한다.
+- 후속 검증: 리치텍스트 단계에서 custom node 또는 `@lexical/yjs` 중심 구조가 필요한지 다시 평가한다. 플레인 텍스트 MVP에서는 snapshot 기반 Yjs adapter를 우선한다.
 
 ## ADR-008: MVP는 플레인 텍스트와 키보드 속도를 우선한다
 
@@ -80,3 +80,11 @@ Architecture Decision Record 형식으로 제품/기술 결정을 남긴다. 결
 - 이유: Dynalist 대안에서 속도는 단일 노드 편집만으로 부족하다. 사용자는 외부 텍스트와 기존 outline을 빠르게 가져오고, 여러 노드를 키보드로 한 번에 구조화할 수 있어야 한다.
 - 영향: 기본 키보드 편집과 Lexical active row 통합 이후, persistence/Yjs 동기화 전에 bulk domain command와 UI selection state를 구현한다.
 - 제약: 벌크 편집은 현재 visible node list 기준으로 동작하며, 접힌 subtree 내부 노드는 범위 선택에 포함하지 않는다.
+
+## ADR-012: MVP Yjs 모델은 OutlineSnapshot adapter를 우선한다
+
+- 상태: 확정
+- 결정: 플레인 텍스트 MVP에서는 Y.Doc 안에 `OutlineSnapshot`을 저장하는 adapter를 우선한다. domain command 결과를 Yjs transaction으로 반영하고, UndoManager와 remote update encode/apply는 이 snapshot adapter를 기준으로 연결한다.
+- 이유: 현재 제품의 핵심은 리치텍스트 AST가 아니라 빠른 outline 구조 편집이다. normalized domain model과 command 테스트가 이미 행동 기준이므로, `@lexical/yjs` 직접 binding을 먼저 도입하면 MVP 복잡도가 커진다.
+- 영향: Phase 5는 앱 상태를 Yjs-backed snapshot runtime으로 승격하고 Undo/Redo를 완성한다. Phase 6은 같은 Yjs update를 RemoteStore snapshot + updates 구조로 동기화한다.
+- 후속 검증: 리치텍스트, custom node, 부분 업데이트 성능이 필요해지는 시점에 `@lexical/yjs` 또는 더 세분화된 Yjs tree 모델로 전환할지 다시 평가한다.
