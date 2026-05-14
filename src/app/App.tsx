@@ -1,59 +1,79 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, type SetStateAction } from "react";
 import { Outliner } from "../components/Outliner";
 import { SyncStatusBadge } from "../components/SyncStatusBadge";
-import {
-  createEmptyDocument,
-  createInitialView,
-  ensureEditableNode,
-  ROOT_ID
-} from "../domain/outline";
 import { exportToJson, exportToMarkdown } from "../domain/exporters";
 import type { OutlineDocument, ViewState } from "../domain/outlineTypes";
-import { createBrowserLocalPersistence } from "../persistence/localPersistence";
+import { createBrowserLocalPersistence, type LocalPersistence } from "../persistence/localPersistence";
 import type { SyncStatus } from "../sync/syncTypes";
+import { useOutlineWorkspace } from "./useOutlineWorkspace";
 
 const createId = () => crypto.randomUUID();
 const now = () => Date.now();
+const syncStatus: SyncStatus = "local-only";
 
-export function App() {
-  const persistence = useMemo(() => createBrowserLocalPersistence("workspace_root"), []);
-  const [document, setDocument] = useState<OutlineDocument>(() => {
-    const seeded = ensureEditableNode(createEmptyDocument(now), createId, now);
-    return seeded.document;
-  });
-  const [view, setView] = useState<ViewState>(() => createInitialView(document));
-  const [syncStatus] = useState<SyncStatus>("local-only");
-  const [loaded, setLoaded] = useState(false);
+type AppProps = {
+  persistence?: LocalPersistence;
+};
+
+export function App({ persistence: providedPersistence }: AppProps = {}) {
+  const browserPersistence = useMemo(() => createBrowserLocalPersistence("workspace_root"), []);
+  const persistence = providedPersistence ?? browserPersistence;
+  const { snapshot, commitSnapshot, undo, redo } = useOutlineWorkspace({ persistence, createId, now });
+  const latestSnapshotRef = useRef(snapshot);
+  const pendingSnapshotRef = useRef(snapshot);
+  const commitScheduledRef = useRef(false);
+  latestSnapshotRef.current = snapshot;
+  const { document, view } = snapshot;
 
   useEffect(() => {
-    let cancelled = false;
-    persistence.load().then((snapshot) => {
-      if (cancelled) {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const key = event.key.toLowerCase();
+      const isMod = event.metaKey || event.ctrlKey;
+      if (!isMod || (key !== "z" && key !== "y")) {
         return;
       }
-      if (snapshot) {
-        const restored = ensureEditableNode(snapshot.document, createId, now);
-        setDocument(restored.document);
-        setView({
-          zoomNodeId: snapshot.view.zoomNodeId || ROOT_ID,
-          selectedNodeId: snapshot.view.selectedNodeId ?? restored.nodeId
-        });
+      event.preventDefault();
+      if (key === "y" || (key === "z" && event.shiftKey)) {
+        redo();
+      } else {
+        undo();
       }
-      setLoaded(true);
-    });
-    return () => {
-      cancelled = true;
     };
-  }, [persistence]);
+    window.addEventListener("keydown", onKeyDown, { capture: true });
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, { capture: true });
+    };
+  }, [redo, undo]);
 
-  useEffect(() => {
-    if (!loaded) {
+  const commit = (nextDocument: OutlineDocument, nextView: ViewState) => {
+    const next = { document: nextDocument, view: nextView };
+    latestSnapshotRef.current = next;
+    pendingSnapshotRef.current = next;
+    if (commitScheduledRef.current) {
       return;
     }
-    void persistence.save({ document, view });
-  }, [document, loaded, persistence, view]);
+    commitScheduledRef.current = true;
+    queueMicrotask(() => {
+      commitScheduledRef.current = false;
+      commitSnapshot(pendingSnapshotRef.current);
+    });
+  };
+
+  const setDocument = (next: SetStateAction<OutlineDocument>) => {
+    const current = latestSnapshotRef.current;
+    const nextDocument = typeof next === "function" ? next(current.document) : next;
+    commit(nextDocument, current.view);
+  };
+
+  const setView = (nextView: ViewState) => {
+    const current = latestSnapshotRef.current;
+    commit(current.document, nextView);
+  };
 
   const downloadExport = (kind: "json" | "markdown") => {
+    if (!document) {
+      return;
+    }
     const content = kind === "json" ? exportToJson(document, view) : exportToMarkdown(document);
     const type = kind === "json" ? "application/json" : "text/markdown";
     const extension = kind === "json" ? "json" : "md";
