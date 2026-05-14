@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, type Dispatch, type SetStateAction } from "react";
 import { Breadcrumb } from "./Breadcrumb";
 import { OutlineRow } from "./OutlineRow";
 import {
@@ -34,7 +34,7 @@ type OutlinerProps = {
   view: ViewState;
   createId: IdGenerator;
   now: Clock;
-  onDocumentChange: (document: OutlineDocument) => void;
+  onDocumentChange: Dispatch<SetStateAction<OutlineDocument>>;
   onViewChange: (view: ViewState) => void;
 };
 
@@ -92,7 +92,7 @@ export function Outliner({
   };
 
   const updateText = (nodeId: NodeId, text: string) => {
-    onDocumentChange(updateNodeText(document, nodeId, text, now));
+    onDocumentChange((current) => updateNodeText(current, nodeId, text, now));
   };
 
   const indent = (nodeId: NodeId) => {

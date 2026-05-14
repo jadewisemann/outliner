@@ -21,7 +21,7 @@ import {
   COPY_COMMAND,
   type EditorState
 } from "lexical";
-import { useEffect, type CSSProperties } from "react";
+import { useEffect, useLayoutEffect, useRef, type CSSProperties } from "react";
 import type { OutlineNode } from "../domain/outlineTypes";
 
 type OutlineRowProps = {
@@ -50,6 +50,8 @@ export function OutlineRow(props: OutlineRowProps) {
   return (
     <div
       className={`outline-row ${active ? "outline-row-active" : ""} ${selected ? "outline-row-selected" : ""}`}
+      data-node-id={node.id}
+      data-node-text={node.text}
       style={{ "--depth": depth } as CSSProperties}
     >
       <button
@@ -93,6 +95,7 @@ function ActiveRowEditor({
   onCopySelection,
   hasBulkSelection
 }: OutlineRowProps) {
+  const skipInitialChangeRef = useRef(true);
   const initialConfig = {
     namespace: `outline-row-${node.id}`,
     onError(error: Error) {
@@ -111,16 +114,22 @@ function ActiveRowEditor({
   };
 
   return (
-    <LexicalComposer initialConfig={initialConfig}>
+    <LexicalComposer key={`${node.id}:${node.text}`} initialConfig={initialConfig}>
       <PlainTextPlugin
         contentEditable={<ContentEditable className="lexical-editor" aria-label="Outline node text" />}
         placeholder={<span className="editor-placeholder">Type</span>}
         ErrorBoundary={LexicalErrorBoundary}
       />
+      <SyncInitialTextPlugin text={node.text} />
       <OnChangePlugin
         onChange={(editorState: EditorState) => {
           editorState.read(() => {
-            onTextChange($getRoot().getTextContent());
+            const text = $getRoot().getTextContent();
+            if (skipInitialChangeRef.current) {
+              skipInitialChangeRef.current = false;
+              return;
+            }
+            onTextChange(text);
           });
         }}
       />
@@ -139,6 +148,23 @@ function ActiveRowEditor({
       <FocusPlugin />
     </LexicalComposer>
   );
+}
+
+function SyncInitialTextPlugin({ text }: { text: string }) {
+  const [editor] = useLexicalComposerContext();
+  useLayoutEffect(() => {
+    editor.update(() => {
+      if ($getRoot().getTextContent() === text) {
+        return;
+      }
+      const root = $getRoot();
+      root.clear();
+      const paragraph = $createParagraphNode();
+      paragraph.append($createTextNode(text));
+      root.append(paragraph);
+    });
+  }, [editor, text]);
+  return null;
 }
 
 function KeyboardPlugin({
@@ -303,7 +329,12 @@ function KeyboardPlugin({
 function FocusPlugin() {
   const [editor] = useLexicalComposerContext();
   useEffect(() => {
-    editor.focus();
+    const handle = window.setTimeout(() => {
+      editor.focus();
+    }, 0);
+    return () => {
+      window.clearTimeout(handle);
+    };
   }, [editor]);
   return null;
 }

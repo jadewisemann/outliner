@@ -152,5 +152,12 @@ describe("Outliner", () => {
         })
       );
     });
+    expect(onDocumentChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        nodes: expect.objectContaining({
+          "n-3": expect.objectContaining({ text: "C" })
+        })
+      })
+    );
   });
 });
