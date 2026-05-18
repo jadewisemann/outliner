@@ -21,15 +21,18 @@ import {
   COPY_COMMAND,
   type EditorState
 } from "lexical";
-import { useEffect, useLayoutEffect, useRef, type CSSProperties } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties } from "react";
 import type { OutlineNode } from "../domain/outlineTypes";
+import type { CursorTextEdit } from "../domain/multiCursor";
 
 type OutlineRowProps = {
   node: OutlineNode;
   depth: number;
   active: boolean;
   selected: boolean;
+  hasCursor: boolean;
   hasBulkSelection: boolean;
+  hasMultiCursor: boolean;
   onSelect: () => void;
   onTextChange: (text: string) => void;
   onCreateAfter: (offset?: number) => void;
@@ -38,18 +41,26 @@ type OutlineRowProps = {
   onOutdent: () => void;
   onRemoveEmpty: () => void;
   onMoveSelection: (direction: "previous" | "next") => void;
+  onMoveNode: (direction: "previous" | "next") => void;
   onExtendSelection: (direction: "previous" | "next") => void;
+  onAddCursor: (direction: "previous" | "next", offset: number) => void;
+  onApplyTextToCursors: (edit: CursorTextEdit) => void;
+  onClearPowerSelection: () => void;
   onToggleCollapse: () => void;
   onCopySelection: () => string | undefined;
   onZoom: () => void;
+  onRender?: (nodeId: string) => void;
 };
 
-export function OutlineRow(props: OutlineRowProps) {
-  const { node, depth, active, selected, onSelect, onToggleCollapse, onZoom } = props;
+function OutlineRowComponent(props: OutlineRowProps) {
+  const { node, depth, active, selected, hasCursor, onSelect, onToggleCollapse, onZoom } = props;
+  props.onRender?.(node.id);
   const hasChildren = node.children.length > 0;
   return (
     <div
-      className={`outline-row ${active ? "outline-row-active" : ""} ${selected ? "outline-row-selected" : ""}`}
+      className={`outline-row ${active ? "outline-row-active" : ""} ${selected ? "outline-row-selected" : ""} ${
+        hasCursor ? "outline-row-cursor" : ""
+      }`}
       data-node-id={node.id}
       data-node-text={node.text}
       style={{ "--depth": depth } as CSSProperties}
@@ -82,6 +93,18 @@ export function OutlineRow(props: OutlineRowProps) {
   );
 }
 
+export const OutlineRow = memo(OutlineRowComponent, (previous, next) => {
+  return (
+    previous.node === next.node &&
+    previous.depth === next.depth &&
+    previous.active === next.active &&
+    previous.selected === next.selected &&
+    previous.hasCursor === next.hasCursor &&
+    previous.hasBulkSelection === next.hasBulkSelection &&
+    previous.hasMultiCursor === next.hasMultiCursor
+  );
+});
+
 function ActiveRowEditor({
   node,
   onTextChange,
@@ -91,9 +114,14 @@ function ActiveRowEditor({
   onOutdent,
   onRemoveEmpty,
   onMoveSelection,
+  onMoveNode,
   onExtendSelection,
+  onAddCursor,
+  onApplyTextToCursors,
+  onClearPowerSelection,
   onCopySelection,
-  hasBulkSelection
+  hasBulkSelection,
+  hasMultiCursor
 }: OutlineRowProps) {
   const skipInitialChangeRef = useRef(true);
   const initialConfig = {
@@ -140,10 +168,15 @@ function ActiveRowEditor({
         onOutdent={onOutdent}
         onRemoveEmpty={onRemoveEmpty}
         onMoveSelection={onMoveSelection}
+        onMoveNode={onMoveNode}
         onExtendSelection={onExtendSelection}
+        onAddCursor={onAddCursor}
+        onApplyTextToCursors={onApplyTextToCursors}
+        onClearPowerSelection={onClearPowerSelection}
         onPasteText={onPasteText}
         onCopySelection={onCopySelection}
         hasBulkSelection={hasBulkSelection}
+        hasMultiCursor={hasMultiCursor}
       />
       <FocusPlugin />
     </LexicalComposer>
@@ -174,10 +207,15 @@ function KeyboardPlugin({
   onOutdent,
   onRemoveEmpty,
   onMoveSelection,
+  onMoveNode,
   onExtendSelection,
+  onAddCursor,
+  onApplyTextToCursors,
+  onClearPowerSelection,
   onPasteText,
   onCopySelection,
-  hasBulkSelection
+  hasBulkSelection,
+  hasMultiCursor
 }: {
   nodeText: string;
   onCreateAfter: (offset?: number) => void;
@@ -185,10 +223,15 @@ function KeyboardPlugin({
   onOutdent: () => void;
   onRemoveEmpty: () => void;
   onMoveSelection: (direction: "previous" | "next") => void;
+  onMoveNode: (direction: "previous" | "next") => void;
   onExtendSelection: (direction: "previous" | "next") => void;
+  onAddCursor: (direction: "previous" | "next", offset: number) => void;
+  onApplyTextToCursors: (edit: CursorTextEdit) => void;
+  onClearPowerSelection: () => void;
   onPasteText: (offset: number, text: string) => void;
   onCopySelection: () => string | undefined;
   hasBulkSelection: boolean;
+  hasMultiCursor: boolean;
 }) {
   const [editor] = useLexicalComposerContext();
 
@@ -227,7 +270,12 @@ function KeyboardPlugin({
     );
     const unregisterBackspace = editor.registerCommand<KeyboardEvent>(
       KEY_BACKSPACE_COMMAND,
-      () => {
+      (event) => {
+        if (hasMultiCursor) {
+          event?.preventDefault();
+          onApplyTextToCursors({ type: "backspace" });
+          return true;
+        }
         if (hasBulkSelection || nodeText.length === 0) {
           onRemoveEmpty();
           return true;
@@ -238,7 +286,12 @@ function KeyboardPlugin({
     );
     const unregisterDelete = editor.registerCommand<KeyboardEvent>(
       KEY_DELETE_COMMAND,
-      () => {
+      (event) => {
+        if (hasMultiCursor) {
+          event?.preventDefault();
+          onApplyTextToCursors({ type: "delete" });
+          return true;
+        }
         if (hasBulkSelection) {
           onRemoveEmpty();
           return true;
@@ -299,6 +352,51 @@ function KeyboardPlugin({
       },
       COMMAND_PRIORITY_HIGH
     );
+    const handleRootKeyDown = (event: KeyboardEvent) => {
+      if (event.altKey && event.key === "ArrowUp") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.metaKey || event.ctrlKey) {
+          onAddCursor("previous", readOffset());
+        } else {
+          onMoveNode("previous");
+        }
+        return;
+      }
+      if (event.altKey && event.key === "ArrowDown") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.metaKey || event.ctrlKey) {
+          onAddCursor("next", readOffset());
+        } else {
+          onMoveNode("next");
+        }
+        return;
+      }
+      if (event.key === "Tab") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (event.shiftKey) {
+          onOutdent();
+        } else {
+          onIndent();
+        }
+        return;
+      }
+      if (event.key === "Escape" && (hasMultiCursor || hasBulkSelection)) {
+        event.preventDefault();
+        event.stopPropagation();
+        onClearPowerSelection();
+        return;
+      }
+      if (hasMultiCursor && event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        event.preventDefault();
+        event.stopPropagation();
+        onApplyTextToCursors({ type: "insert", text: event.key });
+      }
+    };
+    const rootElement = editor.getRootElement();
+    rootElement?.addEventListener("keydown", handleRootKeyDown, { capture: true });
     return () => {
       unregisterEnter();
       unregisterTab();
@@ -308,15 +406,21 @@ function KeyboardPlugin({
       unregisterDown();
       unregisterPaste();
       unregisterCopy();
+      rootElement?.removeEventListener("keydown", handleRootKeyDown, { capture: true });
     };
   }, [
     editor,
     hasBulkSelection,
+    hasMultiCursor,
     nodeText,
+    onAddCursor,
+    onApplyTextToCursors,
+    onClearPowerSelection,
     onCopySelection,
     onCreateAfter,
     onExtendSelection,
     onIndent,
+    onMoveNode,
     onMoveSelection,
     onOutdent,
     onPasteText,

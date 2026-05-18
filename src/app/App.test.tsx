@@ -4,6 +4,7 @@ import { createInitialView } from "../domain/outline";
 import type { OutlineSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
 import { makeDocumentWithTexts } from "../test/factories";
+import { FakeRemoteStore } from "../sync/fakeRemoteStore";
 import { App } from "./App";
 
 function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersistence {
@@ -52,5 +53,17 @@ describe("App", () => {
 
     fireEvent.keyDown(window, { key: "y", code: "KeyY", ctrlKey: true });
     await waitFor(() => expect(container.querySelectorAll(".outline-row")).toHaveLength(2));
+  });
+
+  it("renders the runtime remote sync status", async () => {
+    const document = makeDocumentWithTexts(["A"]);
+    render(
+      <App
+        persistence={memoryPersistence({ document, view: createInitialView(document) })}
+        remoteStore={new FakeRemoteStore()}
+      />
+    );
+
+    expect(await screen.findByText("Synced")).toBeInTheDocument();
   });
 });

@@ -19,6 +19,12 @@ export type ViewState = {
   selectedNodeId?: NodeId;
   selectionAnchorNodeId?: NodeId;
   selectionFocusNodeId?: NodeId;
+  cursors?: OutlineCursor[];
+};
+
+export type OutlineCursor = {
+  nodeId: NodeId;
+  offset: number;
 };
 
 export type IdGenerator = () => NodeId;

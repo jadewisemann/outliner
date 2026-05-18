@@ -212,6 +212,144 @@ export function outdentNode(document: OutlineDocument, nodeId: NodeId, now: Cloc
   };
 }
 
+export function moveNodeUp(
+  document: OutlineDocument,
+  nodeId: NodeId,
+  _zoomNodeId: NodeId = document.rootId,
+  now: Clock = Date.now
+): OutlineDocument {
+  if (nodeId === document.rootId || !document.nodes[nodeId]) {
+    return document;
+  }
+  const parentId = findParentId(document, nodeId);
+  if (!parentId) {
+    return document;
+  }
+  const parent = document.nodes[parentId];
+  const index = parent.children.indexOf(nodeId);
+  if (index < 0) {
+    return document;
+  }
+  const timestamp = now();
+  if (index === 0) {
+    if (parentId === document.rootId) {
+      return document;
+    }
+    const grandParentId = findParentId(document, parentId);
+    if (!grandParentId) {
+      return document;
+    }
+    const grandParent = document.nodes[grandParentId];
+    const parentIndex = grandParent.children.indexOf(parentId);
+    const parentChildren = parent.children.slice(1);
+    if (parentIndex > 0) {
+      const previousParentSiblingId = grandParent.children[parentIndex - 1];
+      const previousParentSibling = document.nodes[previousParentSiblingId];
+      return {
+        ...document,
+        nodes: {
+          ...document.nodes,
+          [parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
+          [previousParentSiblingId]: {
+            ...previousParentSibling,
+            children: [...previousParentSibling.children, nodeId],
+            collapsed: false,
+            updatedAt: timestamp
+          }
+        }
+      };
+    }
+    const grandParentChildren = [...grandParent.children];
+    grandParentChildren.splice(parentIndex, 0, nodeId);
+    return {
+      ...document,
+      nodes: {
+        ...document.nodes,
+        [parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
+        [grandParentId]: { ...grandParent, children: grandParentChildren, updatedAt: timestamp }
+      }
+    };
+  }
+  const children = [...parent.children];
+  [children[index - 1], children[index]] = [children[index], children[index - 1]];
+  return {
+    ...document,
+    nodes: {
+      ...document.nodes,
+      [parentId]: { ...parent, children, updatedAt: timestamp }
+    }
+  };
+}
+
+export function moveNodeDown(
+  document: OutlineDocument,
+  nodeId: NodeId,
+  _zoomNodeId: NodeId = document.rootId,
+  now: Clock = Date.now
+): OutlineDocument {
+  if (nodeId === document.rootId || !document.nodes[nodeId]) {
+    return document;
+  }
+  const parentId = findParentId(document, nodeId);
+  if (!parentId) {
+    return document;
+  }
+  const parent = document.nodes[parentId];
+  const index = parent.children.indexOf(nodeId);
+  if (index < 0) {
+    return document;
+  }
+  const timestamp = now();
+  if (index === parent.children.length - 1) {
+    if (parentId === document.rootId) {
+      return document;
+    }
+    const grandParentId = findParentId(document, parentId);
+    if (!grandParentId) {
+      return document;
+    }
+    const grandParent = document.nodes[grandParentId];
+    const parentIndex = grandParent.children.indexOf(parentId);
+    const parentChildren = parent.children.slice(0, -1);
+    if (parentIndex < grandParent.children.length - 1) {
+      const nextParentSiblingId = grandParent.children[parentIndex + 1];
+      const nextParentSibling = document.nodes[nextParentSiblingId];
+      return {
+        ...document,
+        nodes: {
+          ...document.nodes,
+          [parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
+          [nextParentSiblingId]: {
+            ...nextParentSibling,
+            children: [nodeId, ...nextParentSibling.children],
+            collapsed: false,
+            updatedAt: timestamp
+          }
+        }
+      };
+    }
+    const grandParentChildren = [...grandParent.children];
+    grandParentChildren.splice(parentIndex + 1, 0, nodeId);
+    return {
+      ...document,
+      nodes: {
+        ...document.nodes,
+        [parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
+        [grandParentId]: { ...grandParent, children: grandParentChildren, updatedAt: timestamp }
+      }
+    };
+  }
+  const children = [...parent.children];
+  [children[index], children[index + 1]] = [children[index + 1], children[index]];
+  return {
+    ...document,
+    nodes: {
+      ...document.nodes,
+      [parentId]: { ...parent, children, updatedAt: timestamp }
+    }
+  };
+}
+
 export function toggleCollapse(document: OutlineDocument, nodeId: NodeId, now: Clock = Date.now): OutlineDocument {
   const node = document.nodes[nodeId];
   if (!node || node.children.length === 0) {

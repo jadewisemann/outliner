@@ -1,8 +1,10 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { createInitialView } from "../domain/outline";
-import { makeDocumentWithTexts } from "../test/factories";
+import { createInitialView, updateNodeText } from "../domain/outline";
+import type { OutlineDocument, ViewState } from "../domain/outlineTypes";
+import { makeDocumentWithTexts, makeLargeDocument } from "../test/factories";
 import { Outliner } from "./Outliner";
 
 describe("Outliner", () => {
@@ -21,6 +23,77 @@ describe("Outliner", () => {
     expect(screen.getByRole("navigation", { name: "Breadcrumb" })).toHaveTextContent("Root");
     expect(screen.getByText("A")).toBeInTheDocument();
     expect(screen.getByText("B")).toBeInTheDocument();
+  });
+
+  it("virtualizes large documents instead of mounting every visible row", () => {
+    const document = makeLargeDocument(10_000);
+    const { container } = render(
+      <Outliner
+        document={document}
+        view={createInitialView(document)}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={vi.fn()}
+        onViewChange={vi.fn()}
+      />
+    );
+    const list = screen.getByRole("tree", { name: "Outline" });
+    expect(list).toHaveAttribute("data-visible-count", "10000");
+    expect(Number(list.getAttribute("data-rendered-count"))).toBeLessThan(80);
+    expect(container.querySelectorAll(".outline-row")).toHaveLength(Number(list.getAttribute("data-rendered-count")));
+    expect(screen.getByText("Node 1")).toBeInTheDocument();
+    expect(screen.queryByText("Node 10000")).not.toBeInTheDocument();
+  });
+
+  it("mounts Lexical only for the active row in a large document", () => {
+    const document = makeLargeDocument(10_000);
+    render(
+      <Outliner
+        document={document}
+        view={createInitialView(document)}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={vi.fn()}
+        onViewChange={vi.fn()}
+      />
+    );
+    expect(screen.getAllByRole("textbox", { name: "Outline node text" })).toHaveLength(1);
+  });
+
+  it("does not re-render inactive rows when typing updates the active row", async () => {
+    const document = makeDocumentWithTexts(["A", "B", "C"]);
+    const [a, b, c] = document.nodes[document.rootId].children;
+    const renderRow = vi.fn();
+    let typeInActiveRow: () => void = () => {};
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: a });
+      typeInActiveRow = () => {
+        setCurrentDocument((current) => updateNodeText(current, a, "Ax", () => 2));
+      };
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+          onRenderRow={renderRow}
+        />
+      );
+    }
+    render(<Harness />);
+    renderRow.mockClear();
+    act(() => {
+      typeInActiveRow();
+    });
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("Ax");
+    });
+    expect(renderRow).toHaveBeenCalledWith(a);
+    expect(renderRow).not.toHaveBeenCalledWith(b);
+    expect(renderRow).not.toHaveBeenCalledWith(c);
   });
 
   it("zooms when clicking a bullet", async () => {
@@ -60,6 +133,48 @@ describe("Outliner", () => {
       />
     );
     expect(container.querySelectorAll(".outline-row-selected")).toHaveLength(3);
+  });
+
+  it("keeps a visible range selected after bulk indent", async () => {
+    const document = makeDocumentWithTexts(["A", "B", "C"]);
+    const [a, b, c] = document.nodes[document.rootId].children;
+    const onDocumentChange = vi.fn();
+    const onViewChange = vi.fn();
+    render(
+      <Outliner
+        document={document}
+        view={{
+          ...createInitialView(document),
+          selectedNodeId: c,
+          selectionAnchorNodeId: b,
+          selectionFocusNodeId: c
+        }}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={onDocumentChange}
+        onViewChange={onViewChange}
+      />
+    );
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Tab",
+      code: "Tab"
+    });
+    await waitFor(() => {
+      expect(onDocumentChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nodes: expect.objectContaining({
+            [a]: expect.objectContaining({ children: [b, c] })
+          })
+        })
+      );
+      expect(onViewChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          selectedNodeId: c,
+          selectionAnchorNodeId: b,
+          selectionFocusNodeId: c
+        })
+      );
+    });
   });
 
   it("extends range selection with shift arrow navigation", async () => {
@@ -159,5 +274,157 @@ describe("Outliner", () => {
         })
       })
     );
+  });
+
+  it("moves the active node with alt arrow shortcuts", async () => {
+    const document = makeDocumentWithTexts(["A", "B", "C"]);
+    const [a, b, c] = document.nodes[document.rootId].children;
+    const onDocumentChange = vi.fn();
+    render(
+      <Outliner
+        document={document}
+        view={{
+          ...createInitialView(document),
+          selectedNodeId: b
+        }}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={onDocumentChange}
+        onViewChange={vi.fn()}
+      />
+    );
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "ArrowUp",
+      code: "ArrowUp",
+      altKey: true
+    });
+    await waitFor(() => {
+      expect(onDocumentChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nodes: expect.objectContaining({
+            [document.rootId]: expect.objectContaining({ children: [b, a, c] })
+          })
+        })
+      );
+    });
+  });
+
+  it("moves a selected range with alt arrow shortcuts", async () => {
+    const document = makeDocumentWithTexts(["A", "B", "C", "D"]);
+    const [a, b, c, d] = document.nodes[document.rootId].children;
+    const onDocumentChange = vi.fn();
+    const onViewChange = vi.fn();
+    render(
+      <Outliner
+        document={document}
+        view={{
+          ...createInitialView(document),
+          selectedNodeId: c,
+          selectionAnchorNodeId: b,
+          selectionFocusNodeId: c
+        }}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={onDocumentChange}
+        onViewChange={onViewChange}
+      />
+    );
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "ArrowDown",
+      code: "ArrowDown",
+      altKey: true
+    });
+    await waitFor(() => {
+      expect(onDocumentChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nodes: expect.objectContaining({
+            [document.rootId]: expect.objectContaining({ children: [a, d, b, c] })
+          })
+        })
+      );
+      expect(onViewChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          selectedNodeId: c,
+          selectionAnchorNodeId: b,
+          selectionFocusNodeId: c
+        })
+      );
+    });
+  });
+
+  it("adds multi cursors and clears range selection with mod alt arrows", async () => {
+    const document = makeDocumentWithTexts(["A", "Bee"]);
+    const [a, b] = document.nodes[document.rootId].children;
+    const onViewChange = vi.fn();
+    render(
+      <Outliner
+        document={document}
+        view={{
+          ...createInitialView(document),
+          selectedNodeId: a,
+          selectionAnchorNodeId: a,
+          selectionFocusNodeId: b
+        }}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={vi.fn()}
+        onViewChange={onViewChange}
+      />
+    );
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "ArrowDown",
+      code: "ArrowDown",
+      altKey: true,
+      metaKey: true
+    });
+    await waitFor(() => {
+      expect(onViewChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          selectionAnchorNodeId: undefined,
+          selectionFocusNodeId: undefined,
+          cursors: [
+            { nodeId: a, offset: 1 },
+            { nodeId: b, offset: 1 }
+          ]
+        })
+      );
+    });
+  });
+
+  it("applies typed text to every multi cursor", async () => {
+    const document = makeDocumentWithTexts(["A", "B"]);
+    const [a, b] = document.nodes[document.rootId].children;
+    const onDocumentChange = vi.fn();
+    render(
+      <Outliner
+        document={document}
+        view={{
+          ...createInitialView(document),
+          selectedNodeId: a,
+          cursors: [
+            { nodeId: a, offset: 1 },
+            { nodeId: b, offset: 1 }
+          ]
+        }}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={onDocumentChange}
+        onViewChange={vi.fn()}
+      />
+    );
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "x",
+      code: "KeyX"
+    });
+    await waitFor(() => {
+      expect(onDocumentChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nodes: expect.objectContaining({
+            [a]: expect.objectContaining({ text: "Ax" }),
+            [b]: expect.objectContaining({ text: "Bx" })
+          })
+        })
+      );
+    });
   });
 });

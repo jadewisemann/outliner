@@ -4,6 +4,9 @@ import { createInitialView, createNodeAfter } from "../domain/outline";
 import type { OutlineSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
 import { makeDocumentWithTexts } from "../test/factories";
+import { FakeRemoteStore } from "../sync/fakeRemoteStore";
+import { compactRemoteSnapshot } from "../sync/remoteSync";
+import { createYjsWorkspace } from "../sync/yjsAdapter";
 import { useOutlineWorkspace } from "./useOutlineWorkspace";
 
 function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersistence & { saved: OutlineSnapshot[] } {
@@ -119,5 +122,125 @@ describe("useOutlineWorkspace", () => {
     });
 
     expect(result.current.snapshot.document.nodes.root.children).toHaveLength(1);
+  });
+
+  it("stays local-only when no remote store is configured", async () => {
+    const persistence = memoryPersistence(null);
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        createId: () => "editable",
+        now: () => 1
+      })
+    );
+
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    expect(result.current.syncStatus).toBe("local-only");
+  });
+
+  it("pulls a remote snapshot after local restore", async () => {
+    const local = makeDocumentWithTexts(["Local"]);
+    const remote = makeDocumentWithTexts(["Remote"]);
+    const persistence = memoryPersistence({ document: local, view: createInitialView(local) });
+    const remoteStore = new FakeRemoteStore();
+    await compactRemoteSnapshot(remoteStore, createYjsWorkspace({ document: remote, view: createInitialView(remote) }));
+
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        remoteStore,
+        createId: () => "new",
+        createClientId: () => "client-a",
+        now: () => 1
+      })
+    );
+
+    await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
+    const childId = remote.nodes[remote.rootId].children[0];
+    expect(result.current.snapshot.document.nodes[childId].text).toBe("Remote");
+  });
+
+  it("pushes local commits to the remote store", async () => {
+    const first = makeDocumentWithTexts(["A"]);
+    const second = makeDocumentWithTexts(["B"]);
+    const persistence = memoryPersistence({ document: first, view: createInitialView(first) });
+    const remoteStore = new FakeRemoteStore();
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        remoteStore,
+        createId: () => "new",
+        createClientId: () => "client-a",
+        now: () => 10
+      })
+    );
+    await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
+
+    act(() => {
+      result.current.commitSnapshot({ document: second, view: createInitialView(second) });
+    });
+
+    await waitFor(async () => expect(await remoteStore.listUpdates()).toHaveLength(1));
+    const update = (await remoteStore.listUpdates())[0];
+    expect(update.id).toBe("client-a:1");
+    expect(update.createdAt).toBe(10);
+  });
+
+  it("marks the runtime offline when remote append fails", async () => {
+    const first = makeDocumentWithTexts(["A"]);
+    const second = makeDocumentWithTexts(["B"]);
+    const persistence = memoryPersistence({ document: first, view: createInitialView(first) });
+    const remoteStore = new FakeRemoteStore();
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        remoteStore,
+        createId: () => "new",
+        createClientId: () => "client-a",
+        now: () => 10
+      })
+    );
+    await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
+
+    remoteStore.failNextAppend();
+    act(() => {
+      result.current.commitSnapshot({ document: second, view: createInitialView(second) });
+    });
+
+    await waitFor(() => expect(result.current.syncStatus).toBe("offline"));
+    expect(persistence.saved.at(-1)?.document).toBe(second);
+  });
+
+  it("syncs a local commit into another runtime through a shared fake remote store", async () => {
+    const first = makeDocumentWithTexts(["A"]);
+    const second = makeDocumentWithTexts(["B"]);
+    const remoteStore = new FakeRemoteStore();
+    const clientA = renderHook(() =>
+      useOutlineWorkspace({
+        persistence: memoryPersistence({ document: first, view: createInitialView(first) }),
+        remoteStore,
+        createId: () => "new-a",
+        createClientId: () => "client-a",
+        now: () => 10
+      })
+    );
+    const clientB = renderHook(() =>
+      useOutlineWorkspace({
+        persistence: memoryPersistence({ document: first, view: createInitialView(first) }),
+        remoteStore,
+        createId: () => "new-b",
+        createClientId: () => "client-b",
+        now: () => 11
+      })
+    );
+    await waitFor(() => expect(clientA.result.current.syncStatus).toBe("synced"));
+    await waitFor(() => expect(clientB.result.current.syncStatus).toBe("synced"));
+
+    act(() => {
+      clientA.result.current.commitSnapshot({ document: second, view: createInitialView(second) });
+    });
+
+    const childId = second.nodes[second.rootId].children[0];
+    await waitFor(() => expect(clientB.result.current.snapshot.document.nodes[childId].text).toBe("B"));
   });
 });

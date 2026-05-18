@@ -4,21 +4,26 @@ import { SyncStatusBadge } from "../components/SyncStatusBadge";
 import { exportToJson, exportToMarkdown } from "../domain/exporters";
 import type { OutlineDocument, ViewState } from "../domain/outlineTypes";
 import { createBrowserLocalPersistence, type LocalPersistence } from "../persistence/localPersistence";
-import type { SyncStatus } from "../sync/syncTypes";
+import type { RemoteStore } from "../sync/syncTypes";
 import { useOutlineWorkspace } from "./useOutlineWorkspace";
 
 const createId = () => crypto.randomUUID();
 const now = () => Date.now();
-const syncStatus: SyncStatus = "local-only";
 
 type AppProps = {
   persistence?: LocalPersistence;
+  remoteStore?: RemoteStore;
 };
 
-export function App({ persistence: providedPersistence }: AppProps = {}) {
+export function App({ persistence: providedPersistence, remoteStore }: AppProps = {}) {
   const browserPersistence = useMemo(() => createBrowserLocalPersistence("workspace_root"), []);
   const persistence = providedPersistence ?? browserPersistence;
-  const { snapshot, commitSnapshot, undo, redo } = useOutlineWorkspace({ persistence, createId, now });
+  const { snapshot, commitSnapshot, undo, redo, syncStatus } = useOutlineWorkspace({
+    persistence,
+    remoteStore,
+    createId,
+    now
+  });
   const latestSnapshotRef = useRef(snapshot);
   const pendingSnapshotRef = useRef(snapshot);
   const commitScheduledRef = useRef(false);

@@ -1,4 +1,13 @@
-import { applyUpdate, encodeState, encodeStateVector, type YjsWorkspace } from "./yjsAdapter";
+import type { OutlineDocument, OutlineNode, OutlineSnapshot, ViewState } from "../domain/outlineTypes";
+import {
+  applyUpdate,
+  encodeState,
+  encodeStateVector,
+  getYjsSnapshot,
+  mergeIntoNewWorkspace,
+  setYjsSnapshot,
+  type YjsWorkspace
+} from "./yjsAdapter";
 import { createSyncQueueState, enqueueUpdate, hasAppliedUpdate, markUpdateApplied, type SyncQueueState } from "./syncQueue";
 import type { RemoteStore, RemoteUpdate, SyncStatus } from "./syncTypes";
 
@@ -22,13 +31,13 @@ export async function pullRemoteUpdates(
 ): Promise<RemoteSyncState> {
   const snapshot = await store.readSnapshot();
   if (snapshot) {
-    applyUpdate(workspace, snapshot);
+    applyRemoteUpdate(workspace, snapshot);
   }
   let next = { ...state, status: "syncing" as SyncStatus };
   const updates = await store.listUpdates(state.lastUpdateId);
   for (const update of updates) {
     if (!hasAppliedUpdate(next.queue, update.id)) {
-      applyUpdate(workspace, update.update);
+      applyRemoteUpdate(workspace, update.update);
       next = {
         ...next,
         queue: markUpdateApplied(next.queue, update.id),
@@ -77,4 +86,77 @@ export async function flushQueuedUpdates(store: RemoteStore, state: RemoteSyncSt
 
 export async function compactRemoteSnapshot(store: RemoteStore, workspace: YjsWorkspace): Promise<void> {
   await store.writeSnapshot(encodeState(workspace), encodeStateVector(workspace));
+}
+
+export function subscribeRemoteUpdates(
+  store: RemoteStore,
+  workspace: YjsWorkspace,
+  getState: () => RemoteSyncState,
+  setState: (state: RemoteSyncState) => void
+): () => void {
+  return store.subscribe((update) => {
+    const state = getState();
+    if (hasAppliedUpdate(state.queue, update.id)) {
+      return;
+    }
+    applyRemoteUpdate(workspace, update.update);
+    setState({
+      ...state,
+      queue: markUpdateApplied(state.queue, update.id),
+      lastUpdateId: update.id,
+      status: "synced"
+    });
+  });
+}
+
+export function applyRemoteUpdate(workspace: YjsWorkspace, update: Uint8Array): void {
+  const localSnapshot = getYjsSnapshot(workspace);
+  const incomingWorkspace = mergeIntoNewWorkspace(update);
+  const incomingSnapshot = getYjsSnapshot(incomingWorkspace);
+  applyUpdate(workspace, update);
+  if (localSnapshot && incomingSnapshot) {
+    setYjsSnapshot(workspace, mergeOutlineSnapshots(localSnapshot, incomingSnapshot));
+  }
+}
+
+function mergeOutlineSnapshots(local: OutlineSnapshot, incoming: OutlineSnapshot): OutlineSnapshot {
+  return {
+    document: mergeOutlineDocuments(local.document, incoming.document),
+    view: mergeViewState(local.view, incoming.view)
+  };
+}
+
+function mergeOutlineDocuments(local: OutlineDocument, incoming: OutlineDocument): OutlineDocument {
+  const nodeIds = new Set([...Object.keys(local.nodes), ...Object.keys(incoming.nodes)]);
+  const nodes: Record<string, OutlineNode> = {};
+  for (const nodeId of nodeIds) {
+    const localNode = local.nodes[nodeId];
+    const incomingNode = incoming.nodes[nodeId];
+    if (localNode && incomingNode) {
+      nodes[nodeId] = {
+        ...localNode,
+        ...incomingNode,
+        children: mergeOrderedIds(localNode.children, incomingNode.children),
+        updatedAt: Math.max(localNode.updatedAt, incomingNode.updatedAt)
+      };
+    } else {
+      nodes[nodeId] = localNode ?? incomingNode;
+    }
+  }
+  const rootId = incoming.nodes[incoming.rootId] ? incoming.rootId : local.rootId;
+  return { rootId, nodes };
+}
+
+function mergeViewState(local: ViewState, incoming: ViewState): ViewState {
+  return {
+    ...incoming,
+    zoomNodeId: local.zoomNodeId,
+    selectedNodeId: local.selectedNodeId,
+    selectionAnchorNodeId: local.selectionAnchorNodeId,
+    selectionFocusNodeId: local.selectionFocusNodeId
+  };
+}
+
+function mergeOrderedIds(localIds: string[], incomingIds: string[]): string[] {
+  return [...localIds, ...incomingIds.filter((id) => !localIds.includes(id))];
 }

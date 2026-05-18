@@ -8,7 +8,17 @@ import {
 import type { Clock, IdGenerator, OutlineSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
 import {
+  createRemoteSyncState,
+  pullRemoteUpdates,
+  pushLocalUpdate,
+  subscribeRemoteUpdates,
+  type RemoteSyncState
+} from "../sync/remoteSync";
+import type { RemoteStore, SyncStatus } from "../sync/syncTypes";
+import {
   createYjsWorkspace,
+  encodeState,
+  getYjsSnapshot,
   setYjsSnapshot,
   type YjsWorkspace
 } from "../sync/yjsAdapter";
@@ -19,17 +29,22 @@ export type OutlineWorkspaceRuntime = {
   commitSnapshot: (snapshot: OutlineSnapshot) => void;
   undo: () => void;
   redo: () => void;
+  syncStatus: SyncStatus;
 };
 
 type UseOutlineWorkspaceOptions = {
   persistence: LocalPersistence;
+  remoteStore?: RemoteStore;
   createId: IdGenerator;
+  createClientId?: IdGenerator;
   now: Clock;
 };
 
 export function useOutlineWorkspace({
   persistence,
+  remoteStore,
   createId,
+  createClientId = () => crypto.randomUUID(),
   now
 }: UseOutlineWorkspaceOptions): OutlineWorkspaceRuntime {
   const initialSnapshot = useMemo(() => normalizeSnapshot(makeEmptySnapshot(createId, now), createId, now), [
@@ -38,11 +53,19 @@ export function useOutlineWorkspace({
   ]);
   const workspaceRef = useRef<YjsWorkspace>(createYjsWorkspace(initialSnapshot));
   const snapshotRef = useRef<OutlineSnapshot>(initialSnapshot);
+  const createIdRef = useRef(createId);
+  const nowRef = useRef(now);
   const undoStackRef = useRef<OutlineSnapshot[]>([]);
   const redoStackRef = useRef<OutlineSnapshot[]>([]);
+  const remoteStateRef = useRef<RemoteSyncState>(createRemoteSyncState());
+  const clientIdRef = useRef<string>(createClientId());
+  const seqRef = useRef(0);
   const loadedRef = useRef(false);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [loaded, setLoaded] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(remoteStore ? "syncing" : "local-only");
+  createIdRef.current = createId;
+  nowRef.current = now;
 
   const persistSnapshot = useCallback(
     (next: OutlineSnapshot) => {
@@ -52,6 +75,11 @@ export function useOutlineWorkspace({
     },
     [persistence]
   );
+
+  const setRemoteState = useCallback((state: RemoteSyncState) => {
+    remoteStateRef.current = state;
+    setSyncStatus(state.status);
+  }, []);
 
   const replaceSnapshot = useCallback(
     (normalized: OutlineSnapshot) => {
@@ -72,18 +100,33 @@ export function useOutlineWorkspace({
         redoStackRef.current = [];
       }
       replaceSnapshot(normalized);
+      if (remoteStore && loadedRef.current) {
+        seqRef.current += 1;
+        const update = {
+          id: `${clientIdRef.current}:${seqRef.current}`,
+          clientId: clientIdRef.current,
+          seq: seqRef.current,
+          update: encodeState(workspaceRef.current),
+          createdAt: now()
+        };
+        setSyncStatus("syncing");
+        pushLocalUpdate(remoteStore, update, remoteStateRef.current).then(setRemoteState, () => {
+          setRemoteState({ ...remoteStateRef.current, status: "error" });
+        });
+      }
     },
-    [createId, now, replaceSnapshot]
+    [createId, now, remoteStore, replaceSnapshot, setRemoteState]
   );
 
   useEffect(() => {
     let cancelled = false;
+    let unsubscribeRemote: (() => void) | undefined;
     persistence.load().then((persisted) => {
       if (cancelled) {
         return;
       }
       if (persisted) {
-        const normalized = normalizeSnapshot(persisted, createId, now);
+        const normalized = normalizeSnapshot(persisted, createIdRef.current, nowRef.current);
         workspaceRef.current = createYjsWorkspace(normalized);
         snapshotRef.current = normalized;
         undoStackRef.current = [];
@@ -93,11 +136,51 @@ export function useOutlineWorkspace({
       loadedRef.current = true;
       setLoaded(true);
       void persistence.save(snapshotRef.current);
+      if (!remoteStore) {
+        setSyncStatus("local-only");
+        return;
+      }
+      setSyncStatus("syncing");
+      pullRemoteUpdates(remoteStore, workspaceRef.current, remoteStateRef.current)
+        .then((nextState) => {
+          if (cancelled) {
+            return;
+          }
+          setRemoteState(nextState);
+          const remoteSnapshot = getYjsSnapshot(workspaceRef.current);
+          if (remoteSnapshot) {
+            const normalized = normalizeSnapshot(remoteSnapshot, createIdRef.current, nowRef.current);
+            snapshotRef.current = normalized;
+            setSnapshot(normalized);
+            void persistence.save(normalized);
+          }
+          unsubscribeRemote = subscribeRemoteUpdates(
+            remoteStore,
+            workspaceRef.current,
+            () => remoteStateRef.current,
+            (nextRemoteState) => {
+              setRemoteState(nextRemoteState);
+              const subscribedSnapshot = getYjsSnapshot(workspaceRef.current);
+              if (subscribedSnapshot) {
+                const normalized = normalizeSnapshot(subscribedSnapshot, createIdRef.current, nowRef.current);
+                snapshotRef.current = normalized;
+                setSnapshot(normalized);
+                void persistence.save(normalized);
+              }
+            }
+          );
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setRemoteState({ ...remoteStateRef.current, status: "error" });
+          }
+        });
     });
     return () => {
       cancelled = true;
+      unsubscribeRemote?.();
     };
-  }, [persistence]);
+  }, [persistence, remoteStore, setRemoteState]);
 
   const undo = useCallback(() => {
     const previous = undoStackRef.current.at(-1);
@@ -124,7 +207,8 @@ export function useOutlineWorkspace({
     loaded,
     commitSnapshot: publishSnapshot,
     undo,
-    redo
+    redo,
+    syncStatus
   };
 }
 
@@ -154,6 +238,12 @@ function normalizeSnapshot(snapshot: OutlineSnapshot, createId: IdGenerator, now
     snapshot.view.selectionFocusNodeId && ensured.document.nodes[snapshot.view.selectionFocusNodeId]
       ? snapshot.view.selectionFocusNodeId
       : undefined;
+  const cursors = snapshot.view.cursors
+    ?.filter((cursor) => cursor.nodeId !== ensured.document.rootId && ensured.document.nodes[cursor.nodeId])
+    .map((cursor) => ({
+      nodeId: cursor.nodeId,
+      offset: Math.max(0, Math.min(cursor.offset, ensured.document.nodes[cursor.nodeId].text.length))
+    }));
   return {
     document: ensured.document,
     view: {
@@ -161,7 +251,8 @@ function normalizeSnapshot(snapshot: OutlineSnapshot, createId: IdGenerator, now
       zoomNodeId,
       selectedNodeId,
       selectionAnchorNodeId,
-      selectionFocusNodeId
+      selectionFocusNodeId,
+      cursors: cursors && cursors.length > 0 ? cursors : undefined
     }
   };
 }

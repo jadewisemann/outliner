@@ -3,6 +3,8 @@ import { indentNode, toggleCollapse, updateNodeText } from "./outline";
 import {
   bulkDeleteNodes,
   bulkIndentNodes,
+  bulkMoveNodesDown,
+  bulkMoveNodesUp,
   bulkOutdentNodes,
   insertNodesFromText,
   normalizeTopLevelSelection,
@@ -75,6 +77,48 @@ describe("bulk outline commands", () => {
     const result = bulkOutdentNodes(nested, [b, c], () => 11);
     expect(result.nodes[result.rootId].children).toEqual([a, b, c]);
     expect(result.nodes[a].children).toEqual([]);
+  });
+
+  it("moves selected sibling blocks up while preserving order", () => {
+    const doc = makeDocumentWithTexts(["A", "B", "C", "D"]);
+    const [a, b, c, d] = doc.nodes[doc.rootId].children;
+    const result = bulkMoveNodesUp(doc, [b, c], doc.rootId, () => 10);
+    expect(result.nodes[result.rootId].children).toEqual([b, c, a, d]);
+  });
+
+  it("moves selected sibling blocks down while preserving order", () => {
+    const doc = makeDocumentWithTexts(["A", "B", "C", "D"]);
+    const [a, b, c, d] = doc.nodes[doc.rootId].children;
+    const result = bulkMoveNodesDown(doc, [b, c], doc.rootId, () => 10);
+    expect(result.nodes[result.rootId].children).toEqual([a, d, b, c]);
+  });
+
+  it("moves selected blocks without duplicating nested selected descendants", () => {
+    const doc = makeDocumentWithTexts(["A", "B", "C", "D"]);
+    const [a, b, c, d] = doc.nodes[doc.rootId].children;
+    const nested = indentNode(doc, b, () => 10);
+    const result = bulkMoveNodesDown(nested, [a, b], nested.rootId, () => 11);
+    expect(result.nodes[result.rootId].children).toEqual([c, a, d]);
+    expect(result.nodes[a].children).toEqual([b]);
+  });
+
+  it("moves a first selected child into the previous parent sibling", () => {
+    const doc = makeDocumentWithTexts(["A", "A.A", "B", "B.A"]);
+    const [a, aa, b, ba] = doc.nodes[doc.rootId].children;
+    const nested = indentNode(indentNode(doc, aa, () => 10), ba, () => 11);
+    const result = bulkMoveNodesUp(nested, [ba], nested.rootId, () => 12);
+    expect(result.nodes[result.rootId].children).toEqual([a, b]);
+    expect(result.nodes[a].children).toEqual([aa, ba]);
+    expect(result.nodes[b].children).toEqual([]);
+  });
+
+  it("outdents a last selected child below its parent when there is no next parent sibling", () => {
+    const doc = makeDocumentWithTexts(["A", "B", "B.A"]);
+    const [a, b, ba] = doc.nodes[doc.rootId].children;
+    const nested = indentNode(doc, ba, () => 10);
+    const result = bulkMoveNodesDown(nested, [ba], nested.rootId, () => 11);
+    expect(result.nodes[result.rootId].children).toEqual([a, b, ba]);
+    expect(result.nodes[b].children).toEqual([]);
   });
 
   it("deletes selected top-level subtrees", () => {

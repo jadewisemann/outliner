@@ -12,6 +12,7 @@ Dynalist의 핵심 경험인 무한 뎁스 아웃라이너를 로컬 퍼스트 �
 - 노드 기반 무한 뎁스 아웃라인
 - 키보드 중심 편집
 - Dynalist식 벌크 편집: 멀티라인 붙여넣기, 다중 노드 선택, 일괄 들여쓰기/내어쓰기/삭제/접기
+- 키보드 파워 편집: 노드 순서 이동, 범위 이동, 멀티 커서 입력
 - 들여쓰기/내어쓰기
 - 접기/펼치기
 - 줌인/브레드크럼 탐색
@@ -49,6 +50,8 @@ Dynalist의 핵심 경험인 무한 뎁스 아웃라이너를 로컬 퍼스트 �
 - `Tab`으로 현재 노드를 위 형제 노드의 자식으로 이동한다.
 - `Shift+Tab`으로 현재 노드를 부모의 다음 형제로 승격한다.
 - `ArrowUp`/`ArrowDown`으로 보이는 노드 사이를 이동한다.
+- `Alt+ArrowUp`/`Alt+ArrowDown`으로 현재 노드를 위아래 visible 위치로 이동한다.
+- 다중 노드가 선택된 상태에서 `Alt+ArrowUp`/`Alt+ArrowDown`을 누르면 선택 범위 전체가 순서를 유지한 채 위아래로 이동한다.
 
 ### 3.3 구조 탐색
 
@@ -77,6 +80,16 @@ Dynalist의 핵심 경험인 무한 뎁스 아웃라이너를 로컬 퍼스트 �
 - 사용자는 선택된 노드 범위를 복사해 indentation 기반 텍스트 또는 Markdown으로 다른 앱에 붙여넣을 수 있다.
 - 선택 범위에 부모와 자식이 함께 포함된 경우, 같은 subtree가 중복 복사/삭제/이동되지 않아야 한다.
 
+### 3.7 키보드 파워 편집
+
+- 사용자는 마우스 없이 노드 순서를 바꾸고, 여러 위치에 같은 편집을 반복 적용할 수 있다.
+- `Alt+ArrowUp`/`Alt+ArrowDown`은 텍스트 커서 이동이 아니라 노드 또는 선택 범위의 구조적 순서 변경으로 해석한다.
+- `Mod+Alt+ArrowUp`/`Mod+Alt+ArrowDown`은 현재 active row 위아래 visible row에 보조 커서를 추가한다.
+- 멀티 커서가 있는 상태에서 일반 텍스트 입력, `Backspace`, `Delete`는 모든 커서 위치에 같은 텍스트 편집을 적용한다.
+- 멀티 커서가 있는 상태에서 `Enter`, `Tab`, `Shift+Tab`은 각 커서가 속한 노드에 같은 구조 명령을 적용하되, 명령 결과는 visible order 기준으로 안정적이어야 한다.
+- `Escape`는 멀티 커서와 범위 선택을 해제하고 active row 하나만 남긴다.
+- 멀티 커서와 범위 선택이 동시에 존재할 수 없으며, 한 모드가 시작되면 다른 모드는 정리된다.
+
 ## 4. 기능 요구사항
 
 ### 4.1 노드
@@ -95,6 +108,8 @@ Dynalist의 핵심 경험인 무한 뎁스 아웃라이너를 로컬 퍼스트 �
 - `splitNode(nodeId, offset)`은 텍스트를 분리하고 뒤쪽 텍스트를 새 노드로 이동한다.
 - `indentNode(nodeId)`는 현재 노드를 바로 위 형제의 마지막 자식으로 이동한다.
 - `outdentNode(nodeId)`는 현재 노드를 부모의 다음 형제로 이동한다.
+- `moveNodeUp(nodeId)`는 현재 노드를 visible order 기준 한 칸 위로 이동한다.
+- `moveNodeDown(nodeId)`는 현재 노드를 visible order 기준 한 칸 아래로 이동한다.
 - `toggleCollapse(nodeId)`는 자식이 있는 노드의 접힘 상태를 바꾼다.
 - `zoomInto(nodeId)`는 현재 viewport root를 해당 노드로 바꾼다.
 - `zoomToAncestor(nodeId)`는 브레드크럼 대상 노드로 viewport root를 바꾼다.
@@ -103,9 +118,14 @@ Dynalist의 핵심 경험인 무한 뎁스 아웃라이너를 로컬 퍼스트 �
 - `selectVisibleRange(anchorNodeId, focusNodeId)`는 현재 visible node 기준 연속 범위를 선택한다.
 - `bulkIndentNodes(nodeIds)`는 선택된 최상위 노드들을 한 단계 들여쓴다.
 - `bulkOutdentNodes(nodeIds)`는 선택된 최상위 노드들을 한 단계 내어쓴다.
+- `bulkMoveNodesUp(nodeIds)`는 선택된 최상위 노드 블록을 visible order 기준 한 칸 위로 이동한다.
+- `bulkMoveNodesDown(nodeIds)`는 선택된 최상위 노드 블록을 visible order 기준 한 칸 아래로 이동한다.
 - `bulkDeleteNodes(nodeIds)`는 선택된 최상위 노드와 하위 subtree를 삭제한다.
 - `bulkToggleCollapse(nodeIds, collapsed)`는 선택된 노드 중 자식이 있는 노드들의 접힘 상태를 일괄 변경한다.
 - `serializeNodesForClipboard(nodeIds)`는 선택 범위를 indentation 기반 plain text로 직렬화한다.
+- `addCursorAbove(nodeId, offset)`은 현재 커서와 같은 text offset을 위 visible row에 보조 커서로 추가한다.
+- `addCursorBelow(nodeId, offset)`은 현재 커서와 같은 text offset을 아래 visible row에 보조 커서로 추가한다.
+- `applyTextToCursors(cursorIds, edit)`는 모든 커서 위치에 같은 텍스트 편집을 deterministic order로 적용한다.
 
 ### 4.3 삭제/병합
 
@@ -146,6 +166,26 @@ Dynalist의 핵심 경험인 무한 뎁스 아웃라이너를 로컬 퍼스트 �
 - bulk delete는 명시적으로 선택된 최상위 subtree를 삭제한다. 단일 빈 노드 Backspace의 자식 승격 정책과 구분한다.
 - 멀티라인 paste는 active row의 커서 위치에서 현재 노드를 split하고, 붙여넣은 첫 줄은 split 이후 현재 위치에 들어가며 나머지 줄은 indentation 구조로 이어 붙인다.
 
+### 4.8 키보드 파워 편집 규칙
+
+- 노드 순서 이동은 현재 노드의 parent/children 순서를 변경한다.
+- `Alt+ArrowUp`/`Alt+ArrowDown`은 현재 노드 또는 선택 범위를 같은 부모 안의 이전/다음 sibling block과 교환하는 명령이다.
+- 첫 자식을 위로 이동하거나 마지막 자식을 아래로 이동하는 경우에는 부모 경계를 넘는다.
+- 부모 경계를 넘을 때 이전/다음 부모 sibling이 있으면 그 sibling의 마지막/첫 자식으로 이동한다.
+- 부모 경계를 넘을 때 이전/다음 부모 sibling이 없으면 현재 부모 앞/뒤로 outdent한다.
+- 예를 들어 `a > a.a`, `b > b.a`에서 `b.a`를 위로 이동하면 `a > a.a, b.a`, `b`가 된다.
+- 같은 구조에서 `a.a`를 위로 이동하면 `a.a`, `a`, `b > b.a`가 된다.
+- 같은 구조에서 `a.a`를 아래로 이동하면 `a`, `b > a.a, b.a`가 된다.
+- 같은 구조에서 `b.a`를 아래로 이동하면 `a > a.a`, `b`, `b.a`가 된다.
+- 접힌 subtree는 하나의 visible 블록으로 취급한다. 접힌 부모를 이동하면 hidden descendants도 함께 이동한다.
+- 선택 범위 이동은 `normalizeTopLevelSelection` 결과를 기준으로 하며, 부모와 자식이 함께 선택된 경우 부모 subtree만 이동한다.
+- 선택 범위 이동 후에도 선택 anchor/focus는 같은 node id를 유지한다.
+- Root 레벨의 첫 visible 블록을 위로 이동하거나 마지막 visible 블록을 아래로 이동하는 명령은 no-op이다.
+- 멀티 커서는 node id와 text offset 목록으로 표현한다. offset이 대상 텍스트 길이를 넘으면 해당 노드의 끝으로 clamp한다.
+- 멀티 커서 텍스트 편집은 아래 visible row부터 위 visible row 순서로 적용해 offset shift가 다른 커서에 영향을 주지 않게 한다.
+- 멀티 커서 구조 명령은 `normalizeTopLevelSelection`과 같은 중복 subtree 제거 규칙을 사용한다.
+- Undo/Redo에서 노드 이동, 범위 이동, 멀티 커서 편집은 각각 하나의 사용자 action으로 되돌아가야 한다.
+
 ## 5. 비기능 요구사항
 
 - Cold start: 로컬 문서 1초 이내 표시
@@ -164,18 +204,22 @@ Dynalist의 핵심 경험인 무한 뎁스 아웃라이너를 로컬 퍼스트 �
 - 다중 노드 선택 후 들여쓰기/내어쓰기/삭제/접기 명령이 한 번에 적용된다.
 - 선택 범위 복사/붙여넣기가 outline 구조를 보존한다.
 - 모든 핵심 도메인 동작은 실패 테스트를 먼저 가진다.
+- 새로고침 후 작성한 노드와 접힘/줌 상태가 유지된다.
+- Yjs-backed runtime Undo/Redo가 텍스트와 구조 변경에 적용된다.
+- FakeRemoteStore 기반 두 runtime 동시 편집이 병합된다.
+- 오프라인 후 재연결 시 pending update가 flush된다.
+- `Alt+ArrowUp/Down`으로 현재 노드 또는 선택 범위를 위아래로 이동할 수 있다.
+- 첫 자식/마지막 자식의 `Alt+ArrowUp/Down` 부모 경계 이동 규칙이 도메인 테스트와 E2E로 검증된다.
+- `Mod+Alt+ArrowUp/Down`으로 멀티 커서를 만들고 같은 텍스트 편집을 여러 row에 적용할 수 있다.
 
 ### 남은 MVP 체크리스트
 
-- 새로고침 후 작성한 노드와 접힘/줌 상태가 유지된다.
-- Yjs 기반 Undo/Redo가 텍스트와 구조 변경에 적용된다.
-- 두 브라우저 창의 동시 편집이 병합된다.
-- 오프라인 후 재연결 시 pending update가 flush된다.
+- 두 브라우저 창 또는 Firebase-backed 환경의 원격 sync E2E를 추가한다.
 - 10,000개 노드 fixture에서 visible 계산과 기본 편집이 사용 가능한 성능을 보인다.
 
 ## 7. 제품 결정
 
-- Phase 0~5는 로그인 없는 로컬 단일 문서와 Yjs-backed local runtime을 우선한다.
+- Phase 0~6은 로그인 없는 로컬 단일 문서, Yjs-backed local runtime, optional RemoteStore sync를 우선한다.
 - 원격 동기화 저장소는 Firebase Realtime Database를 사용한다.
 - MVP 텍스트는 플레인 텍스트 중심이다.
 - TODO/checkbox 노드는 MVP에서 제외한다.
@@ -186,4 +230,4 @@ Dynalist의 핵심 경험인 무한 뎁스 아웃라이너를 로컬 퍼스트 �
 - JSON과 Markdown 내보내기를 모두 지원한다.
 - MVP 성능 수용 기준은 10,000개 노드, 구조 설계 목표는 50,000개 노드다.
 - Dynalist 대안으로서 벌크 편집은 MVP 핵심 범위에 포함한다. 구현 순서는 기본 키보드 편집 이후, 로컬 persistence/Yjs 동기화 전에 넣는다.
-- 벌크 편집은 MVP 핵심 기능으로 구현 완료되었고, 이후 작업은 Yjs 런타임 통합, 개인 다기기 sync, 성능 검증 순서로 진행한다.
+- 벌크 편집, Yjs 런타임 통합, 개인 다기기 sync는 MVP 핵심 기능으로 구현 완료되었고, 이후 작업은 키보드 파워 편집과 성능 검증 순서로 진행한다.

@@ -103,6 +103,12 @@ button {
   border-top: 1px solid #e2e6ec;
 }
 
+.outline-list-virtualized {
+  max-height: calc(100vh - 140px);
+  min-height: 320px;
+  overflow-y: auto;
+}
+
 .outline-row {
   --indent-size: 24px;
   display: grid;
@@ -119,6 +125,10 @@ button {
 
 .outline-row-selected {
   background: #dcecff;
+}
+
+.outline-row-cursor .row-editor {
+  box-shadow: inset 3px 0 0 #2f7dd1;
 }
 
 .collapse-button,

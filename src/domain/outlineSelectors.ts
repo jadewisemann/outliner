@@ -7,21 +7,23 @@ export function getVisibleNodes(document: OutlineDocument, zoomNodeId: NodeId = 
     return [];
   }
   const visible: VisibleNode[] = [];
-  const visit = (nodeId: NodeId, depth: number) => {
+  const stack = zoomNode.children
+    .slice()
+    .reverse()
+    .map((nodeId) => ({ nodeId, depth: 0 }));
+  while (stack.length > 0) {
+    const { nodeId, depth } = stack.pop()!;
     const node = document.nodes[nodeId];
     if (!node) {
-      return;
+      continue;
     }
     visible.push({ id: nodeId, node, depth });
     if (node.collapsed) {
-      return;
+      continue;
     }
-    for (const childId of node.children) {
-      visit(childId, depth + 1);
+    for (let index = node.children.length - 1; index >= 0; index -= 1) {
+      stack.push({ nodeId: node.children[index], depth: depth + 1 });
     }
-  };
-  for (const childId of zoomNode.children) {
-    visit(childId, 0);
   }
   return visible;
 }

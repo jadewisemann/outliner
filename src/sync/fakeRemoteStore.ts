@@ -4,6 +4,7 @@ export class FakeRemoteStore implements RemoteStore {
   private snapshot: Uint8Array | null = null;
   private updates = new Map<string, RemoteUpdate>();
   private subscribers = new Set<(update: RemoteUpdate) => void>();
+  private appendFailures = 0;
 
   async readSnapshot(): Promise<Uint8Array | null> {
     return this.snapshot;
@@ -14,6 +15,10 @@ export class FakeRemoteStore implements RemoteStore {
   }
 
   async appendUpdate(update: RemoteUpdate): Promise<void> {
+    if (this.appendFailures > 0) {
+      this.appendFailures -= 1;
+      throw new Error("Fake remote append failed");
+    }
     this.updates.set(update.id, update);
     for (const subscriber of this.subscribers) {
       subscriber(update);
@@ -34,5 +39,9 @@ export class FakeRemoteStore implements RemoteStore {
     return () => {
       this.subscribers.delete(onUpdate);
     };
+  }
+
+  failNextAppend(): void {
+    this.appendFailures += 1;
   }
 }

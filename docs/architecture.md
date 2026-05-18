@@ -18,7 +18,7 @@ UI Components
   -> Persistence / Remote Sync
 ```
 
-현재 MVP 구현에서는 domain normalized tree가 행동의 기준이다. React UI는 domain command 결과를 표시하고, Lexical은 active row의 텍스트 입력 adapter로만 동작한다. Yjs adapter는 현재 `OutlineSnapshot`을 Y.Doc에 저장하는 snapshot 기반 adapter이며, 다음 단계에서 앱 런타임 상태의 중심으로 승격한다.
+현재 MVP 구현에서는 domain normalized tree가 행동의 기준이다. React UI는 domain command 결과를 표시하고, Lexical은 active row의 텍스트 입력 adapter로만 동작한다. 앱 런타임은 local persistence에서 복원한 `OutlineSnapshot`을 Yjs-backed workspace의 source of truth로 사용하고, 선택적으로 `RemoteStore`를 연결해 원격 update를 pull/push/subscribe한다.
 
 ### UI Components
 
@@ -75,6 +75,12 @@ type ViewState = {
   selectedNodeId?: NodeId;
   selectionAnchorNodeId?: NodeId;
   selectionFocusNodeId?: NodeId;
+  cursors?: OutlineCursor[];
+};
+
+type OutlineCursor = {
+  nodeId: NodeId;
+  offset: number;
 };
 ```
 
@@ -106,6 +112,33 @@ type BulkSelection = {
 - clipboard copy는 indentation 기반 plain text를 기본 형식으로 사용한다.
 - clipboard paste는 선행 tab 또는 2개 이상의 space indentation을 depth로 해석한다.
 - 벌크 명령도 Yjs/UndoManager에서는 하나의 사용자 action으로 묶여야 한다.
+
+## 4.1 키보드 파워 편집 구조
+
+키보드 파워 편집은 visible node list를 공통 기준으로 사용하되, domain command는 실제 tree 관계를 직접 변경한다. UI shortcut은 active row의 Lexical command를 앱 command로 번역하고, domain command 결과만 document/view state에 반영한다.
+
+```ts
+type MoveDirection = "up" | "down";
+
+type MultiCursorState = {
+  primary: OutlineCursor;
+  cursors: OutlineCursor[];
+};
+```
+
+규칙:
+
+- `Alt+ArrowUp/Down`은 현재 active node 또는 range selection을 이동하는 구조 command다.
+- 노드 이동은 기본적으로 같은 부모 안의 이전/다음 sibling block과 순서를 교환한다.
+- 첫 자식을 위로 이동하거나 마지막 자식을 아래로 이동하는 경우에는 부모 경계를 넘는다. 이전/다음 부모 sibling이 있으면 그 sibling의 마지막/첫 자식으로 이동하고, 없으면 현재 부모 앞/뒤로 outdent한다.
+- 다중 선택 이동은 `normalizeTopLevelSelection`으로 중복 subtree를 제거한 뒤 하나의 블록으로 처리한다.
+- 접힌 노드는 hidden descendants를 포함한 subtree 단위로 이동한다.
+- 이동 후 selection anchor/focus와 active node id는 가능하면 유지한다.
+- `Mod+Alt+ArrowUp/Down`은 visible row에 `OutlineCursor`를 추가한다.
+- 멀티 커서가 시작되면 range selection은 해제되고, range selection이 시작되면 멀티 커서는 해제된다.
+- 멀티 커서 텍스트 편집은 domain command가 여러 node text 변경을 하나의 transaction으로 만든다.
+- Lexical은 primary cursor가 있는 active row의 IME/editor adapter로 남고, 보조 커서는 앱 state와 row overlay로 표현한다.
+- 키보드 파워 편집 명령도 Yjs/UndoManager에서는 하나의 사용자 action으로 묶여야 한다.
 
 ## 5. Yjs 구조
 
@@ -145,10 +178,13 @@ users/{userId}/workspaces/root/
 동작:
 
 1. 앱은 로컬 persistence에서 먼저 Y.Doc 또는 `OutlineSnapshot`을 복원한다.
-2. 원격 snapshot을 가져와 `Y.applyUpdate` 한다.
+2. 원격 설정이 있으면 snapshot을 가져와 Yjs workspace에 적용한다.
 3. 아직 적용하지 않은 updates를 적용한다.
 4. 로컬 변경은 update log에 append한다.
-5. 일정 기준을 넘으면 snapshot을 다시 만들고 오래된 updates를 정리한다.
+5. subscribe로 받은 remote update는 applied id set으로 중복을 막고 workspace에 적용한다.
+6. 일정 기준을 넘으면 snapshot을 다시 만들고 오래된 updates를 정리한다.
+
+앱의 런타임 흐름은 `local persistence -> Yjs workspace -> RemoteStore sync` 순서다. `RemoteStore`가 주입되지 않으면 Firebase 설정이 없는 것으로 보고 `local-only` 상태로 기존 로컬 편집/저장/Undo/Redo 동작을 유지한다.
 
 ## 7. Sync 상태
 
@@ -187,7 +223,7 @@ interface RemoteStore {
 }
 ```
 
-테스트와 앱 통합 순서는 FakeRemoteStore가 먼저다. Firebase Realtime Database adapter는 같은 인터페이스를 구현하되, FakeRemoteStore 기반으로 two-client merge, duplicate update, offline queue flush가 검증된 뒤 앱 설정에 연결한다.
+테스트와 앱 통합 순서는 FakeRemoteStore가 먼저다. Firebase Realtime Database adapter는 같은 인터페이스를 구현한다. `App`은 선택적 `remoteStore`를 받을 수 있고, `VITE_FIREBASE_*`와 `VITE_OUTLINER_USER_ID` 설정이 없으면 remote adapter를 만들지 않는다.
 
 ## 9. 오프라인 큐
 

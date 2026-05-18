@@ -5,7 +5,7 @@ import {
   indentNode,
   updateNodeText
 } from "../domain/outline";
-import type { Clock, IdGenerator, OutlineDocument } from "../domain/outlineTypes";
+import type { Clock, IdGenerator, NodeId, OutlineDocument, OutlineNode } from "../domain/outlineTypes";
 
 export function makeIdGenerator(prefix = "node"): IdGenerator {
   let next = 1;
@@ -34,18 +34,74 @@ export function makeDocumentWithTexts(texts: string[]): OutlineDocument {
 }
 
 export function makeLargeDocument(count: number): OutlineDocument {
-  const createId = makeIdGenerator("large");
-  const now = makeClock();
-  let doc = createEmptyDocument(now);
-  const first = ensureEditableNode(doc, createId, now);
-  doc = updateNodeText(first.document, first.nodeId, "Node 1", now);
-  let lastId = first.nodeId;
-  for (let i = 2; i <= count; i += 1) {
-    const created = createNodeAfter(doc, lastId, createId, now);
-    doc = updateNodeText(created.document, created.nodeId, `Node ${i}`, now);
-    lastId = created.nodeId;
+  const timestamp = 1_000;
+  const rootId = "root";
+  const children = Array.from({ length: count }, (_, index) => `large-${index + 1}`);
+  const nodes: Record<NodeId, OutlineNode> = {
+    [rootId]: {
+      id: rootId,
+      text: "",
+      children,
+      collapsed: false,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    }
+  };
+  for (let index = 0; index < count; index += 1) {
+    const id = children[index];
+    nodes[id] = {
+      id,
+      text: `Node ${index + 1}`,
+      children: [],
+      collapsed: false,
+      createdAt: timestamp + index + 1,
+      updatedAt: timestamp + index + 1
+    };
   }
-  return doc;
+  return { rootId, nodes };
+}
+
+export function makeLargeGroupedDocument(parentCount: number, childrenPerParent: number): OutlineDocument {
+  const timestamp = 1_000;
+  const rootId = "root";
+  const rootChildren: NodeId[] = [];
+  const nodes: Record<NodeId, OutlineNode> = {
+    [rootId]: {
+      id: rootId,
+      text: "",
+      children: rootChildren,
+      collapsed: false,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    }
+  };
+  let tick = timestamp + 1;
+  for (let parentIndex = 1; parentIndex <= parentCount; parentIndex += 1) {
+    const parentId = `group-${parentIndex}`;
+    const childIds = Array.from({ length: childrenPerParent }, (_, childIndex) => `${parentId}-${childIndex + 1}`);
+    rootChildren.push(parentId);
+    nodes[parentId] = {
+      id: parentId,
+      text: `Group ${parentIndex}`,
+      children: childIds,
+      collapsed: false,
+      createdAt: tick,
+      updatedAt: tick
+    };
+    tick += 1;
+    for (const childId of childIds) {
+      nodes[childId] = {
+        id: childId,
+        text: childId,
+        children: [],
+        collapsed: false,
+        createdAt: tick,
+        updatedAt: tick
+      };
+      tick += 1;
+    }
+  }
+  return { rootId, nodes };
 }
 
 export function makeNestedDocument(): OutlineDocument {

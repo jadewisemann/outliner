@@ -2,7 +2,7 @@
 
 모든 Phase는 TDD로 진행한다. 각 기능은 실패하는 테스트를 먼저 만들고, 최소 구현으로 통과시킨 뒤, 리팩터링한다.
 
-현재 구현 상태는 Phase 0~4 완료, Phase 5~6 기반 모듈 일부 구현이다. 다음 개발자는 Phase 5부터 이어가되, 이미 존재하는 `yjsAdapter`, `localPersistence`, `remoteSync`, `syncQueue`를 버리지 않고 앱 런타임에 연결하는 방향으로 진행한다.
+현재 구현 상태는 Phase 0~7 완료, Phase 8 진행 중이다. 10,000개 visible selector 성능 테스트와 기본 virtual list 렌더링은 추가되었고, 다음 개발자는 Yjs-backed runtime과 RemoteStore sync 구조를 유지한 채 대량 문서 기본 편집 성능과 50,000개 노드 병목을 검증한다.
 
 ## Phase 0: 프로젝트 부트스트랩 - 완료됨
 
@@ -112,19 +112,21 @@ Dynalist식 빠른 구조 편집을 위해 멀티라인 붙여넣기, 다중 노
 - Playwright에서 여러 줄 붙여넣기와 선택 범위 들여쓰기/삭제가 통과한다.
 - 벌크 명령은 단일 노드 명령과 같은 domain model 위에서 동작한다.
 
-## Phase 5: Yjs 런타임 통합과 Undo/Redo - 다음 구현 우선순위
+## Phase 5: Yjs 런타임 통합과 Undo/Redo - 완료됨
 
 ### 목표
 
 현재 앱의 `useState + IndexedDB snapshot save` 흐름을 Yjs-backed workspace 흐름으로 승격한다. MVP에서는 normalized `OutlineSnapshot`을 Y.Doc에 저장하고, domain command 결과를 Yjs transaction으로 반영한다. `@lexical/yjs` 직접 binding은 리치텍스트 단계 전까지 보류한다.
 
-### 현재 기반
+### 완료된 산출물
 
 - `src/sync/yjsAdapter.ts`는 snapshot 저장, update encode/apply, UndoManager 기본 테스트를 가진다.
 - `src/persistence/localPersistence.ts`는 IndexedDB snapshot 저장/복원을 가진다.
 - `src/sync/remoteSync.ts`와 `syncQueue.ts`는 원격 sync의 기초 상태 전이를 가진다.
+- `useOutlineWorkspace`는 local persistence snapshot을 Yjs-backed runtime으로 복원한다.
+- 앱은 Yjs-backed snapshot을 렌더링하고 `Mod+Z`, `Mod+Shift+Z`, `Mod+Y` Undo/Redo shortcut을 처리한다.
 
-### 먼저 작성할 테스트
+### 완료된 테스트
 
 - 앱 시작 시 local persistence snapshot을 Yjs workspace로 복원한다.
 - Yjs workspace snapshot이 React 화면 상태로 렌더링된다.
@@ -150,13 +152,26 @@ Dynalist식 빠른 구조 편집을 위해 멀티라인 붙여넣기, 다중 노
 - Yjs adapter 테스트와 앱 통합 테스트가 통과한다.
 - remote sync 구현 전에도 local-only 편집은 안정적으로 동작한다.
 
-## Phase 6: 개인 다기기 원격 동기화
+## Phase 6: 개인 다기기 원격 동기화 - 완료됨
 
 ### 목표
 
 snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 변경을 병합한다. Firebase 연결보다 FakeRemoteStore 기반 통합 테스트를 먼저 완성한다.
 
-### 먼저 작성할 테스트
+### 완료된 산출물
+
+- `RemoteStore` contract 기반 remote sync orchestration
+- remote snapshot pull과 update log pull/push
+- duplicate update applied id 관리
+- append 실패 시 offline queue 유지와 재시도 flush
+- subscribe 기반 remote update 반영
+- snapshot 기반 two-client merge helper
+- `useOutlineWorkspace`와 `App`의 optional `remoteStore` 연결
+- runtime `syncStatus` badge 연결
+- Firebase env 설정 기반 optional adapter 생성
+- Firebase 설정이 없을 때 `local-only` fallback
+
+### 완료된 테스트
 
 - remote snapshot을 local Yjs workspace에 적용한다.
 - remote update log를 수신 순서와 무관하게 적용한다.
@@ -164,14 +179,14 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - append 실패 시 update가 offline queue에 남는다.
 - 재연결 시 pending update가 flush되고 status가 `synced`가 된다.
 - 두 fake client가 동시에 편집한 변경이 충돌 복사본 없이 병합된다.
-- 두 browser context가 같은 fake 또는 Firebase-backed workspace를 통해 변경을 주고받는다.
+- shared fake remote store를 통해 두 app runtime이 변경을 주고받는다.
 
-### 구현 항목
+### 구현 메모
 
 - `RemoteStore` contract를 기준으로 sync orchestration을 앱에서 사용할 수 있게 정리한다.
-- FakeRemoteStore 통합 테스트를 Firebase adapter 테스트보다 먼저 확장한다.
+- FakeRemoteStore 통합 테스트를 Firebase adapter 테스트보다 먼저 확장했다.
 - Firebase configuration은 선택적 런타임 설정으로 둔다. 설정이 없으면 `local-only`로 동작한다.
-- local Yjs update를 `RemoteUpdate`로 변환하는 client id, seq, update id 생성 규칙을 확정한다.
+- local Yjs update는 runtime client id와 client-local seq를 사용해 `${clientId}:${seq}` update id로 append한다.
 - subscribe로 받은 remote update는 applied id set을 통해 중복 적용을 방지한다.
 - offline queue flush와 sync status badge를 앱 상태에 연결한다.
 
@@ -182,7 +197,50 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - 오프라인 편집 후 재연결 동기화가 통과한다.
 - Firebase 설정이 없어도 local-only MVP가 깨지지 않는다.
 
-## Phase 7: 성능과 가상화
+## Phase 7: 키보드 파워 편집 - 완료됨
+
+### 목표
+
+키보드 기반 아웃라이너로서 구조 편집의 속도를 높인다. `Alt+ArrowUp/Down` 노드 이동, 선택 범위 이동, 멀티 커서 생성을 domain command와 UI shortcut으로 연결한다.
+
+### 먼저 작성할 테스트
+
+- 현재 노드를 `Alt+ArrowUp`으로 이전 형제 앞으로 이동한다.
+- 현재 노드를 `Alt+ArrowDown`으로 다음 형제 뒤로 이동한다.
+- 노드 이동은 같은 부모 안의 이전/다음 sibling block과 교환한다.
+- 첫 자식/마지막 자식 경계에서는 이전/다음 부모 sibling의 자식으로 이동하거나 현재 부모 앞/뒤로 outdent한다.
+- Root 레벨의 첫 visible 노드를 위로 이동하거나 마지막 visible 노드를 아래로 이동하면 no-op이다.
+- 접힌 부모 노드를 이동하면 hidden descendants가 함께 이동한다.
+- 선택된 visible range를 `Alt+ArrowUp/Down`으로 순서를 유지해 이동한다.
+- 이동 후 선택 anchor/focus가 유지된다.
+- `Mod+Alt+ArrowUp/Down`으로 위아래 visible row에 보조 커서를 추가한다.
+- 멀티 커서 상태에서 텍스트 입력, `Backspace`, `Delete`가 모든 커서 위치에 적용된다.
+- 멀티 커서 상태에서 `Escape`가 보조 커서를 정리한다.
+
+### 구현 항목
+
+- `moveNodeUp`, `moveNodeDown`
+- `bulkMoveNodesUp`, `bulkMoveNodesDown`
+- `OutlineCursor`와 multi cursor view state
+- Lexical active row command bridge 확장
+- 보조 커서 row overlay와 focus 유지
+- Undo/Redo transaction grouping
+- keyboard power editing E2E
+
+### 완료된 검증
+
+- `npm run typecheck` 통과
+- `npm run test` 통과: 80 tests
+- `npm run test:e2e` 통과: 10 Playwright tests
+
+### 완료 기준
+
+- 마우스 없이 노드 작성, depth 변경, 접기/펼치기, 순서 이동, 범위 이동이 가능하다.
+- 멀티 커서로 여러 row에 같은 텍스트 편집을 적용할 수 있다.
+- 모든 파워 편집 명령이 도메인 테스트와 컴포넌트 shortcut 테스트를 가진다.
+- Undo/Redo가 노드 이동과 멀티 커서 편집을 사용자 action 단위로 되돌린다.
+
+## Phase 8: 성능과 가상화
 
 ### 목표
 
@@ -190,17 +248,17 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 
 ### 먼저 작성할 테스트
 
-- 10,000개 노드 fixture에서 visible node 계산이 제한 시간 안에 끝난다.
-- 접힘 상태가 대량 fixture에서도 정확히 반영된다.
-- 줌인 상태에서는 해당 subtree만 visible list에 포함된다.
-- typing 중 active row 외 전체 row가 불필요하게 다시 렌더링되지 않는다.
+- 10,000개 노드 fixture에서 visible node 계산이 제한 시간 안에 끝난다. - 완료됨
+- 접힘 상태가 대량 fixture에서도 정확히 반영된다. - 완료됨
+- 줌인 상태에서는 해당 subtree만 visible list에 포함된다. - 완료됨
+- typing 중 active row 외 전체 row가 불필요하게 다시 렌더링되지 않는다. - 완료됨
 
 ### 구현 항목
 
-- 대량 outline fixture generator
-- visible node selector memoization 강화
-- virtual list 적용
-- active row Lexical mount count 검증
+- 대량 outline fixture generator - 완료됨
+- visible node selector traversal 안정화 - 완료됨
+- virtual list 적용 - 기본 렌더링 완료
+- active row Lexical mount count 검증 - 완료됨
 - render profiling 기준 정리
 
 ### 완료 기준
@@ -209,7 +267,7 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - 입력 시 전체 트리를 불필요하게 재렌더링하지 않는다.
 - 50,000개 노드 목표를 막는 구조적 병목이 문서화되어 있다.
 
-## Phase 8: 모바일 패키징 - 웹 MVP 이후
+## Phase 9: 모바일 패키징 - 웹 MVP 이후
 
 ### 목표
 

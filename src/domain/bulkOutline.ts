@@ -230,6 +230,32 @@ export function bulkOutdentNodes(document: OutlineDocument, nodeIds: NodeId[], n
   return next;
 }
 
+export function bulkMoveNodesUp(
+  document: OutlineDocument,
+  nodeIds: NodeId[],
+  _zoomNodeId: NodeId = document.rootId,
+  now: Clock = Date.now
+): OutlineDocument {
+  const selected = normalizeTopLevelSelection(document, nodeIds);
+  if (selected.length === 0) {
+    return document;
+  }
+  return moveSelectedSiblingBlocks(document, selected, "up", now);
+}
+
+export function bulkMoveNodesDown(
+  document: OutlineDocument,
+  nodeIds: NodeId[],
+  _zoomNodeId: NodeId = document.rootId,
+  now: Clock = Date.now
+): OutlineDocument {
+  const selected = normalizeTopLevelSelection(document, nodeIds);
+  if (selected.length === 0) {
+    return document;
+  }
+  return moveSelectedSiblingBlocks(document, selected, "down", now);
+}
+
 export function bulkDeleteNodes(
   document: OutlineDocument,
   nodeIds: NodeId[],
@@ -364,6 +390,122 @@ function collectSubtreeIds(document: OutlineDocument, nodeId: NodeId, ids: Set<N
   for (const childId of node.children) {
     collectSubtreeIds(document, childId, ids);
   }
+}
+
+function moveSelectedSiblingBlocks(
+  document: OutlineDocument,
+  nodeIds: NodeId[],
+  direction: "up" | "down",
+  now: Clock
+): OutlineDocument {
+  const timestamp = now();
+  let nodes = document.nodes;
+  for (const group of groupByParent(document, nodeIds)) {
+    const parent = nodes[group.parentId];
+    const selected = new Set(group.ids);
+    const moving = parent.children.filter((id) => selected.has(id));
+    if (moving.length === 0) {
+      continue;
+    }
+    const firstIndex = parent.children.findIndex((id) => selected.has(id));
+    const lastIndex = findLastIndex(parent.children, (id) => selected.has(id));
+    const swapId =
+      direction === "up"
+        ? findSiblingBefore(parent.children, firstIndex, selected)
+        : findSiblingAfter(parent.children, lastIndex, selected);
+    if (swapId) {
+      const withoutMoving = parent.children.filter((id) => !selected.has(id));
+      const swapIndex = withoutMoving.indexOf(swapId);
+      const insertIndex = direction === "up" ? swapIndex : swapIndex + 1;
+      const nextChildren = [...withoutMoving];
+      nextChildren.splice(insertIndex, 0, ...moving);
+      nodes = {
+        ...nodes,
+        [group.parentId]: {
+          ...parent,
+          children: nextChildren,
+          updatedAt: timestamp
+        }
+      };
+      continue;
+    }
+
+    if (group.parentId === document.rootId) {
+      continue;
+    }
+    const grandParentId = findParentId({ ...document, nodes }, group.parentId);
+    if (!grandParentId) {
+      continue;
+    }
+    const grandParent = nodes[grandParentId];
+    const parentIndex = grandParent.children.indexOf(group.parentId);
+    const parentChildren = parent.children.filter((id) => !selected.has(id));
+    if (direction === "up" && parentIndex > 0) {
+      const previousParentSiblingId = grandParent.children[parentIndex - 1];
+      const previousParentSibling = nodes[previousParentSiblingId];
+      nodes = {
+        ...nodes,
+        [group.parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
+        [previousParentSiblingId]: {
+          ...previousParentSibling,
+          children: [...previousParentSibling.children, ...moving],
+          collapsed: false,
+          updatedAt: timestamp
+        }
+      };
+      continue;
+    }
+    if (direction === "down" && parentIndex < grandParent.children.length - 1) {
+      const nextParentSiblingId = grandParent.children[parentIndex + 1];
+      const nextParentSibling = nodes[nextParentSiblingId];
+      nodes = {
+        ...nodes,
+        [group.parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
+        [nextParentSiblingId]: {
+          ...nextParentSibling,
+          children: [...moving, ...nextParentSibling.children],
+          collapsed: false,
+          updatedAt: timestamp
+        }
+      };
+      continue;
+    }
+    const grandParentChildren = [...grandParent.children];
+    grandParentChildren.splice(direction === "up" ? parentIndex : parentIndex + 1, 0, ...moving);
+    nodes = {
+      ...nodes,
+      [group.parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
+      [grandParentId]: { ...grandParent, children: grandParentChildren, updatedAt: timestamp }
+    };
+  }
+  return { ...document, nodes };
+}
+
+function findSiblingBefore(children: NodeId[], startIndex: number, selected: Set<NodeId>): NodeId | undefined {
+  for (let index = startIndex - 1; index >= 0; index -= 1) {
+    if (!selected.has(children[index])) {
+      return children[index];
+    }
+  }
+  return undefined;
+}
+
+function findSiblingAfter(children: NodeId[], startIndex: number, selected: Set<NodeId>): NodeId | undefined {
+  for (let index = startIndex + 1; index < children.length; index += 1) {
+    if (!selected.has(children[index])) {
+      return children[index];
+    }
+  }
+  return undefined;
+}
+
+function findLastIndex<T>(items: T[], predicate: (item: T) => boolean): number {
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (predicate(items[index])) {
+      return index;
+    }
+  }
+  return -1;
 }
 
 function serializeSubtree(document: OutlineDocument, nodeId: NodeId, depth: number, lines: string[]): void {

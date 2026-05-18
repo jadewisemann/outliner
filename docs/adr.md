@@ -88,3 +88,18 @@ Architecture Decision Record 형식으로 제품/기술 결정을 남긴다. 결
 - 이유: 현재 제품의 핵심은 리치텍스트 AST가 아니라 빠른 outline 구조 편집이다. normalized domain model과 command 테스트가 이미 행동 기준이므로, `@lexical/yjs` 직접 binding을 먼저 도입하면 MVP 복잡도가 커진다.
 - 영향: Phase 5는 앱 상태를 Yjs-backed snapshot runtime으로 승격하고 Undo/Redo를 완성한다. Phase 6은 같은 Yjs update를 RemoteStore snapshot + updates 구조로 동기화한다.
 - 후속 검증: 리치텍스트, custom node, 부분 업데이트 성능이 필요해지는 시점에 `@lexical/yjs` 또는 더 세분화된 Yjs tree 모델로 전환할지 다시 평가한다.
+
+## ADR-013: 원격 동기화는 선택적 RemoteStore 주입으로 연결한다
+
+- 상태: 확정
+- 결정: 앱은 기본적으로 `local-only`로 실행하고, 원격 설정이 있을 때만 `RemoteStore`를 주입해 remote snapshot/update sync를 활성화한다.
+- 이유: 로컬 우선 MVP는 Firebase 설정이나 네트워크 상태 때문에 첫 실행과 편집이 막히면 안 된다. 같은 인터페이스로 `FakeRemoteStore`와 `FirebaseRemoteStore`를 교체 가능하게 두면 테스트 가능성도 유지된다.
+- 영향: `App`과 workspace runtime은 optional `remoteStore`를 받는다. Firebase configuration이 없는 환경에서는 remote adapter를 만들지 않고 기존 로컬 저장, Undo/Redo, export 기능을 그대로 유지한다.
+
+## ADR-014: 키보드 파워 편집은 visible order 기반 domain command로 구현한다
+
+- 상태: 제안
+- 결정: `Alt+ArrowUp/Down` 노드 이동, 선택 범위 이동, 멀티 커서 편집을 별도 UI 트릭이 아니라 visible order 기반 domain command로 구현한다.
+- 이유: 키보드 기반 아웃라이너는 작성뿐 아니라 구조 재배치와 반복 편집도 마우스 없이 빨라야 한다. UI shortcut만으로 처리하면 persistence, sync, Undo/Redo, 테스트 기준이 흩어진다.
+- 영향: Phase 7에서 `moveNodeUp/Down`, `bulkMoveNodesUp/Down`, `OutlineCursor` 상태, Lexical command bridge, Undo/Redo transaction grouping을 함께 설계한다.
+- 제약: 노드 이동은 기본적으로 같은 부모 안의 이전/다음 sibling block과 순서를 교환한다. 단, 첫 자식을 위로 이동하거나 마지막 자식을 아래로 이동하는 경우에는 부모 경계를 넘는다. 이전/다음 부모 sibling이 있으면 그 sibling의 마지막/첫 자식으로 이동하고, 없으면 현재 부모 앞/뒤로 outdent한다.

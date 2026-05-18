@@ -20,17 +20,16 @@
 - IndexedDB 기반 local persistence snapshot 복원
 - Yjs snapshot encode/apply/idempotency 기초
 - sync queue 기초 상태 전이
-- FakeRemoteStore를 통한 remote snapshot/update pull-push 기초
+- FakeRemoteStore를 통한 remote snapshot/update pull-push, duplicate idempotency, offline queue flush, subscribe update, two-client merge
+- Yjs-backed app runtime과 RemoteStore 통합: local-only fallback, remote pull, local push, offline status, shared fake remote two-runtime sync
 - 벌크 편집 E2E: indented paste, range indent, range delete
+- 키보드 파워 편집 도메인/컴포넌트/E2E: node/range move, parent-boundary move, multi cursor editing
 
 ### 다음 테스트 우선순위
 
-1. reload 후 문서, collapsed state, zoom state 복원 E2E
-2. Yjs-backed app state와 Undo/Redo 통합 테스트
-3. Fake two-client remote sync 병합 테스트
-4. offline queue reconnect flush 테스트
-5. duplicate remote update idempotency 테스트
-6. 10,000 node visible selector 성능 테스트
+1. 두 browser context 또는 browser-backed sync E2E
+2. reload 후 문서, collapsed state, zoom state 복원 E2E
+3. 10,000 node visible selector 성능 테스트
 
 ### 단위 테스트
 
@@ -118,6 +117,15 @@ describe("outline commands", () => {
   it("does nothing when indenting the first sibling", () => {});
   it("moves the current node after its parent when outdenting", () => {});
   it("does nothing when outdenting a root child", () => {});
+  it("moves the current node before the previous visible sibling with alt arrow up", () => {});
+  it("moves the current node after the next visible sibling with alt arrow down", () => {});
+  it("moves a first child up into the previous parent sibling when it preserves structure", () => {});
+  it("outdents a first child above its parent when no previous parent sibling exists", () => {});
+  it("moves a last child down into the next parent sibling when it preserves structure", () => {});
+  it("outdents a last child below its parent when no next parent sibling exists", () => {});
+  it("does nothing when moving the first visible node up", () => {});
+  it("does nothing when moving the root-level last visible node down", () => {});
+  it("moves a collapsed subtree as one visible block", () => {});
 });
 ```
 
@@ -132,12 +140,29 @@ describe("bulk outline commands", () => {
   it("normalizes nested selections to top-level selected subtrees", () => {});
   it("indents selected sibling blocks while preserving order", () => {});
   it("outdents selected sibling blocks while preserving order", () => {});
+  it("moves selected sibling blocks up while preserving order", () => {});
+  it("moves selected sibling blocks down while preserving order", () => {});
+  it("keeps range selection after moving selected blocks", () => {});
   it("deletes selected top-level subtrees", () => {});
   it("serializes selected nodes as indented plain text", () => {});
 });
 ```
 
-### 4.3 Visible node 테스트
+### 4.3 멀티 커서 테스트
+
+```ts
+describe("multi cursor editing", () => {
+  it("adds a cursor to the previous visible row", () => {});
+  it("adds a cursor to the next visible row", () => {});
+  it("clamps cursor offsets to each target node text length", () => {});
+  it("applies inserted text to every cursor position", () => {});
+  it("applies backspace and delete to every cursor position", () => {});
+  it("clears multi cursors with escape", () => {});
+  it("clears range selection when multi cursor mode starts", () => {});
+});
+```
+
+### 4.4 Visible node 테스트
 
 ```ts
 describe("visible outline nodes", () => {
@@ -148,7 +173,7 @@ describe("visible outline nodes", () => {
 });
 ```
 
-### 4.4 Persistence 테스트
+### 4.5 Persistence 테스트
 
 ```ts
 describe("local persistence", () => {
@@ -159,7 +184,7 @@ describe("local persistence", () => {
 });
 ```
 
-### 4.5 Yjs와 Undo/Redo 테스트
+### 4.6 Yjs와 Undo/Redo 테스트
 
 ```ts
 describe("yjs workspace runtime", () => {
@@ -167,10 +192,12 @@ describe("yjs workspace runtime", () => {
   it("records text and structure commands as undoable transactions", () => {});
   it("undoes and redoes text edits", () => {});
   it("undoes and redoes structure edits", () => {});
+  it("undoes and redoes node move commands", () => {});
+  it("undoes and redoes multi cursor edits as one user action", () => {});
 });
 ```
 
-### 4.6 Sync 테스트
+### 4.7 Sync 테스트
 
 ```ts
 describe("remote sync", () => {
@@ -182,12 +209,14 @@ describe("remote sync", () => {
 });
 ```
 
-### 4.7 E2E 테스트
+### 4.8 E2E 테스트
 
 ```ts
 test("creates and structures an outline with the keyboard", async ({ page }) => {});
 test("pastes an indented outline as multiple nodes", async ({ page }) => {});
 test("bulk indents and deletes a selected visible range", async ({ page }) => {});
+test("moves nodes and selected ranges with alt arrow shortcuts", async ({ page }) => {});
+test("edits multiple rows with keyboard multi cursors", async ({ page }) => {});
 test("restores the outline after reload", async ({ page }) => {});
 test("syncs edits between two browser contexts", async ({ browser }) => {});
 test("keeps offline edits and syncs them after reconnect", async ({ page }) => {});
