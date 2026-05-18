@@ -26,6 +26,8 @@ export type RemoteStoreMetering = {
   storedBytes: number;
 };
 
+export type RemoteSnapshotWriteResult = "accepted" | "rejected";
+
 export type RemoteSnapshotMetadata = {
   version: number;
   clientId: string;
@@ -55,7 +57,7 @@ export interface RemoteStore {
 
 export interface RemoteStoreV2 {
   readLatestSnapshot(): Promise<RemoteSnapshotRecord | null>;
-  writeLatestSnapshot(record: RemoteSnapshotRecord): Promise<void>;
+  writeLatestSnapshot(record: RemoteSnapshotRecord): Promise<RemoteSnapshotWriteResult>;
   subscribe?(onSnapshotChanged: () => void): () => void;
   getMetering?(): RemoteStoreMetering;
 }

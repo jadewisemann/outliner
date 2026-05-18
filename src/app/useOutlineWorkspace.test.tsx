@@ -307,6 +307,13 @@ describe("useOutlineWorkspace", () => {
 
     await waitFor(() => expect(result.current.syncStatus).toBe("offline"));
     expect(persistence.saved.at(-1)?.document).toBe(second);
+
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(async () => expect((await remoteStore.readLatestSnapshot())?.version).toBe(1));
+    await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
   });
 
   it("syncs a local commit into another runtime through a shared fake remote store", async () => {

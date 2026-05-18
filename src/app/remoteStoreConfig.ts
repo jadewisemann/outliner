@@ -1,7 +1,7 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 import { BrowserRemoteStoreV2 } from "../sync/browserRemoteStoreV2";
-import { FirebaseRemoteStoreV2 } from "../sync/firebaseRemoteStoreV2";
+import { FirebaseRemoteStoreV2, isValidFirebasePathKey } from "../sync/firebaseRemoteStoreV2";
 import type { RemoteStoreV2 } from "../sync/syncTypes";
 
 export function createConfiguredRemoteStore(): RemoteStoreV2 | undefined {
@@ -23,6 +23,7 @@ export function createConfiguredRemoteStore(): RemoteStoreV2 | undefined {
     VITE_OUTLINER_USER_ID
   } = import.meta.env;
   const userId = searchParams.get("user") ?? VITE_OUTLINER_USER_ID;
+  const workspaceId = searchParams.get("workspace") ?? "root";
 
   if (
     !VITE_FIREBASE_API_KEY ||
@@ -30,7 +31,9 @@ export function createConfiguredRemoteStore(): RemoteStoreV2 | undefined {
     !VITE_FIREBASE_DATABASE_URL ||
     !VITE_FIREBASE_PROJECT_ID ||
     !VITE_FIREBASE_APP_ID ||
-    !userId
+    !userId ||
+    !isValidFirebasePathKey(userId) ||
+    !isValidFirebasePathKey(workspaceId)
   ) {
     return undefined;
   }
@@ -43,7 +46,7 @@ export function createConfiguredRemoteStore(): RemoteStoreV2 | undefined {
     appId: VITE_FIREBASE_APP_ID
   });
 
-  return new FirebaseRemoteStoreV2(getDatabase(app), userId);
+  return new FirebaseRemoteStoreV2(getDatabase(app), userId, workspaceId);
 }
 
 export function shouldUseFirebaseRemote(searchParams: URLSearchParams): boolean {

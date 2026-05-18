@@ -43,11 +43,21 @@ export async function writeRemoteSnapshotV2(
     return "error";
   }
   try {
-    await store.writeLatestSnapshot(record);
-    return "synced";
+    const result = await store.writeLatestSnapshot(record);
+    return result === "accepted" ? "synced" : "conflict";
   } catch {
     return "offline";
   }
+}
+
+export function canReplaceRemoteSnapshot(incoming: RemoteSnapshotRecord, current: RemoteSnapshotRecord | null): boolean {
+  if (!current) {
+    return true;
+  }
+  if (incoming.version > current.version) {
+    return true;
+  }
+  return incoming.version === current.version && incoming.clientId === current.clientId;
 }
 
 export function applyRemoteSnapshotRecord(workspace: YjsWorkspace, record: RemoteSnapshotRecord): void {

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { BrowserRemoteStoreV2 } from "./browserRemoteStoreV2";
 
 describe("BrowserRemoteStoreV2", () => {
@@ -37,5 +37,23 @@ describe("BrowserRemoteStoreV2", () => {
 
     expect(snapshot?.clientId).toBe("legacy-browser");
     expect(window.localStorage.getItem(`outliner:browser-remote:${workspaceId}:v2`)).toContain("legacy-browser");
+  });
+
+  it("continues notifying after unsubscribe and resubscribe on the same instance", async () => {
+    const workspaceId = crypto.randomUUID();
+    const receiver = new BrowserRemoteStoreV2(workspaceId);
+    const firstListener = vi.fn();
+    const secondListener = vi.fn();
+
+    receiver.subscribe(firstListener)();
+    receiver.subscribe(secondListener);
+    await receiver.writeLatestSnapshot({
+      version: 1,
+      clientId: "client-a",
+      updatedAt: 1,
+      state: new Uint8Array([1])
+    });
+
+    expect(secondListener).toHaveBeenCalled();
   });
 });

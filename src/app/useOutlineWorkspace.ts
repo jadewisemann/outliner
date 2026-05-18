@@ -67,20 +67,34 @@ export function useOutlineWorkspace({
   const pendingRemoteRecordRef = useRef<RemoteSnapshotRecord | null>(null);
   const remoteDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const pullingRemoteRef = useRef(false);
+  const remoteWriteTokenRef = useRef(0);
+  const pullLatestRemoteSnapshotRef = useRef<() => Promise<void>>(async () => {});
   const loadedRef = useRef(false);
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [loaded, setLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(remoteStore ? "syncing" : "local-only");
   createIdRef.current = createId;
   nowRef.current = now;
 
+  const saveSnapshot = useCallback(
+    (next: OutlineSnapshot) => {
+      saveChainRef.current = saveChainRef.current.then(
+        () => persistence.save(next),
+        () => persistence.save(next)
+      );
+      return saveChainRef.current;
+    },
+    [persistence]
+  );
+
   const persistSnapshot = useCallback(
     (next: OutlineSnapshot) => {
       if (loadedRef.current) {
-        void persistence.save(next);
+        void saveSnapshot(next);
       }
     },
-    [persistence]
+    [saveSnapshot]
   );
 
   const setRemoteState = useCallback((state: RemoteSyncV2State) => {
@@ -104,14 +118,29 @@ export function useOutlineWorkspace({
       return;
     }
     const record = pendingRemoteRecordRef.current;
-    pendingRemoteRecordRef.current = null;
+    const writeToken = (remoteWriteTokenRef.current += 1);
     writeRemoteSnapshotV2(remoteStore, record, maxRemoteSnapshotBytes).then((status) => {
+      if (writeToken !== remoteWriteTokenRef.current) {
+        return;
+      }
       if (status === "synced") {
+        if (pendingRemoteRecordRef.current === record) {
+          pendingRemoteRecordRef.current = null;
+        }
+        if (isStateNewerThanRecord(remoteStateRef.current, record)) {
+          return;
+        }
         setRemoteState({
           status,
           version: record.version,
           updatedAt: record.updatedAt,
           hasPendingLocalChanges: false
+        });
+        return;
+      }
+      if (status === "conflict") {
+        void pullLatestRemoteSnapshotRef.current().catch(() => {
+          setRemoteState({ ...remoteStateRef.current, status: "error" });
         });
         return;
       }
@@ -141,9 +170,9 @@ export function useOutlineWorkspace({
       const normalized = normalizeSnapshot(remoteSnapshot, createIdRef.current, nowRef.current);
       snapshotRef.current = normalized;
       setSnapshot(normalized);
-      await persistence.save(normalized);
+      await saveSnapshot(normalized);
     },
-    [persistence]
+    [saveSnapshot]
   );
 
   const pullLatestRemoteSnapshot = useCallback(async () => {
@@ -159,6 +188,7 @@ export function useOutlineWorkspace({
     if (!record || !isRemoteNewer(record, remoteStateRef.current)) {
       return;
     }
+    remoteWriteTokenRef.current += 1;
     const hadPendingLocalChanges = remoteStateRef.current.hasPendingLocalChanges || pendingRemoteRecordRef.current !== null;
     if (hadPendingLocalChanges) {
       await persistence.saveConflictBackup(cloneSnapshot(snapshotRef.current));
@@ -175,6 +205,7 @@ export function useOutlineWorkspace({
       pullingRemoteRef.current = false;
     }
   }, [applyRemoteRecord, persistence, remoteStore, setRemoteState]);
+  pullLatestRemoteSnapshotRef.current = pullLatestRemoteSnapshot;
 
   const publishSnapshot = useCallback(
     (next: OutlineSnapshot) => {
@@ -217,7 +248,7 @@ export function useOutlineWorkspace({
       }
       loadedRef.current = true;
       setLoaded(true);
-      void persistence.save(snapshotRef.current);
+      void saveSnapshot(snapshotRef.current);
       if (!remoteStore) {
         setSyncStatus("local-only");
         return;
@@ -247,13 +278,17 @@ export function useOutlineWorkspace({
       cancelled = true;
       unsubscribeRemote?.();
     };
-  }, [persistence, pullLatestRemoteSnapshot, remoteStore, setRemoteState]);
+  }, [persistence, pullLatestRemoteSnapshot, remoteStore, saveSnapshot, setRemoteState]);
 
   useEffect(() => {
     if (!remoteStore) {
       return;
     }
     const onFocus = () => {
+      if (pendingRemoteRecordRef.current) {
+        flushPendingRemoteSnapshot();
+        return;
+      }
       void pullLatestRemoteSnapshot().catch(() => {
         setRemoteState({ ...remoteStateRef.current, status: "error" });
       });
@@ -262,7 +297,7 @@ export function useOutlineWorkspace({
     return () => {
       window.removeEventListener("focus", onFocus);
     };
-  }, [pullLatestRemoteSnapshot, remoteStore, setRemoteState]);
+  }, [flushPendingRemoteSnapshot, pullLatestRemoteSnapshot, remoteStore, setRemoteState]);
 
   useEffect(() => {
     return () => {
@@ -356,6 +391,13 @@ function isRemoteNewer(record: RemoteSnapshotRecord, state: RemoteSyncV2State): 
     return record.version > state.version;
   }
   return record.updatedAt > state.updatedAt;
+}
+
+function isStateNewerThanRecord(state: RemoteSyncV2State, record: RemoteSnapshotRecord): boolean {
+  if (state.version !== record.version) {
+    return state.version > record.version;
+  }
+  return state.updatedAt > record.updatedAt;
 }
 
 function cloneSnapshot(snapshot: OutlineSnapshot): OutlineSnapshot {

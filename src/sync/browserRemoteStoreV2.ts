@@ -1,5 +1,6 @@
 import type { RemoteSnapshotRecord, RemoteStoreMetering, RemoteStoreV2 } from "./syncTypes";
-import { base64ToBytes, bytesToBase64 } from "./remoteEncoding";
+import { base64ToBytes, bytesToBase64, estimateEncodedSnapshotBytes } from "./remoteEncoding";
+import { canReplaceRemoteSnapshot } from "./remoteSyncV2";
 
 type StoredRemoteSnapshotV2 = {
   version: number;
@@ -26,23 +27,21 @@ type StoredRemoteStateV1 = {
 export class BrowserRemoteStoreV2 implements RemoteStoreV2 {
   private readonly key: string;
   private readonly legacyKey: string;
-  private readonly channel?: BroadcastChannel;
+  private channel?: BroadcastChannel;
   private readonly subscribers = new Set<() => void>();
+  private listening = false;
   private metering: RemoteStoreMetering = { readBytes: 0, writeBytes: 0, storedBytes: 0 };
 
   constructor(workspaceId: string) {
     this.key = `outliner:browser-remote:${workspaceId}:v2`;
     this.legacyKey = `outliner:browser-remote:${workspaceId}`;
-    this.channel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel(this.key);
-    window.addEventListener("storage", this.handleStorage);
-    this.channel?.addEventListener("message", this.handleBroadcast);
   }
 
   async readLatestSnapshot(): Promise<RemoteSnapshotRecord | null> {
     const stored = this.readStoredSnapshot();
     if (stored) {
       const record = decodeRecord(stored);
-      this.metering.readBytes += record.state.byteLength;
+      this.metering.readBytes += estimateEncodedSnapshotBytes(record);
       return record;
     }
     const legacy = this.readLegacySnapshot();
@@ -54,27 +53,29 @@ export class BrowserRemoteStoreV2 implements RemoteStoreV2 {
     return record;
   }
 
-  async writeLatestSnapshot(record: RemoteSnapshotRecord): Promise<void> {
+  async writeLatestSnapshot(record: RemoteSnapshotRecord): Promise<"accepted" | "rejected"> {
     const previous = this.readStoredSnapshot();
-    if (previous && record.version < previous.version) {
-      return;
+    if (!canReplaceRemoteSnapshot(record, previous ? decodeRecord(previous) : null)) {
+      return "rejected";
     }
-    this.metering.writeBytes += record.state.byteLength;
-    this.metering.storedBytes -= previous ? base64ToBytes(previous.state).byteLength : 0;
+    this.metering.writeBytes += estimateEncodedSnapshotBytes(record);
+    this.metering.storedBytes -= previous ? estimateEncodedSnapshotBytes(decodeRecord(previous)) : 0;
     this.writeStoredSnapshot(encodeRecord(record));
-    this.metering.storedBytes += record.state.byteLength;
+    this.metering.storedBytes += estimateEncodedSnapshotBytes(record);
     this.notify();
     this.channel?.postMessage({ type: "snapshot-written" });
+    return "accepted";
   }
 
   subscribe(onSnapshotChanged: () => void): () => void {
+    if (this.subscribers.size === 0) {
+      this.attachListeners();
+    }
     this.subscribers.add(onSnapshotChanged);
     return () => {
       this.subscribers.delete(onSnapshotChanged);
       if (this.subscribers.size === 0) {
-        window.removeEventListener("storage", this.handleStorage);
-        this.channel?.removeEventListener("message", this.handleBroadcast);
-        this.channel?.close();
+        this.detachListeners();
       }
     };
   }
@@ -114,7 +115,7 @@ export class BrowserRemoteStoreV2 implements RemoteStoreV2 {
       return null;
     }
     const legacy = JSON.parse(raw) as StoredRemoteStateV1;
-    const latestUpdate = legacy.updates.sort((a, b) => a.createdAt - b.createdAt).at(-1);
+    const latestUpdate = [...legacy.updates].sort((a, b) => a.createdAt - b.createdAt).at(-1);
     const state = latestUpdate?.update ?? legacy.snapshot;
     if (!state) {
       return null;
@@ -126,6 +127,27 @@ export class BrowserRemoteStoreV2 implements RemoteStoreV2 {
       state,
       vector: legacy.vector ?? undefined
     };
+  }
+
+  private attachListeners(): void {
+    if (this.listening) {
+      return;
+    }
+    this.channel = typeof BroadcastChannel === "undefined" ? undefined : new BroadcastChannel(this.key);
+    window.addEventListener("storage", this.handleStorage);
+    this.channel?.addEventListener("message", this.handleBroadcast);
+    this.listening = true;
+  }
+
+  private detachListeners(): void {
+    if (!this.listening) {
+      return;
+    }
+    window.removeEventListener("storage", this.handleStorage);
+    this.channel?.removeEventListener("message", this.handleBroadcast);
+    this.channel?.close();
+    this.channel = undefined;
+    this.listening = false;
   }
 }
 

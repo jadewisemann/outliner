@@ -18,7 +18,7 @@ type AppProps = {
 export function App({ persistence: providedPersistence, remoteStore }: AppProps = {}) {
   const browserPersistence = useMemo(() => createBrowserLocalPersistence("workspace_root"), []);
   const persistence = providedPersistence ?? browserPersistence;
-  const { snapshot, commitSnapshot, undo, redo, syncStatus } = useOutlineWorkspace({
+  const { snapshot, loaded, commitSnapshot, undo, redo, syncStatus } = useOutlineWorkspace({
     persistence,
     remoteStore,
     createId,
@@ -107,14 +107,16 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
           <SyncStatusBadge status={syncStatus} />
         </div>
       </header>
-      <Outliner
-        document={document}
-        view={view}
-        createId={createId}
-        now={now}
-        onDocumentChange={setDocument}
-        onViewChange={setView}
-      />
+      {loaded ? (
+        <Outliner
+          document={document}
+          view={view}
+          createId={createId}
+          now={now}
+          onDocumentChange={setDocument}
+          onViewChange={setView}
+        />
+      ) : null}
     </main>
   );
 }
