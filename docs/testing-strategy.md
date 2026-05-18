@@ -255,6 +255,13 @@ describe("rich formatting and notes", () => {
   it("applies heading, color, and numbered metadata without changing children order", () => {}); // 완료됨
 });
 
+describe("input stability", () => {
+  it("keeps the active editor mounted while Korean IME composition updates text", () => {}); // 완료됨
+  it("commits Korean text from IME composition end", () => {}); // 완료됨
+  it("does not treat composing Enter or Backspace as outline commands", () => {}); // 완료됨
+  it("keeps normal Enter and Backspace behavior after IME composition ends", () => {}); // 완료됨
+});
+
 describe("import and export", () => {
   it("exports OPML while preserving hierarchy", () => {});
   it("imports OPML into node drafts without mutating the current document", () => {});

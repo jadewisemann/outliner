@@ -96,6 +96,149 @@ describe("Outliner", () => {
     expect(renderRow).not.toHaveBeenCalledWith(c);
   });
 
+  it("keeps the active editor mounted while Korean IME composition updates text", async () => {
+    const document = makeDocumentWithTexts([""]);
+    const [nodeId] = document.nodes[document.rootId].children;
+    let updateText: (text: string) => void = () => {};
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: nodeId });
+      updateText = (text: string) => {
+        setCurrentDocument((current) => updateNodeText(current, nodeId, text, () => 2));
+      };
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+
+    fireEvent.compositionStart(textbox);
+    act(() => {
+      updateText("한");
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("한");
+    });
+    expect(screen.getByRole("textbox", { name: "Outline node text" })).toBe(textbox);
+  });
+
+  it("commits Korean text from IME composition end", async () => {
+    const document = makeDocumentWithTexts([""]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+
+    fireEvent.compositionStart(textbox);
+    fireEvent.compositionEnd(textbox, { data: "한" });
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("한");
+    });
+    expect(screen.getByText("한").closest(".outline-row")).toHaveAttribute("data-node-text", "한");
+  });
+
+  it("does not treat composing Enter or Backspace as outline commands", async () => {
+    const document = makeDocumentWithTexts([""]);
+    const onDocumentChange = vi.fn();
+    render(
+      <Outliner
+        document={document}
+        view={createInitialView(document)}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={onDocumentChange}
+        onViewChange={vi.fn()}
+      />
+    );
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+
+    fireEvent.keyDown(textbox, { key: "Enter", code: "Enter", keyCode: 229 });
+    fireEvent.keyDown(textbox, { key: "Backspace", code: "Backspace", keyCode: 229 });
+
+    expect(onDocumentChange).not.toHaveBeenCalled();
+  });
+
+  it("keeps normal Enter behavior after IME composition ends", async () => {
+    const document = makeDocumentWithTexts(["한"]);
+    const onDocumentChange = vi.fn();
+    render(
+      <Outliner
+        document={document}
+        view={createInitialView(document)}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={onDocumentChange}
+        onViewChange={vi.fn()}
+      />
+    );
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+
+    fireEvent.compositionEnd(textbox, { data: "한" });
+    fireEvent.keyDown(textbox, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => {
+      expect(onDocumentChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nodes: expect.objectContaining({
+            "n-1": expect.objectContaining({ text: "한" }),
+            new: expect.objectContaining({ text: "" })
+          })
+        })
+      );
+    });
+  });
+
+  it("keeps normal Backspace behavior after IME composition ends", async () => {
+    const document = makeDocumentWithTexts([""]);
+    const onDocumentChange = vi.fn();
+    render(
+      <Outliner
+        document={document}
+        view={createInitialView(document)}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={onDocumentChange}
+        onViewChange={vi.fn()}
+      />
+    );
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+
+    fireEvent.compositionEnd(textbox, { data: "" });
+    fireEvent.keyDown(textbox, { key: "Backspace", code: "Backspace" });
+
+    await waitFor(() => {
+      expect(onDocumentChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nodes: expect.not.objectContaining({
+            "n-1": expect.anything()
+          })
+        })
+      );
+    });
+  });
+
   it("zooms when clicking a bullet", async () => {
     const user = userEvent.setup();
     const document = makeDocumentWithTexts(["A"]);

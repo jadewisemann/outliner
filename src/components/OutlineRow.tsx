@@ -193,9 +193,21 @@ function ActiveRowEditor({
   };
 
   return (
-    <LexicalComposer key={`${node.id}:${node.text}`} initialConfig={initialConfig}>
+    <LexicalComposer key={node.id} initialConfig={initialConfig}>
       <PlainTextPlugin
-        contentEditable={<ContentEditable className="lexical-editor" aria-label="Outline node text" />}
+        contentEditable={
+          <ContentEditable
+            className="lexical-editor"
+            aria-label="Outline node text"
+            onCompositionEnd={(event) => {
+              const compositionText = (event.nativeEvent as CompositionEvent).data;
+              const text = event.currentTarget.textContent || compositionText || "";
+              if (text !== node.text) {
+                onTextChange(text);
+              }
+            }}
+          />
+        }
         placeholder={<span className="editor-placeholder">Type</span>}
         ErrorBoundary={LexicalErrorBoundary}
       />
@@ -300,6 +312,9 @@ function KeyboardPlugin({
     const unregisterEnter = editor.registerCommand<KeyboardEvent>(
       KEY_ENTER_COMMAND,
       (event) => {
+        if (isComposingEvent(event)) {
+          return false;
+        }
         event?.preventDefault();
         onCreateAfter(readOffset());
         return true;
@@ -322,6 +337,9 @@ function KeyboardPlugin({
     const unregisterBackspace = editor.registerCommand<KeyboardEvent>(
       KEY_BACKSPACE_COMMAND,
       (event) => {
+        if (isComposingEvent(event)) {
+          return false;
+        }
         if (hasMultiCursor) {
           event?.preventDefault();
           onApplyTextToCursors({ type: "backspace" });
@@ -338,6 +356,9 @@ function KeyboardPlugin({
     const unregisterDelete = editor.registerCommand<KeyboardEvent>(
       KEY_DELETE_COMMAND,
       (event) => {
+        if (isComposingEvent(event)) {
+          return false;
+        }
         if (hasMultiCursor) {
           event?.preventDefault();
           onApplyTextToCursors({ type: "delete" });
@@ -404,6 +425,9 @@ function KeyboardPlugin({
       COMMAND_PRIORITY_HIGH
     );
     const handleRootKeyDown = (event: KeyboardEvent) => {
+      if (isComposingEvent(event)) {
+        return;
+      }
       if (event.altKey && event.key === "ArrowUp") {
         event.preventDefault();
         event.stopPropagation();
@@ -479,6 +503,10 @@ function KeyboardPlugin({
   ]);
 
   return null;
+}
+
+function isComposingEvent(event?: KeyboardEvent | null): boolean {
+  return Boolean(event?.isComposing || event?.key === "Process" || event?.keyCode === 229);
 }
 
 function FocusPlugin() {

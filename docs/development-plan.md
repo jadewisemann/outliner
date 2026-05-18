@@ -2,7 +2,7 @@
 
 모든 Phase는 TDD로 진행한다. 각 기능은 실패하는 테스트를 먼저 만들고, 최소 구현으로 통과시킨 뒤, 리팩터링한다.
 
-현재 구현 상태는 Phase 0~11 완료다. Phase 8은 Firebase-backed 원격 sync smoke 실환경 검증까지 완료되었고, Phase 9 검색/필터, Phase 10 태그/내부 링크/백링크, Phase 11 리치 포맷과 노트는 selector/metadata 기반 v1으로 완료되었다. 이후 Dynalist와의 기능 차이는 파일/폴더/다중 문서, 태스크 관리, 공유/협업을 제외하고 import/export, 히스토리/설정 순서로 줄인다.
+현재 구현 상태는 Phase 0~11 완료다. Phase 8은 Firebase-backed 원격 sync smoke 실환경 검증까지 완료되었고, Phase 9 검색/필터, Phase 10 태그/내부 링크/백링크, Phase 11 리치 포맷과 노트는 selector/metadata 기반 v1으로 완료되었다. Phase 12 착수 전 active row의 한글 IME 입력 안정성 blocker를 수정해 composition 중 editor remount와 구조 키 interception 회귀 테스트를 추가했다. 이후 Dynalist와의 기능 차이는 파일/폴더/다중 문서, 태스크 관리, 공유/협업을 제외하고 import/export, 히스토리/설정 순서로 줄인다.
 
 ## Phase 0: 프로젝트 부트스트랩 - 완료됨
 
