@@ -251,10 +251,10 @@ MVP 이후 Dynalist와의 기능 차이는 아래 순서로 줄인다. 단, 제�
 - 첫 자식/마지막 자식의 `Alt+ArrowUp/Down` 부모 경계 이동 규칙이 도메인 테스트와 E2E로 검증된다.
 - `Mod+Alt+ArrowUp/Down`으로 멀티 커서를 만들고 같은 텍스트 편집을 여러 row에 적용할 수 있다.
 
-### 남은 MVP 체크리스트
+### MVP 체크리스트 완료 상태
 
 - browser-backed 원격 sync E2E는 추가되었다.
-- Firebase-backed 환경의 원격 sync smoke를 실제 프로젝트 설정으로 검증한다.
+- Firebase-backed 환경의 원격 sync smoke를 실제 프로젝트 설정으로 검증했다.
 - 10,000개 노드 fixture에서 visible 계산과 기본 편집이 사용 가능한 성능을 보인다. - 완료됨
 
 ## 7. 제품 결정

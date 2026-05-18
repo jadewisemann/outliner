@@ -6,6 +6,10 @@ import type { RemoteStore } from "../sync/syncTypes";
 
 export function createConfiguredRemoteStore(): RemoteStore | undefined {
   const searchParams = new URLSearchParams(window.location.search);
+  const remoteMode = searchParams.get("remote");
+  if (remoteMode === "none") {
+    return undefined;
+  }
   if (searchParams.get("remote") === "browser") {
     return new BrowserRemoteStore(searchParams.get("workspace") ?? "root");
   }
@@ -18,6 +22,7 @@ export function createConfiguredRemoteStore(): RemoteStore | undefined {
     VITE_FIREBASE_APP_ID,
     VITE_OUTLINER_USER_ID
   } = import.meta.env;
+  const userId = searchParams.get("user") ?? VITE_OUTLINER_USER_ID;
 
   if (
     !VITE_FIREBASE_API_KEY ||
@@ -25,7 +30,7 @@ export function createConfiguredRemoteStore(): RemoteStore | undefined {
     !VITE_FIREBASE_DATABASE_URL ||
     !VITE_FIREBASE_PROJECT_ID ||
     !VITE_FIREBASE_APP_ID ||
-    !VITE_OUTLINER_USER_ID
+    !userId
   ) {
     return undefined;
   }
@@ -38,5 +43,5 @@ export function createConfiguredRemoteStore(): RemoteStore | undefined {
     appId: VITE_FIREBASE_APP_ID
   });
 
-  return new FirebaseRemoteStore(getDatabase(app), VITE_OUTLINER_USER_ID);
+  return new FirebaseRemoteStore(getDatabase(app), userId);
 }

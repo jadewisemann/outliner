@@ -80,7 +80,7 @@ function outlineText(page: Page, text: string) {
 }
 
 async function openFreshPage(page: Page) {
-  await page.goto("/");
+  await page.goto("/?remote=none");
   await page.evaluate(async () => {
     localStorage.clear();
     await new Promise<void>((resolve, reject) => {
@@ -90,7 +90,7 @@ async function openFreshPage(page: Page) {
       request.onblocked = () => resolve();
     });
   });
-  await page.reload();
+  await page.goto("/?remote=none");
 }
 
 type StoredSnapshot = {

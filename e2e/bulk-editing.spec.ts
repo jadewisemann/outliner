@@ -181,7 +181,7 @@ async function expectRowOrder(page: import("@playwright/test").Page, texts: stri
 }
 
 async function openFreshPage(page: import("@playwright/test").Page) {
-  await page.goto("/");
+  await page.goto("/?remote=none");
   await page.evaluate(async () => {
     localStorage.clear();
     await new Promise<void>((resolve, reject) => {
@@ -191,5 +191,5 @@ async function openFreshPage(page: import("@playwright/test").Page) {
       request.onblocked = () => resolve();
     });
   });
-  await page.reload();
+  await page.goto("/?remote=none");
 }

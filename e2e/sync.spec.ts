@@ -25,7 +25,7 @@ test("syncs edits between two browser pages through a browser-backed remote stor
 });
 
 async function resetBrowserState(page: Page) {
-  await page.goto("/");
+  await page.goto("/?remote=none");
   await page.evaluate(async () => {
     localStorage.clear();
     await new Promise<void>((resolve, reject) => {

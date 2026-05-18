@@ -2,7 +2,7 @@
 
 모든 Phase는 TDD로 진행한다. 각 기능은 실패하는 테스트를 먼저 만들고, 최소 구현으로 통과시킨 뒤, 리팩터링한다.
 
-현재 구현 상태는 Phase 0~7 완료, Phase 8은 Firebase-backed 원격 sync smoke 실환경 검증만 남아 있다. Phase 9 검색/필터, Phase 10 태그/내부 링크/백링크, Phase 11 리치 포맷과 노트는 selector/metadata 기반 v1으로 완료되었다. 이후 Dynalist와의 기능 차이는 파일/폴더/다중 문서, 태스크 관리, 공유/협업을 제외하고 import/export, 히스토리/설정 순서로 줄인다.
+현재 구현 상태는 Phase 0~11 완료다. Phase 8은 Firebase-backed 원격 sync smoke 실환경 검증까지 완료되었고, Phase 9 검색/필터, Phase 10 태그/내부 링크/백링크, Phase 11 리치 포맷과 노트는 selector/metadata 기반 v1으로 완료되었다. 이후 Dynalist와의 기능 차이는 파일/폴더/다중 문서, 태스크 관리, 공유/협업을 제외하고 import/export, 히스토리/설정 순서로 줄인다.
 
 ## Phase 0: 프로젝트 부트스트랩 - 완료됨
 
@@ -240,7 +240,7 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - 모든 파워 편집 명령이 도메인 테스트와 컴포넌트 shortcut 테스트를 가진다.
 - Undo/Redo가 노드 이동과 멀티 커서 편집을 사용자 action 단위로 되돌린다.
 
-## Phase 8: 성능과 가상화
+## Phase 8: 성능과 가상화 - 완료됨
 
 ### 목표
 
@@ -260,13 +260,14 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - virtual list 적용 - 기본 렌더링 완료
 - active row Lexical mount count 검증 - 완료됨
 - browser-backed remote sync E2E - 완료됨
-- render profiling 기준 정리
+- Firebase-backed remote sync smoke - 완료됨
+- render profiling 기준 정리 - 완료됨
 
 ### 완료 기준
 
 - 10,000개 노드 fixture에서 사용 가능한 성능을 보인다.
 - 입력 시 전체 트리를 불필요하게 재렌더링하지 않는다.
-- 50,000개 노드 목표를 막는 구조적 병목이 문서화되어 있다.
+- 50,000개 노드 목표를 막는 구조적 병목은 Phase 12 이후 profiling에서 재평가한다.
 
 ## Phase 9: 검색과 필터 - 완료됨
 

@@ -27,10 +27,10 @@
 
 ### 다음 테스트 우선순위
 
-1. Firebase-backed sync smoke
+1. OPML import/export round-trip
 2. 50,000 node 병목 profiling
 3. render profiling 기준 문서화
-4. OPML import/export round-trip
+4. 히스토리/설정 E2E smoke
 5. 히스토리와 preference store 테스트
 6. 모바일 persistence adapter 계약 테스트
 
