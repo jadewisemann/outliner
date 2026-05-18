@@ -12,6 +12,10 @@ describe("local persistence", () => {
     const restored = await persistence.load();
     expect(restored?.document.nodes[document.rootId].children).toEqual(document.nodes[document.rootId].children);
     expect(restored?.view.zoomNodeId).toBe(document.rootId);
+    await persistence.saveConflictBackup({ document, view });
+    expect((await persistence.loadConflictBackup())?.document.rootId).toBe(document.rootId);
+    await persistence.clearConflictBackup();
+    expect(await persistence.loadConflictBackup()).toBeNull();
     await persistence.clear();
   });
 });

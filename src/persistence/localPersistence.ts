@@ -4,10 +4,14 @@ export interface LocalPersistence {
   load(): Promise<OutlineSnapshot | null>;
   save(snapshot: OutlineSnapshot): Promise<void>;
   clear(): Promise<void>;
+  loadConflictBackup(): Promise<OutlineSnapshot | null>;
+  saveConflictBackup(snapshot: OutlineSnapshot): Promise<void>;
+  clearConflictBackup(): Promise<void>;
 }
 
 export function createBrowserLocalPersistence(name: string): LocalPersistence {
   const key = `outliner:${name}`;
+  const conflictKey = `${key}:conflict`;
   return {
     async load() {
       if (!hasIndexedDb()) {
@@ -43,6 +47,44 @@ export function createBrowserLocalPersistence(name: string): LocalPersistence {
       await new Promise<void>((resolve, reject) => {
         const tx = db.transaction("snapshots", "readwrite");
         tx.objectStore("snapshots").delete(key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    },
+    async loadConflictBackup() {
+      if (!hasIndexedDb()) {
+        return loadFromLocalStorage(conflictKey);
+      }
+      const db = await openDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction("snapshots", "readonly");
+        const request = tx.objectStore("snapshots").get(conflictKey);
+        request.onsuccess = () => resolve((request.result as OutlineSnapshot | undefined) ?? null);
+        request.onerror = () => reject(request.error);
+      });
+    },
+    async saveConflictBackup(snapshot) {
+      if (!hasIndexedDb()) {
+        saveToLocalStorage(conflictKey, snapshot);
+        return;
+      }
+      const db = await openDb();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("snapshots", "readwrite");
+        tx.objectStore("snapshots").put(snapshot, conflictKey);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    },
+    async clearConflictBackup() {
+      if (!hasIndexedDb()) {
+        window.localStorage.removeItem(conflictKey);
+        return;
+      }
+      const db = await openDb();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("snapshots", "readwrite");
+        tx.objectStore("snapshots").delete(conflictKey);
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error);
       });

@@ -363,6 +363,13 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 
 현재 snapshot 기반 update append 구조가 정상 사용량보다 큰 Firebase read/write를 만들 수 있음을 명시하고, 원격 sync가 dev와 실제 사용 환경에서 비용 상한을 넘지 않게 재설계한다. 이 Phase가 끝나기 전까지 Firebase sync는 명시적 opt-in 상태로 유지하며, import/export 확장보다 우선한다.
 
+Phase 12는 두 단계로 나눈다.
+
+- Phase 12-A 단기 안정화: 기존 RTDB adapter에서 즉시 비용 누수를 막는다.
+- Phase 12-B 중기 재설계: 개인 다기기 sync에 맞는 저비용 `RemoteStore` v2와 저장소 후보를 결정한다.
+
+제품 범위는 다중 사용자 공동편집이 아니라 개인 다기기 동기화다. 따라서 realtime subscription은 있으면 좋은 구현 옵션이지 필수 요구사항이 아니다. 기본 목표는 local-first 동작을 유지하면서 작은 payload, bounded log, 예측 가능한 비용으로 여러 기기를 맞추는 것이다.
+
 ### 먼저 작성할 테스트
 
 - Firebase configuration이 있어도 `?remote=firebase` 없이는 remote adapter를 만들지 않는다. - 완료됨
@@ -371,16 +378,39 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - snapshot compaction 후 오래된 update log를 정리해 새 클라이언트가 전체 누적 로그를 다시 읽지 않는다.
 - 앱 시작 시 remote pull이 snapshot 이후 필요한 update만 읽고, 이미 compact된 update를 다시 받지 않는다.
 - sync 비용 회귀를 잡기 위해 fake remote store가 read/write byte count를 기록한다.
+- RTDB adapter가 `updates` 전체 tree를 읽지 않고 cursor 이후 update만 읽는다.
+- RTDB subscribe가 과거 log 전체를 새 이벤트처럼 다시 처리하지 않는다.
+- RemoteStore v2 fake adapter가 realtime subscription 없이 앱 시작/포커스 복귀 sync를 통과한다.
+- 10분 입력 시뮬레이션에서 write bytes/read bytes/stored bytes가 문서 크기에 비례하는 상한 안에 머문다.
 
-### 구현 항목
+### Phase 12-A 구현 항목
 
 - Firebase remote mode는 명시적 `?remote=firebase` opt-in 유지
 - remote update debounce/batching
 - update payload size guard와 사용자에게 보이는 sync error 상태
 - snapshot compaction trigger와 update log cleanup contract
 - `RemoteStore` read/write byte accounting test helper
-- full snapshot append 대신 변경분 또는 compacted snapshot 중심 전략 재검토
+- Firebase adapter cursor query 적용
+- subscribe start cursor 적용
 - Firebase emulator 또는 fake metering 기반 비용 회귀 테스트
+- 비용 guard 실패 시 로컬 저장은 계속 성공하고 remote status만 `error`로 표시
+
+### Phase 12-B 구현 항목
+
+- `RemoteStore` v2 contract 초안 작성
+  - 최신 compacted snapshot 읽기/쓰기
+  - snapshot version 또는 cursor
+  - 제한된 change log 읽기/쓰기
+  - 선택적 realtime subscribe
+  - byte metering hook
+- 저장소 후보별 비용/복잡도 비교 문서 작성
+  - Firebase RTDB: realtime은 쉽지만 bandwidth와 listener 비용 관리가 필요하다.
+  - Firestore: document 단위 read/write 과금이라 update log를 작게 쪼갤 수 있지만 listener/read 비용과 index overhead를 관리해야 한다.
+  - Supabase/Postgres 또는 서버 API: query와 compaction 제어가 쉽지만 auth/API 운영이 필요하다.
+  - Object storage 기반 snapshot/blob: 개인 sync에는 가장 정적이고 저렴할 수 있지만 충돌 병합과 auth URL 설계가 필요하다.
+- 기본 후보를 정적 snapshot/blob 중심 저장소로 둘지 결정
+- 현재 RTDB adapter를 유지, 축소, 제거 중 하나로 결정
+- Phase 13 이후 import/export/history가 저장소 구현에 직접 의존하지 않도록 경계 재확인
 
 ### 완료 기준
 
@@ -388,7 +418,9 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - 정상적인 텍스트 입력이 매 keypress마다 전체 문서 update를 Firebase에 append하지 않는다.
 - 누적 update log가 무한히 커지지 않고 compact/cleanup된다.
 - 새 클라이언트가 동기화할 때 과거 전체 로그를 반복 read하지 않는다.
+- 10분 입력 테스트가 GB 단위 사용량으로 증폭되지 않는다.
 - 원격 sync 비용 모델과 한계가 문서화되어 Phase 13 이후 기능이 안전하게 원격 데이터를 다룰 수 있다.
+- 중기 저장소 방향이 결정되어 RTDB를 계속 쓸지, 정적/저비용 저장소로 바꿀지 다음 구현 Phase로 넘길 수 있다.
 
 ## Phase 13: 가져오기/내보내기 확장
 

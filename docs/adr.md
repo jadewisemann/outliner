@@ -32,10 +32,10 @@ Architecture Decision Record 형식으로 제품/기술 결정을 남긴다. 결
 
 ## ADR-005: 원격 저장소 선택
 
-- 상태: 확정
-- 결정: Firebase Realtime Database를 사용한다.
-- 이유: Dynalist 대안을 빠르게 만들기 위해 realtime subscription과 단순 update append를 우선한다.
-- 영향: update log compaction과 보안 규칙은 Firebase RTDB 기준으로 설계한다.
+- 상태: 재검토 필요
+- 결정: 초기 구현은 Firebase Realtime Database adapter를 유지하되, 제품의 기본 원격 저장소로 확정하지 않는다.
+- 이유: Dynalist 대안을 빠르게 만들기 위해 realtime subscription과 단순 update append를 우선했지만, 개인 다기기 동기화 범위에서는 항상 켜진 realtime stream이 필수 요구사항이 아니다. 현재 snapshot 기반 update append는 정상 입력에서도 저장량과 네트워크 사용량을 크게 증폭시킬 수 있다.
+- 영향: Firebase RTDB는 Phase 12 단기 안정화 대상이지만, `RemoteStore` contract는 RTDB 교체를 전제로 유지한다. Phase 12 이후 원격 저장소는 정적 snapshot/blob 중심 저장소, row/document DB, RTDB 중 비용과 UX를 비교해 다시 결정한다.
 
 ## ADR-006: 모바일 persistence 전략
 
@@ -119,5 +119,14 @@ Architecture Decision Record 형식으로 제품/기술 결정을 남긴다. 결
 - 상태: 확정
 - 결정: Phase 12는 OPML import/export가 아니라 원격 sync 비용 안정화로 진행한다. import/export는 Phase 13으로 이동한다.
 - 이유: 현재 snapshot 기반 update append는 정상 사용보다 큰 Firebase read/write를 만들 수 있다. 데이터 가져오기/내보내기보다 원격 비용 폭증과 update log 누적을 먼저 막아야 한다.
-- 영향: Firebase sync는 명시적 opt-in으로 유지하고, update batching, payload size guard, snapshot compaction, update log cleanup, byte metering 테스트를 먼저 구현한다.
-- 완료 조건: 정상 편집이 keypress마다 전체 문서를 append하지 않고, 새 클라이언트가 compact된 과거 로그를 반복 read하지 않으며, 비용 회귀를 테스트에서 감지할 수 있어야 한다.
+- 영향: Firebase sync는 명시적 opt-in으로 유지하고, update batching, payload size guard, snapshot compaction, update log cleanup, byte metering 테스트를 먼저 구현한다. 동시에 RemoteStore v2 저장소 후보를 평가해 RTDB를 계속 쓸지 결정한다.
+- 완료 조건: 정상 편집이 keypress마다 전체 문서를 append하지 않고, 새 클라이언트가 compact된 과거 로그를 반복 read하지 않으며, 비용 회귀를 테스트에서 감지할 수 있어야 한다. 또한 중기 원격 저장소 방향이 문서화되어야 한다.
+
+## ADR-017: 원격 저장소는 realtime보다 저비용 개인 sync를 우선한다
+
+- 상태: 제안
+- 결정: 중기 원격 sync는 항상 켜진 realtime stream보다 저비용 개인 다기기 sync를 우선한다.
+- 이유: 제품 범위는 다중 사용자 공동편집이 아니라 개인 다기기 동기화다. 이 경우 초 단위 공동편집보다 앱 시작, 포커스 복귀, 수동 저장, 짧은 debounce window에서 안정적으로 최신 상태를 맞추는 것이 더 중요하다.
+- 단기 방침: 기존 Firebase RTDB adapter는 opt-in 실험 기능으로 남기고, 비용 guard가 없는 remote append는 금지한다.
+- 중기 방침: `RemoteStore` v2는 최신 compacted snapshot과 제한된 change log를 중심으로 설계한다. 저장소 후보는 Firebase RTDB, Firestore, Supabase/Postgres, object storage 기반 snapshot 저장소를 비교하되, 기본 후보는 정적 snapshot/blob 중심 저장소로 둔다.
+- 영향: Phase 12는 RTDB 최적화만으로 완료하지 않는다. 저장소가 바뀌어도 앱 런타임은 `RemoteStore` 인터페이스 뒤에서 동작해야 하며, import/export와 history 기능은 원격 저장소 구현에 직접 의존하지 않는다.

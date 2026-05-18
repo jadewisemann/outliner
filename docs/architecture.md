@@ -207,6 +207,8 @@ MVP 저장 전략:
 
 현재 구현의 snapshot 기반 update append는 프로토타입 수준이다. 편집마다 전체 문서 상태가 원격 update log에 append되면 Firebase read/write가 실제 사용자 데이터 크기보다 크게 증폭될 수 있으므로, Phase 12에서 비용 안정화가 완료되기 전까지 Firebase sync는 명시적 opt-in으로만 사용한다.
 
+원격 sync의 제품 목표는 다중 사용자 공동편집이 아니라 개인 다기기 동기화다. 따라서 아키텍처의 우선순위는 항상 켜진 realtime stream보다 예측 가능한 비용, 작은 payload, bounded log, 복구 가능한 local-first 동작이다. RTDB는 현재 adapter 중 하나일 뿐이며, 저장소 교체 가능성을 `RemoteStore` 경계 안에 유지한다.
+
 ```txt
 users/{userId}/workspaces/root/
   snapshot/
@@ -231,13 +233,24 @@ users/{userId}/workspaces/root/
 
 앱의 런타임 흐름은 `local persistence -> Yjs workspace -> RemoteStore sync` 순서다. `RemoteStore`가 주입되지 않으면 Firebase 설정이 없는 것으로 보고 `local-only` 상태로 기존 로컬 편집/저장/Undo/Redo 동작을 유지한다.
 
-Phase 12에서 확정할 비용 안정화 규칙:
+Phase 12-A 단기 비용 안정화 규칙:
 
 - 원격 append는 keypress 단위가 아니라 의미 있는 transaction 또는 debounce window 단위로 batch한다.
 - 단일 remote payload에는 byte budget을 두고, 초과 시 append하지 않는다.
 - snapshot compaction은 오래된 update log cleanup과 함께 실행되어야 한다.
 - RemoteStore 테스트 더블은 read/write byte count를 기록해 비용 회귀를 테스트한다.
 - 새 클라이언트 sync는 최신 snapshot과 필요한 update만 읽어야 한다.
+- Firebase RTDB `listUpdates`는 전체 `updates` tree를 읽고 클라이언트에서 자르지 않는다. 서버 query 또는 compacted cursor 기준으로 필요한 범위만 읽는다.
+- `subscribe`는 과거 log 전체를 실시간 이벤트처럼 다시 적용하지 않게 start cursor를 가져야 한다.
+- 비용 guard가 실패하면 remote 상태를 `error`로 보여주고 local persistence는 계속 유지한다.
+
+Phase 12-B 중기 저장소 재검토 규칙:
+
+- `RemoteStore` v2는 최신 compacted snapshot을 primary artifact로 두고, change log는 최근 변경 또는 충돌 병합에 필요한 범위로 제한한다.
+- realtime subscription은 필수 contract가 아니다. provider가 realtime을 지원하지 않으면 앱 시작, 포커스 복귀, 수동 sync, 짧은 polling/debounce sync로 동작할 수 있어야 한다.
+- 저장소 후보는 RTDB, Firestore, Supabase/Postgres, object storage 기반 snapshot 저장소를 같은 비용 모델로 비교한다.
+- 기본 판단 기준은 10분 입력 테스트, 1시간 입력 테스트, 새 기기 최초 sync, 오프라인 후 재연결에서의 write bytes, read bytes, stored bytes다.
+- 개인 다기기 동기화만 필요하면 정적 snapshot/blob 중심 저장소를 우선 후보로 둔다.
 
 ## 7. Sync 상태
 
@@ -299,7 +312,8 @@ interface RemoteStore {
 
 확정:
 
-- 원격 저장소는 Firebase Realtime Database를 사용한다.
+- 원격 sync는 optional `RemoteStore` adapter 뒤에서 동작한다.
+- Firebase Realtime Database는 현재 구현된 adapter이지만 Phase 12에서 기본 저장소 여부를 재검토한다.
 - 모바일 앱은 웹 MVP 이후로 분리한다.
 - MVP는 플레인 텍스트와 키보드 속도를 우선한다.
 - Dynalist식 벌크 편집은 MVP 핵심 범위에 포함한다.

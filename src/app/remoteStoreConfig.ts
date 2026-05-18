@@ -1,15 +1,15 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
-import { BrowserRemoteStore } from "../sync/browserRemoteStore";
-import { FirebaseRemoteStore } from "../sync/firebaseRemoteStore";
-import type { RemoteStore } from "../sync/syncTypes";
+import { BrowserRemoteStoreV2 } from "../sync/browserRemoteStoreV2";
+import { FirebaseRemoteStoreV2 } from "../sync/firebaseRemoteStoreV2";
+import type { RemoteStoreV2 } from "../sync/syncTypes";
 
-export function createConfiguredRemoteStore(): RemoteStore | undefined {
+export function createConfiguredRemoteStore(): RemoteStoreV2 | undefined {
   const searchParams = new URLSearchParams(window.location.search);
   const remoteMode = searchParams.get("remote");
   if (!shouldUseFirebaseRemote(searchParams)) {
     if (remoteMode === "browser") {
-      return new BrowserRemoteStore(searchParams.get("workspace") ?? "root");
+      return new BrowserRemoteStoreV2(searchParams.get("workspace") ?? "root");
     }
     return undefined;
   }
@@ -43,7 +43,7 @@ export function createConfiguredRemoteStore(): RemoteStore | undefined {
     appId: VITE_FIREBASE_APP_ID
   });
 
-  return new FirebaseRemoteStore(getDatabase(app), userId);
+  return new FirebaseRemoteStoreV2(getDatabase(app), userId);
 }
 
 export function shouldUseFirebaseRemote(searchParams: URLSearchParams): boolean {

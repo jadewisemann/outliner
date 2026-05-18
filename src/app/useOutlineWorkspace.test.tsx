@@ -1,19 +1,25 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { createInitialView, createNodeAfter } from "../domain/outline";
+import { createInitialView, createNodeAfter, updateNodeText } from "../domain/outline";
 import type { OutlineSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
 import { makeDocumentWithTexts } from "../test/factories";
-import { FakeRemoteStore } from "../sync/fakeRemoteStore";
-import { compactRemoteSnapshot } from "../sync/remoteSync";
+import { FakeRemoteStoreV2 } from "../sync/fakeRemoteStoreV2";
+import { createRemoteSnapshotRecord } from "../sync/remoteSyncV2";
 import { createYjsWorkspace } from "../sync/yjsAdapter";
 import { useOutlineWorkspace } from "./useOutlineWorkspace";
 
-function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersistence & { saved: OutlineSnapshot[] } {
+function memoryPersistence(
+  initial: OutlineSnapshot | null = null
+): LocalPersistence & { saved: OutlineSnapshot[]; conflictBackup: OutlineSnapshot | null } {
   const saved: OutlineSnapshot[] = [];
   let current = initial;
+  let conflictBackup: OutlineSnapshot | null = null;
   return {
     saved,
+    get conflictBackup() {
+      return conflictBackup;
+    },
     async load() {
       return current;
     },
@@ -23,6 +29,15 @@ function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersist
     },
     async clear() {
       current = null;
+    },
+    async loadConflictBackup() {
+      return conflictBackup;
+    },
+    async saveConflictBackup(snapshot) {
+      conflictBackup = snapshot;
+    },
+    async clearConflictBackup() {
+      conflictBackup = null;
     }
   };
 }
@@ -142,8 +157,9 @@ describe("useOutlineWorkspace", () => {
     const local = makeDocumentWithTexts(["Local"]);
     const remote = makeDocumentWithTexts(["Remote"]);
     const persistence = memoryPersistence({ document: local, view: createInitialView(local) });
-    const remoteStore = new FakeRemoteStore();
-    await compactRemoteSnapshot(remoteStore, createYjsWorkspace({ document: remote, view: createInitialView(remote) }));
+    const remoteStore = new FakeRemoteStoreV2();
+    const remoteWorkspace = createYjsWorkspace({ document: remote, view: createInitialView(remote) });
+    await remoteStore.writeLatestSnapshot(createRemoteSnapshotRecord(remoteWorkspace, "remote", 1, 2));
 
     const { result } = renderHook(() =>
       useOutlineWorkspace({
@@ -160,11 +176,11 @@ describe("useOutlineWorkspace", () => {
     expect(result.current.snapshot.document.nodes[childId].text).toBe("Remote");
   });
 
-  it("pushes local commits to the remote store", async () => {
+  it("pushes local commits as the latest remote snapshot", async () => {
     const first = makeDocumentWithTexts(["A"]);
     const second = makeDocumentWithTexts(["B"]);
     const persistence = memoryPersistence({ document: first, view: createInitialView(first) });
-    const remoteStore = new FakeRemoteStore();
+    const remoteStore = new FakeRemoteStoreV2();
     const { result } = renderHook(() =>
       useOutlineWorkspace({
         persistence,
@@ -180,17 +196,99 @@ describe("useOutlineWorkspace", () => {
       result.current.commitSnapshot({ document: second, view: createInitialView(second) });
     });
 
-    await waitFor(async () => expect(await remoteStore.listUpdates()).toHaveLength(1));
-    const update = (await remoteStore.listUpdates())[0];
-    expect(update.id).toBe("client-a:1");
-    expect(update.createdAt).toBe(10);
+    await waitFor(async () => expect((await remoteStore.readLatestSnapshot())?.version).toBe(1));
+    expect((await remoteStore.readLatestSnapshot())?.updatedAt).toBe(10);
   });
 
-  it("marks the runtime offline when remote append fails", async () => {
+  it("debounces rapid local commits into one remote snapshot write", async () => {
+    const first = makeDocumentWithTexts(["A"]);
+    const second = makeDocumentWithTexts(["B"]);
+    const third = makeDocumentWithTexts(["C"]);
+    const persistence = memoryPersistence({ document: first, view: createInitialView(first) });
+    const remoteStore = new FakeRemoteStoreV2();
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        remoteStore,
+        createId: () => "new",
+        createClientId: () => "client-a",
+        now: () => 10,
+        remoteDebounceMs: 20
+      })
+    );
+    await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
+
+    act(() => {
+      result.current.commitSnapshot({ document: second, view: createInitialView(second) });
+      result.current.commitSnapshot({ document: third, view: createInitialView(third) });
+    });
+
+    await waitFor(async () => expect((await remoteStore.readLatestSnapshot())?.version).toBe(2));
+    expect(remoteStore.getMetering().writeBytes).toBe(remoteStore.getMetering().storedBytes);
+  });
+
+  it("keeps a 10 minute typing simulation bounded by the latest snapshot size", async () => {
+    let document = makeDocumentWithTexts(["A"]);
+    const nodeId = document.nodes[document.rootId].children[0];
+    const persistence = memoryPersistence({ document, view: createInitialView(document) });
+    const remoteStore = new FakeRemoteStoreV2();
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        remoteStore,
+        createId: () => "new",
+        createClientId: () => "client-a",
+        now: () => 10,
+        remoteDebounceMs: 20
+      })
+    );
+    await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
+
+    act(() => {
+      for (let index = 0; index < 600; index += 1) {
+        document = updateNodeText(document, nodeId, `A ${index}`, () => 10 + index);
+        result.current.commitSnapshot({ document, view: createInitialView(document) });
+      }
+    });
+
+    await waitFor(async () => expect((await remoteStore.readLatestSnapshot())?.version).toBe(600));
+    const metering = remoteStore.getMetering();
+    expect(metering.writeBytes).toBe(metering.storedBytes);
+    expect(metering.readBytes).toBeLessThan(metering.storedBytes * 3);
+  });
+
+  it("keeps local persistence when a remote payload exceeds the byte budget", async () => {
     const first = makeDocumentWithTexts(["A"]);
     const second = makeDocumentWithTexts(["B"]);
     const persistence = memoryPersistence({ document: first, view: createInitialView(first) });
-    const remoteStore = new FakeRemoteStore();
+    const remoteStore = new FakeRemoteStoreV2();
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        remoteStore,
+        createId: () => "new",
+        createClientId: () => "client-a",
+        now: () => 10,
+        remoteDebounceMs: 0,
+        maxRemoteUpdateBytes: 1
+      })
+    );
+    await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
+
+    act(() => {
+      result.current.commitSnapshot({ document: second, view: createInitialView(second) });
+    });
+
+    await waitFor(() => expect(result.current.syncStatus).toBe("error"));
+    expect(persistence.saved.at(-1)?.document).toBe(second);
+    expect(await remoteStore.readLatestSnapshot()).toBeNull();
+  });
+
+  it("marks the runtime offline when remote snapshot write fails", async () => {
+    const first = makeDocumentWithTexts(["A"]);
+    const second = makeDocumentWithTexts(["B"]);
+    const persistence = memoryPersistence({ document: first, view: createInitialView(first) });
+    const remoteStore = new FakeRemoteStoreV2();
     const { result } = renderHook(() =>
       useOutlineWorkspace({
         persistence,
@@ -202,7 +300,7 @@ describe("useOutlineWorkspace", () => {
     );
     await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
 
-    remoteStore.failNextAppend();
+    remoteStore.failNextWrite();
     act(() => {
       result.current.commitSnapshot({ document: second, view: createInitialView(second) });
     });
@@ -214,10 +312,12 @@ describe("useOutlineWorkspace", () => {
   it("syncs a local commit into another runtime through a shared fake remote store", async () => {
     const first = makeDocumentWithTexts(["A"]);
     const second = makeDocumentWithTexts(["B"]);
-    const remoteStore = new FakeRemoteStore();
+    const remoteStore = new FakeRemoteStoreV2();
+    const persistenceA = memoryPersistence({ document: first, view: createInitialView(first) });
+    const persistenceB = memoryPersistence({ document: first, view: createInitialView(first) });
     const clientA = renderHook(() =>
       useOutlineWorkspace({
-        persistence: memoryPersistence({ document: first, view: createInitialView(first) }),
+        persistence: persistenceA,
         remoteStore,
         createId: () => "new-a",
         createClientId: () => "client-a",
@@ -226,7 +326,7 @@ describe("useOutlineWorkspace", () => {
     );
     const clientB = renderHook(() =>
       useOutlineWorkspace({
-        persistence: memoryPersistence({ document: first, view: createInitialView(first) }),
+        persistence: persistenceB,
         remoteStore,
         createId: () => "new-b",
         createClientId: () => "client-b",
@@ -242,5 +342,68 @@ describe("useOutlineWorkspace", () => {
 
     const childId = second.nodes[second.rootId].children[0];
     await waitFor(() => expect(clientB.result.current.snapshot.document.nodes[childId].text).toBe("B"));
+  });
+
+  it("pulls the latest snapshot on focus without a realtime subscription", async () => {
+    const first = makeDocumentWithTexts(["A"]);
+    const second = makeDocumentWithTexts(["Focus"]);
+    const persistence = memoryPersistence({ document: first, view: createInitialView(first) });
+    const remoteStore = new FakeRemoteStoreV2();
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        remoteStore,
+        createId: () => "new",
+        createClientId: () => "client-a",
+        now: () => 10
+      })
+    );
+    await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
+
+    await remoteStore.writeLatestSnapshot(
+      createRemoteSnapshotRecord(createYjsWorkspace({ document: second, view: createInitialView(second) }), "remote", 2, 20)
+    );
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    const childId = second.nodes[second.rootId].children[0];
+    await waitFor(() => expect(result.current.snapshot.document.nodes[childId].text).toBe("Focus"));
+  });
+
+  it("saves a conflict backup when newer remote replaces pending local changes", async () => {
+    const first = makeDocumentWithTexts(["A"]);
+    const local = makeDocumentWithTexts(["Local"]);
+    const remote = makeDocumentWithTexts(["Remote"]);
+    const persistence = memoryPersistence({ document: first, view: createInitialView(first) });
+    const remoteStore = new FakeRemoteStoreV2();
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        remoteStore,
+        createId: () => "new",
+        createClientId: () => "client-a",
+        now: () => 10,
+        remoteDebounceMs: 50
+      })
+    );
+    await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
+
+    act(() => {
+      result.current.commitSnapshot({ document: local, view: createInitialView(local) });
+    });
+    const localChildId = local.nodes[local.rootId].children[0];
+    await waitFor(() => expect(result.current.snapshot.document.nodes[localChildId].text).toBe("Local"));
+    await remoteStore.writeLatestSnapshot(
+      createRemoteSnapshotRecord(createYjsWorkspace({ document: remote, view: createInitialView(remote) }), "remote", 2, 20)
+    );
+    act(() => {
+      window.dispatchEvent(new Event("focus"));
+    });
+
+    await waitFor(() => expect(result.current.syncStatus).toBe("conflict"));
+    const remoteChildId = remote.nodes[remote.rootId].children[0];
+    expect(persistence.conflictBackup?.document.nodes[localChildId].text).toBe("Local");
+    expect(result.current.snapshot.document.nodes[remoteChildId].text).toBe("Remote");
   });
 });

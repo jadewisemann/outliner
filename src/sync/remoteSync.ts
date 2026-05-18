@@ -11,10 +11,16 @@ import {
 import { createSyncQueueState, enqueueUpdate, hasAppliedUpdate, markUpdateApplied, type SyncQueueState } from "./syncQueue";
 import type { RemoteStore, RemoteUpdate, SyncStatus } from "./syncTypes";
 
+export const DEFAULT_REMOTE_UPDATE_BYTE_BUDGET = 256 * 1024;
+
 export type RemoteSyncState = {
   status: SyncStatus;
   queue: SyncQueueState;
   lastUpdateId?: string;
+};
+
+export type PushLocalUpdateOptions = {
+  maxUpdateBytes?: number;
 };
 
 export function createRemoteSyncState(): RemoteSyncState {
@@ -51,9 +57,14 @@ export async function pullRemoteUpdates(
 export async function pushLocalUpdate(
   store: RemoteStore,
   update: RemoteUpdate,
-  state: RemoteSyncState
+  state: RemoteSyncState,
+  options: PushLocalUpdateOptions = {}
 ): Promise<RemoteSyncState> {
   const queued = { ...state, queue: enqueueUpdate(state.queue, update), status: "syncing" as SyncStatus };
+  const maxUpdateBytes = options.maxUpdateBytes ?? DEFAULT_REMOTE_UPDATE_BYTE_BUDGET;
+  if (update.update.byteLength > maxUpdateBytes) {
+    return { ...queued, status: "error" };
+  }
   try {
     await store.appendUpdate(update);
     return {
@@ -84,8 +95,14 @@ export async function flushQueuedUpdates(store: RemoteStore, state: RemoteSyncSt
   return { ...next, status: "synced" };
 }
 
-export async function compactRemoteSnapshot(store: RemoteStore, workspace: YjsWorkspace): Promise<void> {
-  await store.writeSnapshot(encodeState(workspace), encodeStateVector(workspace));
+export async function compactRemoteSnapshot(
+  store: RemoteStore,
+  workspace: YjsWorkspace,
+  state?: RemoteSyncState
+): Promise<void> {
+  await store.writeSnapshot(encodeState(workspace), encodeStateVector(workspace), {
+    compactThrough: state?.lastUpdateId
+  });
 }
 
 export function subscribeRemoteUpdates(
@@ -94,6 +111,7 @@ export function subscribeRemoteUpdates(
   getState: () => RemoteSyncState,
   setState: (state: RemoteSyncState) => void
 ): () => void {
+  const startCursor = getState().lastUpdateId;
   return store.subscribe((update) => {
     const state = getState();
     if (hasAppliedUpdate(state.queue, update.id)) {
@@ -106,7 +124,7 @@ export function subscribeRemoteUpdates(
       lastUpdateId: update.id,
       status: "synced"
     });
-  });
+  }, { after: startCursor });
 }
 
 export function applyRemoteUpdate(workspace: YjsWorkspace, update: Uint8Array): void {

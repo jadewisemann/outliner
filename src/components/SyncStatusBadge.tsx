@@ -5,7 +5,8 @@ const labels: Record<SyncStatus, string> = {
   offline: "Offline",
   syncing: "Syncing",
   synced: "Synced",
-  error: "Sync error"
+  error: "Sync error",
+  conflict: "Conflict saved"
 };
 
 export function SyncStatusBadge({ status }: { status: SyncStatus }) {

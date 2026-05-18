@@ -4,7 +4,7 @@ import { SyncStatusBadge } from "../components/SyncStatusBadge";
 import { exportToJson, exportToMarkdown } from "../domain/exporters";
 import type { OutlineDocument, ViewState } from "../domain/outlineTypes";
 import { createBrowserLocalPersistence, type LocalPersistence } from "../persistence/localPersistence";
-import type { RemoteStore } from "../sync/syncTypes";
+import type { RemoteStoreV2 } from "../sync/syncTypes";
 import { useOutlineWorkspace } from "./useOutlineWorkspace";
 
 const createId = () => crypto.randomUUID();
@@ -12,7 +12,7 @@ const now = () => Date.now();
 
 type AppProps = {
   persistence?: LocalPersistence;
-  remoteStore?: RemoteStore;
+  remoteStore?: RemoteStoreV2;
 };
 
 export function App({ persistence: providedPersistence, remoteStore }: AppProps = {}) {

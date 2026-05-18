@@ -91,6 +91,77 @@ describe("remote sync", () => {
     expect(await store.listUpdates()).toEqual([update]);
   });
 
+  it("rejects an update that exceeds the configured remote payload budget", async () => {
+    const store = new FakeRemoteStore();
+    const state = await pushLocalUpdate(
+      store,
+      {
+        id: "too-large",
+        clientId: "client-a",
+        seq: 1,
+        update: new Uint8Array([1, 2, 3]),
+        createdAt: 1
+      },
+      createRemoteSyncState(),
+      { maxUpdateBytes: 2 }
+    );
+
+    expect(state.status).toBe("error");
+    expect(state.queue.pending).toHaveLength(1);
+    expect(await store.listUpdates()).toEqual([]);
+  });
+
+  it("compacts a snapshot and removes update log entries through the last synced cursor", async () => {
+    const store = new FakeRemoteStore();
+    const document = makeDocumentWithTexts(["Compact"]);
+    const source = createYjsWorkspace({ document, view: createInitialView(document) });
+    const first = {
+      id: "update-1",
+      clientId: "client-a",
+      seq: 1,
+      update: new Uint8Array([1]),
+      createdAt: 1
+    };
+    const second = {
+      id: "update-2",
+      clientId: "client-a",
+      seq: 2,
+      update: new Uint8Array([2]),
+      createdAt: 2
+    };
+
+    await store.appendUpdate(first);
+    await store.appendUpdate(second);
+    await compactRemoteSnapshot(store, source, { ...createRemoteSyncState(), lastUpdateId: first.id });
+
+    expect(await store.listUpdates()).toEqual([second]);
+  });
+
+  it("meters read and write bytes for fake remote cost regression tests", async () => {
+    const store = new FakeRemoteStore();
+    await store.appendUpdate({
+      id: "a",
+      clientId: "client-a",
+      seq: 1,
+      update: new Uint8Array([1]),
+      createdAt: 1
+    });
+    await store.appendUpdate({
+      id: "b",
+      clientId: "client-a",
+      seq: 2,
+      update: new Uint8Array([2, 3]),
+      createdAt: 2
+    });
+    await store.listUpdates("a");
+
+    expect(store.getMetering()).toMatchObject({
+      readBytes: 2,
+      writeBytes: 3,
+      storedBytes: 3
+    });
+  });
+
   it("applies subscribed remote updates and records them as applied", async () => {
     const store = new FakeRemoteStore();
     const target = createYjsWorkspace();

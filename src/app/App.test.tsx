@@ -4,11 +4,12 @@ import { createInitialView } from "../domain/outline";
 import type { OutlineSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
 import { makeDocumentWithTexts } from "../test/factories";
-import { FakeRemoteStore } from "../sync/fakeRemoteStore";
+import { FakeRemoteStoreV2 } from "../sync/fakeRemoteStoreV2";
 import { App } from "./App";
 
 function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersistence {
   let current = initial;
+  let conflictBackup: OutlineSnapshot | null = null;
   return {
     async load() {
       return current;
@@ -18,6 +19,15 @@ function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersist
     },
     async clear() {
       current = null;
+    },
+    async loadConflictBackup() {
+      return conflictBackup;
+    },
+    async saveConflictBackup(snapshot) {
+      conflictBackup = snapshot;
+    },
+    async clearConflictBackup() {
+      conflictBackup = null;
     }
   };
 }
@@ -60,7 +70,7 @@ describe("App", () => {
     render(
       <App
         persistence={memoryPersistence({ document, view: createInitialView(document) })}
-        remoteStore={new FakeRemoteStore()}
+        remoteStore={new FakeRemoteStoreV2()}
       />
     );
 

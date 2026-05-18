@@ -271,6 +271,10 @@ describe("remote sync cost controls", () => {
   it("rejects remote append payloads over the byte budget", () => {});
   it("compacts snapshot and cleans old update logs", () => {});
   it("meters fake remote read and write bytes", () => {});
+  it("queries only updates after the compacted cursor", () => {});
+  it("does not replay old update logs as fresh subscription events", () => {});
+  it("syncs through a RemoteStore without realtime subscribe", () => {});
+  it("keeps a 10 minute typing simulation under the byte budget", () => {});
 });
 
 describe("import and export", () => {

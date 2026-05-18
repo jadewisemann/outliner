@@ -1,4 +1,4 @@
-export type SyncStatus = "local-only" | "offline" | "syncing" | "synced" | "error";
+export type SyncStatus = "local-only" | "offline" | "syncing" | "synced" | "error" | "conflict";
 
 export type RemoteUpdate = {
   id: string;
@@ -8,10 +8,54 @@ export type RemoteUpdate = {
   createdAt: number;
 };
 
+export type RemoteSnapshotOptions = {
+  compactThrough?: string;
+};
+
+export type RemoteListOptions = {
+  limit?: number;
+};
+
+export type RemoteSubscribeOptions = {
+  after?: string;
+};
+
+export type RemoteStoreMetering = {
+  readBytes: number;
+  writeBytes: number;
+  storedBytes: number;
+};
+
+export type RemoteSnapshotMetadata = {
+  version: number;
+  clientId: string;
+  updatedAt: number;
+};
+
+export type RemoteSnapshotRecord = RemoteSnapshotMetadata & {
+  state: Uint8Array;
+  vector?: Uint8Array;
+};
+
+export type RemoteSyncV2State = {
+  status: SyncStatus;
+  version: number;
+  updatedAt: number;
+  hasPendingLocalChanges: boolean;
+};
+
 export interface RemoteStore {
   readSnapshot(): Promise<Uint8Array | null>;
-  writeSnapshot(snapshot: Uint8Array, vector: Uint8Array): Promise<void>;
+  writeSnapshot(snapshot: Uint8Array, vector: Uint8Array, options?: RemoteSnapshotOptions): Promise<void>;
   appendUpdate(update: RemoteUpdate): Promise<void>;
-  listUpdates(after?: string): Promise<RemoteUpdate[]>;
-  subscribe(onUpdate: (update: RemoteUpdate) => void): () => void;
+  listUpdates(after?: string, options?: RemoteListOptions): Promise<RemoteUpdate[]>;
+  subscribe(onUpdate: (update: RemoteUpdate) => void, options?: RemoteSubscribeOptions): () => void;
+  getMetering?(): RemoteStoreMetering;
+}
+
+export interface RemoteStoreV2 {
+  readLatestSnapshot(): Promise<RemoteSnapshotRecord | null>;
+  writeLatestSnapshot(record: RemoteSnapshotRecord): Promise<void>;
+  subscribe?(onSnapshotChanged: () => void): () => void;
+  getMetering?(): RemoteStoreMetering;
 }

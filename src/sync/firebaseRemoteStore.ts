@@ -1,14 +1,19 @@
 import type { Database } from "firebase/database";
 import {
   child,
+  endAt,
   get,
-  off,
+  limitToFirst,
   onChildAdded,
-  push,
+  orderByKey,
+  query,
   ref,
-  set
+  remove,
+  set,
+  startAfter
 } from "firebase/database";
-import type { RemoteStore, RemoteUpdate } from "./syncTypes";
+import type { RemoteListOptions, RemoteSnapshotOptions, RemoteStore, RemoteUpdate } from "./syncTypes";
+import { base64ToBytes, bytesToBase64 } from "./remoteEncoding";
 
 type FirebaseRemoteUpdate = {
   clientId: string;
@@ -28,17 +33,20 @@ export class FirebaseRemoteStore implements RemoteStore {
     return snapshot.exists() ? base64ToBytes(snapshot.val() as string) : null;
   }
 
-  async writeSnapshot(snapshot: Uint8Array, vector: Uint8Array): Promise<void> {
+  async writeSnapshot(snapshot: Uint8Array, vector: Uint8Array, options?: RemoteSnapshotOptions): Promise<void> {
     await set(child(this.workspaceRef(), "snapshot"), {
       state: bytesToBase64(snapshot),
       vector: bytesToBase64(vector),
       updatedAt: Date.now()
     });
+    if (options?.compactThrough) {
+      await this.deleteUpdatesThrough(options.compactThrough);
+    }
   }
 
   async appendUpdate(update: RemoteUpdate): Promise<void> {
     const updatesRef = child(this.workspaceRef(), "updates");
-    const updateRef = push(updatesRef);
+    const updateRef = child(updatesRef, update.id);
     await set(updateRef, {
       clientId: update.clientId,
       seq: update.seq,
@@ -47,8 +55,15 @@ export class FirebaseRemoteStore implements RemoteStore {
     } satisfies FirebaseRemoteUpdate);
   }
 
-  async listUpdates(after?: string): Promise<RemoteUpdate[]> {
-    const snapshot = await get(child(this.workspaceRef(), "updates"));
+  async listUpdates(after?: string, options?: RemoteListOptions): Promise<RemoteUpdate[]> {
+    const updatesRef = child(this.workspaceRef(), "updates");
+    const updatesQuery = query(
+      updatesRef,
+      orderByKey(),
+      ...(after ? [startAfter(after)] : []),
+      ...(typeof options?.limit === "number" ? [limitToFirst(options.limit)] : [])
+    );
+    const snapshot = await get(updatesQuery);
     if (!snapshot.exists()) {
       return [];
     }
@@ -62,16 +77,13 @@ export class FirebaseRemoteStore implements RemoteStore {
         createdAt: update.createdAt
       }))
       .sort((a, b) => a.createdAt - b.createdAt);
-    if (!after) {
-      return updates;
-    }
-    const index = updates.findIndex((update) => update.id === after);
-    return index >= 0 ? updates.slice(index + 1) : updates;
+    return updates;
   }
 
-  subscribe(onUpdate: (update: RemoteUpdate) => void): () => void {
+  subscribe(onUpdate: (update: RemoteUpdate) => void, options?: { after?: string }): () => void {
     const updatesRef = child(this.workspaceRef(), "updates");
-    const unsubscribe = onChildAdded(updatesRef, (snapshot) => {
+    const updatesQuery = query(updatesRef, orderByKey(), ...(options?.after ? [startAfter(options.after)] : []));
+    const unsubscribe = onChildAdded(updatesQuery, (snapshot) => {
       const value = snapshot.val() as FirebaseRemoteUpdate;
       onUpdate({
         id: snapshot.key ?? crypto.randomUUID(),
@@ -87,21 +99,17 @@ export class FirebaseRemoteStore implements RemoteStore {
   private workspaceRef() {
     return ref(this.database, `users/${this.userId}/workspaces/root`);
   }
+
+  private async deleteUpdatesThrough(updateId: string): Promise<void> {
+    const updatesRef = child(this.workspaceRef(), "updates");
+    const snapshot = await get(query(updatesRef, orderByKey(), endAt(updateId)));
+    if (!snapshot.exists()) {
+      return;
+    }
+    await Promise.all(
+      Object.keys(snapshot.val() as Record<string, FirebaseRemoteUpdate>).map((id) => remove(child(updatesRef, id)))
+    );
+  }
 }
 
-export function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-}
-
-export function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
-}
+export { base64ToBytes, bytesToBase64 };

@@ -1,4 +1,5 @@
-import type { RemoteStore, RemoteUpdate } from "./syncTypes";
+import type { RemoteListOptions, RemoteSnapshotOptions, RemoteStore, RemoteUpdate } from "./syncTypes";
+import { base64ToBytes, bytesToBase64 } from "./remoteEncoding";
 
 type StoredRemoteUpdate = {
   id: string;
@@ -32,12 +33,14 @@ export class BrowserRemoteStore implements RemoteStore {
     return state.snapshot ? base64ToBytes(state.snapshot) : null;
   }
 
-  async writeSnapshot(snapshot: Uint8Array, vector: Uint8Array): Promise<void> {
+  async writeSnapshot(snapshot: Uint8Array, vector: Uint8Array, options?: RemoteSnapshotOptions): Promise<void> {
     const state = this.readState();
+    const updates = options?.compactThrough ? deleteUpdatesThrough(state.updates, options.compactThrough) : state.updates;
     this.writeState({
       ...state,
       snapshot: bytesToBase64(snapshot),
-      vector: bytesToBase64(vector)
+      vector: bytesToBase64(vector),
+      updates
     });
   }
 
@@ -57,7 +60,7 @@ export class BrowserRemoteStore implements RemoteStore {
     this.channel?.postMessage({ type: "update-appended" });
   }
 
-  async listUpdates(after?: string): Promise<RemoteUpdate[]> {
+  async listUpdates(after?: string, options?: RemoteListOptions): Promise<RemoteUpdate[]> {
     const updates = this.readState()
       .updates.map((update) => ({
         id: update.id,
@@ -67,11 +70,8 @@ export class BrowserRemoteStore implements RemoteStore {
         createdAt: update.createdAt
       }))
       .sort((left, right) => left.createdAt - right.createdAt);
-    if (!after) {
-      return updates;
-    }
-    const index = updates.findIndex((update) => update.id === after);
-    return index >= 0 ? updates.slice(index + 1) : updates;
+    const filtered = after ? updates.slice(updates.findIndex((update) => update.id === after) + 1) : updates;
+    return typeof options?.limit === "number" ? filtered.slice(0, options.limit) : filtered;
   }
 
   subscribe(onUpdate: (update: RemoteUpdate) => void): () => void {
@@ -134,19 +134,7 @@ export class BrowserRemoteStore implements RemoteStore {
   }
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary);
-}
-
-function base64ToBytes(value: string): Uint8Array {
-  const binary = atob(value);
-  const bytes = new Uint8Array(binary.length);
-  for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
-  }
-  return bytes;
+function deleteUpdatesThrough(updates: StoredRemoteUpdate[], updateId: string): StoredRemoteUpdate[] {
+  const index = updates.findIndex((update) => update.id === updateId);
+  return index >= 0 ? updates.slice(index + 1) : updates;
 }

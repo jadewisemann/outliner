@@ -66,6 +66,8 @@ MVP 이후 Dynalist와의 기능 차이는 아래 순서로 줄인다. 단, 제�
    - 정상적인 텍스트 입력이 매 keypress마다 전체 문서 update를 원격에 append하지 않게 batching/debounce한다.
    - snapshot compaction과 update log cleanup으로 새 클라이언트가 과거 전체 로그를 반복 read하지 않게 한다.
    - 원격 payload size guard와 read/write byte metering 테스트를 둔다.
+   - 개인 다기기 동기화가 목표이므로 realtime subscription을 필수 요구사항으로 두지 않는다.
+   - 단기적으로 RTDB adapter 비용 누수를 막고, 중기적으로 정적 snapshot/blob 중심 저장소를 포함한 `RemoteStore` v2 후보를 결정한다.
 5. 가져오기/내보내기 확장
    - 현재 JSON/Markdown export에 더해 OPML export/import를 지원한다.
    - indentation plain text import/export를 명시적 메뉴로 제공한다.
@@ -198,6 +200,9 @@ MVP 이후 Dynalist와의 기능 차이는 아래 순서로 줄인다. 단, 제�
 - 로컬 변경은 Yjs update로 append한다.
 - 원격 update는 수신 순서와 무관하게 적용 가능해야 한다.
 - 이미 적용한 update는 다시 적용해도 결과가 깨지지 않아야 한다.
+- 원격 sync는 keypress마다 전체 문서를 전송하지 않는다.
+- update log는 compaction과 cleanup으로 크기 상한을 가진다.
+- realtime subscription은 optional capability이며, 앱 시작/포커스 복귀/수동 sync만으로도 개인 다기기 동기화가 가능해야 한다.
 
 ### 4.7 벌크 편집 규칙
 
@@ -265,7 +270,7 @@ MVP 이후 Dynalist와의 기능 차이는 아래 순서로 줄인다. 단, 제�
 ## 7. 제품 결정
 
 - Phase 0~6은 로그인 없는 로컬 단일 문서, Yjs-backed local runtime, optional RemoteStore sync를 우선한다.
-- 원격 동기화 저장소는 Firebase Realtime Database를 사용한다.
+- 원격 동기화는 optional RemoteStore adapter로 연결하며, Firebase Realtime Database는 현재 구현된 adapter로 유지하되 Phase 12에서 기본 저장소 여부를 재검토한다.
 - MVP 텍스트는 플레인 텍스트 중심이다.
 - TODO/checkbox 노드는 MVP에서 제외한다.
 - 자식 있는 빈 노드에서 `Backspace`를 누르면 자식을 같은 레벨로 승격한다.

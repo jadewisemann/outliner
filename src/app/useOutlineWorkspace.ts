@@ -8,16 +8,15 @@ import {
 import type { Clock, IdGenerator, OutlineSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
 import {
-  createRemoteSyncState,
-  pullRemoteUpdates,
-  pushLocalUpdate,
-  subscribeRemoteUpdates,
-  type RemoteSyncState
-} from "../sync/remoteSync";
-import type { RemoteStore, SyncStatus } from "../sync/syncTypes";
+  createRemoteSnapshotRecord,
+  createRemoteSyncV2State,
+  DEFAULT_REMOTE_SNAPSHOT_BYTE_BUDGET,
+  applyRemoteSnapshotRecord,
+  writeRemoteSnapshotV2
+} from "../sync/remoteSyncV2";
+import type { RemoteSnapshotRecord, RemoteStoreV2, RemoteSyncV2State, SyncStatus } from "../sync/syncTypes";
 import {
   createYjsWorkspace,
-  encodeState,
   getYjsSnapshot,
   setYjsSnapshot,
   type YjsWorkspace
@@ -34,10 +33,13 @@ export type OutlineWorkspaceRuntime = {
 
 type UseOutlineWorkspaceOptions = {
   persistence: LocalPersistence;
-  remoteStore?: RemoteStore;
+  remoteStore?: RemoteStoreV2;
   createId: IdGenerator;
   createClientId?: IdGenerator;
   now: Clock;
+  remoteDebounceMs?: number;
+  maxRemoteUpdateBytes?: number;
+  maxRemoteSnapshotBytes?: number;
 };
 
 export function useOutlineWorkspace({
@@ -45,7 +47,10 @@ export function useOutlineWorkspace({
   remoteStore,
   createId,
   createClientId = () => crypto.randomUUID(),
-  now
+  now,
+  remoteDebounceMs = 150,
+  maxRemoteUpdateBytes,
+  maxRemoteSnapshotBytes = maxRemoteUpdateBytes ?? DEFAULT_REMOTE_SNAPSHOT_BYTE_BUDGET
 }: UseOutlineWorkspaceOptions): OutlineWorkspaceRuntime {
   const initialSnapshot = useMemo(() => normalizeSnapshot(makeEmptySnapshot(createId, now), createId, now), [
     createId,
@@ -57,9 +62,11 @@ export function useOutlineWorkspace({
   const nowRef = useRef(now);
   const undoStackRef = useRef<OutlineSnapshot[]>([]);
   const redoStackRef = useRef<OutlineSnapshot[]>([]);
-  const remoteStateRef = useRef<RemoteSyncState>(createRemoteSyncState());
+  const remoteStateRef = useRef<RemoteSyncV2State>(createRemoteSyncV2State());
   const clientIdRef = useRef<string>(createClientId());
-  const seqRef = useRef(0);
+  const pendingRemoteRecordRef = useRef<RemoteSnapshotRecord | null>(null);
+  const remoteDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>();
+  const pullingRemoteRef = useRef(false);
   const loadedRef = useRef(false);
   const [snapshot, setSnapshot] = useState(initialSnapshot);
   const [loaded, setLoaded] = useState(false);
@@ -76,7 +83,7 @@ export function useOutlineWorkspace({
     [persistence]
   );
 
-  const setRemoteState = useCallback((state: RemoteSyncState) => {
+  const setRemoteState = useCallback((state: RemoteSyncV2State) => {
     remoteStateRef.current = state;
     setSyncStatus(state.status);
   }, []);
@@ -92,6 +99,83 @@ export function useOutlineWorkspace({
     [persistSnapshot]
   );
 
+  const flushPendingRemoteSnapshot = useCallback(() => {
+    if (!remoteStore || !pendingRemoteRecordRef.current) {
+      return;
+    }
+    const record = pendingRemoteRecordRef.current;
+    pendingRemoteRecordRef.current = null;
+    writeRemoteSnapshotV2(remoteStore, record, maxRemoteSnapshotBytes).then((status) => {
+      if (status === "synced") {
+        setRemoteState({
+          status,
+          version: record.version,
+          updatedAt: record.updatedAt,
+          hasPendingLocalChanges: false
+        });
+        return;
+      }
+      setRemoteState({ ...remoteStateRef.current, status });
+    });
+  }, [maxRemoteSnapshotBytes, remoteStore, setRemoteState]);
+
+  const scheduleRemoteSnapshot = useCallback(
+    (record: RemoteSnapshotRecord) => {
+      pendingRemoteRecordRef.current = record;
+      setSyncStatus("syncing");
+      if (remoteDebounceRef.current) {
+        clearTimeout(remoteDebounceRef.current);
+      }
+      remoteDebounceRef.current = setTimeout(flushPendingRemoteSnapshot, remoteDebounceMs);
+    },
+    [flushPendingRemoteSnapshot, remoteDebounceMs]
+  );
+
+  const applyRemoteRecord = useCallback(
+    async (record: RemoteSnapshotRecord) => {
+      applyRemoteSnapshotRecord(workspaceRef.current, record);
+      const remoteSnapshot = getYjsSnapshot(workspaceRef.current);
+      if (!remoteSnapshot) {
+        return;
+      }
+      const normalized = normalizeSnapshot(remoteSnapshot, createIdRef.current, nowRef.current);
+      snapshotRef.current = normalized;
+      setSnapshot(normalized);
+      await persistence.save(normalized);
+    },
+    [persistence]
+  );
+
+  const pullLatestRemoteSnapshot = useCallback(async () => {
+    if (!remoteStore) {
+      return;
+    }
+    if (pullingRemoteRef.current) {
+      return;
+    }
+    pullingRemoteRef.current = true;
+    try {
+    const record = await remoteStore.readLatestSnapshot();
+    if (!record || !isRemoteNewer(record, remoteStateRef.current)) {
+      return;
+    }
+    const hadPendingLocalChanges = remoteStateRef.current.hasPendingLocalChanges || pendingRemoteRecordRef.current !== null;
+    if (hadPendingLocalChanges) {
+      await persistence.saveConflictBackup(cloneSnapshot(snapshotRef.current));
+    }
+    await applyRemoteRecord(record);
+    setRemoteState({
+      status: hadPendingLocalChanges ? "conflict" : "synced",
+      version: record.version,
+      updatedAt: record.updatedAt,
+      hasPendingLocalChanges: false
+    });
+    pendingRemoteRecordRef.current = null;
+    } finally {
+      pullingRemoteRef.current = false;
+    }
+  }, [applyRemoteRecord, persistence, remoteStore, setRemoteState]);
+
   const publishSnapshot = useCallback(
     (next: OutlineSnapshot) => {
       const normalized = normalizeSnapshot(next, createId, now);
@@ -101,21 +185,19 @@ export function useOutlineWorkspace({
       }
       replaceSnapshot(normalized);
       if (remoteStore && loadedRef.current) {
-        seqRef.current += 1;
-        const update = {
-          id: `${clientIdRef.current}:${seqRef.current}`,
-          clientId: clientIdRef.current,
-          seq: seqRef.current,
-          update: encodeState(workspaceRef.current),
-          createdAt: now()
+        const updatedAt = now();
+        const version = Math.max(remoteStateRef.current.version, pendingRemoteRecordRef.current?.version ?? 0) + 1;
+        const record = createRemoteSnapshotRecord(workspaceRef.current, clientIdRef.current, version, updatedAt);
+        remoteStateRef.current = {
+          status: "syncing",
+          version,
+          updatedAt,
+          hasPendingLocalChanges: true
         };
-        setSyncStatus("syncing");
-        pushLocalUpdate(remoteStore, update, remoteStateRef.current).then(setRemoteState, () => {
-          setRemoteState({ ...remoteStateRef.current, status: "error" });
-        });
+        scheduleRemoteSnapshot(record);
       }
     },
-    [createId, now, remoteStore, replaceSnapshot, setRemoteState]
+    [createId, now, remoteStore, replaceSnapshot, scheduleRemoteSnapshot]
   );
 
   useEffect(() => {
@@ -140,35 +222,20 @@ export function useOutlineWorkspace({
         setSyncStatus("local-only");
         return;
       }
-      setSyncStatus("syncing");
-      pullRemoteUpdates(remoteStore, workspaceRef.current, remoteStateRef.current)
-        .then((nextState) => {
+      setRemoteState({ ...remoteStateRef.current, status: "syncing" });
+      pullLatestRemoteSnapshot()
+        .then(() => {
           if (cancelled) {
             return;
           }
-          setRemoteState(nextState);
-          const remoteSnapshot = getYjsSnapshot(workspaceRef.current);
-          if (remoteSnapshot) {
-            const normalized = normalizeSnapshot(remoteSnapshot, createIdRef.current, nowRef.current);
-            snapshotRef.current = normalized;
-            setSnapshot(normalized);
-            void persistence.save(normalized);
+          if (remoteStateRef.current.status === "syncing") {
+            setRemoteState({ ...remoteStateRef.current, status: "synced" });
           }
-          unsubscribeRemote = subscribeRemoteUpdates(
-            remoteStore,
-            workspaceRef.current,
-            () => remoteStateRef.current,
-            (nextRemoteState) => {
-              setRemoteState(nextRemoteState);
-              const subscribedSnapshot = getYjsSnapshot(workspaceRef.current);
-              if (subscribedSnapshot) {
-                const normalized = normalizeSnapshot(subscribedSnapshot, createIdRef.current, nowRef.current);
-                snapshotRef.current = normalized;
-                setSnapshot(normalized);
-                void persistence.save(normalized);
-              }
-            }
-          );
+          unsubscribeRemote = remoteStore.subscribe?.(() => {
+            void pullLatestRemoteSnapshot().catch(() => {
+              setRemoteState({ ...remoteStateRef.current, status: "error" });
+            });
+          });
         })
         .catch(() => {
           if (!cancelled) {
@@ -180,7 +247,30 @@ export function useOutlineWorkspace({
       cancelled = true;
       unsubscribeRemote?.();
     };
-  }, [persistence, remoteStore, setRemoteState]);
+  }, [persistence, pullLatestRemoteSnapshot, remoteStore, setRemoteState]);
+
+  useEffect(() => {
+    if (!remoteStore) {
+      return;
+    }
+    const onFocus = () => {
+      void pullLatestRemoteSnapshot().catch(() => {
+        setRemoteState({ ...remoteStateRef.current, status: "error" });
+      });
+    };
+    window.addEventListener("focus", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+    };
+  }, [pullLatestRemoteSnapshot, remoteStore, setRemoteState]);
+
+  useEffect(() => {
+    return () => {
+      if (remoteDebounceRef.current) {
+        clearTimeout(remoteDebounceRef.current);
+      }
+    };
+  }, []);
 
   const undo = useCallback(() => {
     const previous = undoStackRef.current.at(-1);
@@ -259,4 +349,15 @@ function normalizeSnapshot(snapshot: OutlineSnapshot, createId: IdGenerator, now
 
 function snapshotsEqual(left: OutlineSnapshot, right: OutlineSnapshot): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function isRemoteNewer(record: RemoteSnapshotRecord, state: RemoteSyncV2State): boolean {
+  if (record.version !== state.version) {
+    return record.version > state.version;
+  }
+  return record.updatedAt > state.updatedAt;
+}
+
+function cloneSnapshot(snapshot: OutlineSnapshot): OutlineSnapshot {
+  return JSON.parse(JSON.stringify(snapshot)) as OutlineSnapshot;
 }
