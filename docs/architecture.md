@@ -266,7 +266,7 @@ interface RemoteStore {
 }
 ```
 
-테스트와 앱 통합 순서는 FakeRemoteStore가 먼저다. Firebase Realtime Database adapter는 같은 인터페이스를 구현한다. `App`은 선택적 `remoteStore`를 받을 수 있고, `VITE_FIREBASE_*`와 `VITE_OUTLINER_USER_ID` 설정이 없으면 remote adapter를 만들지 않는다.
+테스트와 앱 통합 순서는 FakeRemoteStore가 먼저다. Firebase Realtime Database adapter는 같은 인터페이스를 구현한다. `App`은 선택적 `remoteStore`를 받을 수 있고, `?remote=firebase`가 명시된 경우에만 Firebase adapter를 만든다. `VITE_FIREBASE_*`와 `VITE_OUTLINER_USER_ID` 설정이 있어도 명시적 remote mode가 없으면 `local-only`로 유지한다.
 
 ## 9. 오프라인 큐
 

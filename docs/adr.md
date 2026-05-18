@@ -92,9 +92,10 @@ Architecture Decision Record 형식으로 제품/기술 결정을 남긴다. 결
 ## ADR-013: 원격 동기화는 선택적 RemoteStore 주입으로 연결한다
 
 - 상태: 확정
-- 결정: 앱은 기본적으로 `local-only`로 실행하고, 원격 설정이 있을 때만 `RemoteStore`를 주입해 remote snapshot/update sync를 활성화한다.
+- 결정: 앱은 기본적으로 `local-only`로 실행하고, `?remote=firebase`처럼 사용자가 명시적으로 원격 모드를 선택했을 때만 `RemoteStore`를 주입해 remote snapshot/update sync를 활성화한다.
 - 이유: 로컬 우선 MVP는 Firebase 설정이나 네트워크 상태 때문에 첫 실행과 편집이 막히면 안 된다. 같은 인터페이스로 `FakeRemoteStore`와 `FirebaseRemoteStore`를 교체 가능하게 두면 테스트 가능성도 유지된다.
-- 영향: `App`과 workspace runtime은 optional `remoteStore`를 받는다. Firebase configuration이 없는 환경에서는 remote adapter를 만들지 않고 기존 로컬 저장, Undo/Redo, export 기능을 그대로 유지한다.
+- 영향: `App`과 workspace runtime은 optional `remoteStore`를 받는다. Firebase configuration이 있더라도 명시적 remote mode가 없으면 remote adapter를 만들지 않고 기존 로컬 저장, Undo/Redo, export 기능을 그대로 유지한다.
+- 비용 제약: snapshot 기반 update는 현재 전체 상태를 전송하므로 dev 기본값으로 Firebase에 연결하지 않는다. 원격 sync 비용/compaction 정책은 Phase 13 이전에 재검토한다.
 
 ## ADR-014: 키보드 파워 편집은 visible order 기반 domain command로 구현한다
 

@@ -168,8 +168,8 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - snapshot 기반 two-client merge helper
 - `useOutlineWorkspace`와 `App`의 optional `remoteStore` 연결
 - runtime `syncStatus` badge 연결
-- Firebase env 설정 기반 optional adapter 생성
-- Firebase 설정이 없을 때 `local-only` fallback
+- 명시적 `?remote=firebase` 설정 기반 optional adapter 생성
+- Firebase 설정이 있더라도 명시적 remote mode가 없을 때 `local-only` fallback
 
 ### 완료된 테스트
 
@@ -185,7 +185,7 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 
 - `RemoteStore` contract를 기준으로 sync orchestration을 앱에서 사용할 수 있게 정리한다.
 - FakeRemoteStore 통합 테스트를 Firebase adapter 테스트보다 먼저 확장했다.
-- Firebase configuration은 선택적 런타임 설정으로 둔다. 설정이 없으면 `local-only`로 동작한다.
+- Firebase configuration은 선택적 런타임 설정으로 둔다. 설정이 있어도 명시적 `?remote=firebase` 없이는 `local-only`로 동작한다.
 - local Yjs update는 runtime client id와 client-local seq를 사용해 `${clientId}:${seq}` update id로 append한다.
 - subscribe로 받은 remote update는 applied id set을 통해 중복 적용을 방지한다.
 - offline queue flush와 sync status badge를 앱 상태에 연결한다.
@@ -195,7 +195,7 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - Firebase 없이 sync 로직 대부분이 테스트된다.
 - 두 fake client의 동시 편집이 병합된다.
 - 오프라인 편집 후 재연결 동기화가 통과한다.
-- Firebase 설정이 없어도 local-only MVP가 깨지지 않는다.
+- Firebase 설정이 있거나 없어도 명시적 remote mode 없이는 local-only MVP가 깨지지 않는다.
 
 ## Phase 7: 키보드 파워 편집 - 완료됨
 

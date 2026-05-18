@@ -7,11 +7,11 @@ import type { RemoteStore } from "../sync/syncTypes";
 export function createConfiguredRemoteStore(): RemoteStore | undefined {
   const searchParams = new URLSearchParams(window.location.search);
   const remoteMode = searchParams.get("remote");
-  if (remoteMode === "none") {
+  if (!shouldUseFirebaseRemote(searchParams)) {
+    if (remoteMode === "browser") {
+      return new BrowserRemoteStore(searchParams.get("workspace") ?? "root");
+    }
     return undefined;
-  }
-  if (searchParams.get("remote") === "browser") {
-    return new BrowserRemoteStore(searchParams.get("workspace") ?? "root");
   }
 
   const {
@@ -44,4 +44,8 @@ export function createConfiguredRemoteStore(): RemoteStore | undefined {
   });
 
   return new FirebaseRemoteStore(getDatabase(app), userId);
+}
+
+export function shouldUseFirebaseRemote(searchParams: URLSearchParams): boolean {
+  return searchParams.get("remote") === "firebase";
 }

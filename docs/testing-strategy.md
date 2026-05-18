@@ -22,6 +22,7 @@
 - sync queue 기초 상태 전이
 - FakeRemoteStore를 통한 remote snapshot/update pull-push, duplicate idempotency, offline queue flush, subscribe update, two-client merge
 - Yjs-backed app runtime과 RemoteStore 통합: local-only fallback, remote pull, local push, offline status, shared fake remote two-runtime sync
+- Firebase config가 있어도 명시적 `?remote=firebase` 없이는 remote adapter를 만들지 않는 opt-in guard
 - 벌크 편집 E2E: indented paste, range indent, range delete
 - 키보드 파워 편집 도메인/컴포넌트/E2E: node/range move, parent-boundary move, multi cursor editing
 
