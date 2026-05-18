@@ -2,7 +2,7 @@
 
 모든 Phase는 TDD로 진행한다. 각 기능은 실패하는 테스트를 먼저 만들고, 최소 구현으로 통과시킨 뒤, 리팩터링한다.
 
-현재 구현 상태는 Phase 0~7 완료, Phase 8 진행 중이다. 10,000개 visible selector 성능 테스트와 기본 virtual list 렌더링은 추가되었고, 다음 개발자는 Yjs-backed runtime과 RemoteStore sync 구조를 유지한 채 대량 문서 기본 편집 성능과 50,000개 노드 병목을 검증한다.
+현재 구현 상태는 Phase 0~7 완료, Phase 8은 Firebase-backed 원격 sync smoke 실환경 검증만 남아 있다. Phase 9 검색/필터, Phase 10 태그/내부 링크/백링크, Phase 11 리치 포맷과 노트는 selector/metadata 기반 v1으로 완료되었다. 이후 Dynalist와의 기능 차이는 파일/폴더/다중 문서, 태스크 관리, 공유/협업을 제외하고 import/export, 히스토리/설정 순서로 줄인다.
 
 ## Phase 0: 프로젝트 부트스트랩 - 완료됨
 
@@ -259,6 +259,7 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - visible node selector traversal 안정화 - 완료됨
 - virtual list 적용 - 기본 렌더링 완료
 - active row Lexical mount count 검증 - 완료됨
+- browser-backed remote sync E2E - 완료됨
 - render profiling 기준 정리
 
 ### 완료 기준
@@ -267,7 +268,151 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - 입력 시 전체 트리를 불필요하게 재렌더링하지 않는다.
 - 50,000개 노드 목표를 막는 구조적 병목이 문서화되어 있다.
 
-## Phase 9: 모바일 패키징 - 웹 MVP 이후
+## Phase 9: 검색과 필터 - 완료됨
+
+### 목표
+
+단일 workspace 안에서 텍스트를 빠르게 찾고, 검색 결과를 outline 문맥 또는 flat 목록으로 탐색한다. 파일/문서 전체 검색은 제품 범위가 아니며, 현재 root workspace 안의 노드 검색만 다룬다.
+
+### 먼저 작성할 테스트
+
+- 현재 zoom root 안에서 text substring이 포함된 노드를 찾는다. - 완료됨
+- 접힌 subtree 내부의 match도 검색 결과에는 포함된다. - 완료됨
+- 검색 결과로 이동하면 해당 노드가 선택되고 필요한 조상 collapse 상태가 해제된다. - 완료됨
+- flat search view에서는 match node만 순서대로 표시하되, 원래 depth와 breadcrumb context를 유지한다. - 완료됨
+- 10,000개 노드에서 기본 검색이 사용 가능한 시간 안에 끝난다. - 완료됨
+
+### 구현 항목
+
+- `searchOutline(document, query, options)` selector - 완료됨
+- search UI와 query state - 완료됨
+- result navigation: next/previous match - 완료됨
+- outline context view와 flat result view - 완료됨
+- collapsed ancestor reveal command - 완료됨
+- 검색 성능 기준과 인덱싱 도입 조건 문서화 - 완료됨
+
+### 완료 기준
+
+- 사용자가 키보드로 검색을 열고 결과 사이를 이동할 수 있다.
+- 접힌 항목 내부 텍스트도 잃지 않고 찾을 수 있다.
+- 검색 상태는 편집 command, 줌인, Undo/Redo와 충돌하지 않는다.
+
+## Phase 10: 태그, 내부 링크, 백링크 - 완료됨
+
+### 목표
+
+플레인 텍스트 기반 작성 속도를 유지하면서 `#tag`, `@tag`, `[[internal link]]`를 인식해 지식관리 탐색성을 높인다. 태그와 링크는 태스크 기능이 아니며 due date, checkbox, collaborator mention과 연결하지 않는다.
+
+### 먼저 작성할 테스트
+
+- 노드 텍스트에서 `#tag`와 `@tag` 토큰을 추출한다. - 완료됨
+- tag filter가 해당 태그를 포함한 노드만 찾는다. - 완료됨
+- `[[...]]` 링크 삽입 후보가 같은 workspace의 노드에서 검색된다. - 완료됨
+- internal link는 node id를 대상으로 저장되어 대상 노드 text가 바뀌어도 깨지지 않는다. - 완료됨
+- 특정 노드의 backlinks를 계산한다. - 완료됨
+- 삭제된 노드를 가리키는 링크는 broken link 상태로 표시된다. - 완료됨
+
+### 구현 항목
+
+- tag/link parser와 selector - 완료됨
+- node id 기반 link metadata - 완료됨
+- tag list/tag filter UI - 완료됨
+- internal link autocomplete UI - 완료됨
+- backlink panel 또는 inline reference section - 완료됨
+- broken link 표시와 selector - 완료됨
+
+### 완료 기준
+
+- 태그로 관련 노드를 빠르게 모아볼 수 있다.
+- 다른 노드로 향하는 링크를 키보드 중심으로 삽입하고 이동할 수 있다.
+- backlinks가 local-first 저장, sync, export에 포함된다.
+
+## Phase 11: 리치 포맷과 노트 - 완료됨
+
+### 목표
+
+작성 중에는 Markdown-like source를 유지하고, inactive row에서는 읽기 좋은 렌더링을 제공한다. TODO/checkbox, date, recurring date, calendar sync는 이 Phase에서도 제외한다.
+
+### 먼저 작성할 테스트
+
+- inactive row가 bold, italic, inline code, strikethrough, link를 렌더링한다. - 완료됨
+- active row는 원본 Markdown-like source를 편집한다. - 완료됨
+- heading, color label, numbered list 속성이 노드 단위로 저장되고 export에 반영된다. - 완료됨
+- note 필드가 node text와 별도로 저장되고 접기/펼치기 표시 상태를 가진다. - 완료됨
+- 리치 포맷이 indent/outdent, move, bulk selection, paste와 충돌하지 않는다. - 완료됨
+
+### 구현 항목
+
+- `OutlineNode` metadata 확장: `note`, `noteVisible`, `heading`, `color`, `numbered` - 완료됨
+- Markdown-like inline renderer - 완료됨
+- link/image link preview 전략 - 기본 링크 렌더링 완료
+- LaTeX 렌더링 adapter 검토 - 후속 확장으로 보류
+- note editor와 note visibility setting - 완료됨
+- Lexical custom node 또는 row-level renderer 유지 여부 재평가 - row-level renderer 유지
+
+### 완료 기준
+
+- 리치 표시가 구조 편집의 속도와 키보드 흐름을 해치지 않는다.
+- 저장 모델이 plain text MVP 데이터를 migration 없이 읽을 수 있다.
+- formatting command는 Undo/Redo와 sync에 하나의 사용자 action으로 기록된다.
+
+## Phase 12: 가져오기/내보내기 확장
+
+### 목표
+
+현재 JSON/Markdown export를 보완해 OPML과 indentation plain text round-trip을 지원한다. Dynalist에서 데이터를 가져오거나 다른 outliner로 나갈 수 있는 통로를 만든다.
+
+### 먼저 작성할 테스트
+
+- OPML export가 outline hierarchy를 보존한다.
+- OPML import가 hierarchy, note, collapsed, formatting metadata 중 지원 가능한 필드를 복원한다.
+- indentation plain text import/export가 depth를 보존한다.
+- visible items only export가 접힌 subtree와 검색 필터 결과를 제외한다.
+- invalid import input은 기존 workspace를 훼손하지 않고 오류를 반환한다.
+
+### 구현 항목
+
+- OPML parser/serializer
+- import preview와 conflict 정책
+- 전체 교체, root 하위 병합, 현재 노드 아래 삽입 모드
+- visible-only export 옵션
+- export/import E2E
+
+### 완료 기준
+
+- 사용자가 주요 outliner 형식으로 데이터를 안전하게 가져오고 내보낼 수 있다.
+- import 실패가 기존 로컬 데이터와 sync queue를 손상시키지 않는다.
+
+## Phase 13: 히스토리, 백업, 설정
+
+### 목표
+
+개인 로컬 우선 앱으로서 장기 사용 안정성을 높인다. 협업 권한, public share, 서버 사이드 비즈니스 로직은 포함하지 않는다.
+
+### 먼저 작성할 테스트
+
+- 일정 간격 또는 의미 있는 edit transaction마다 local snapshot history가 저장된다.
+- 사용자가 이전 snapshot을 미리 보고 현재 workspace로 복원할 수 있다.
+- 수동 백업 파일이 현재 workspace와 view/preference 중 필요한 데이터를 포함한다.
+- shortcut/theme/font/spellcheck/word count 설정이 document와 분리되어 저장된다.
+- 설정 변경은 outline Undo/Redo stack에 들어가지 않는다.
+
+### 구현 항목
+
+- snapshot history store
+- restore preview와 restore transaction
+- manual backup export
+- remote snapshot/update compaction 정책
+- preference store와 command registry
+- keymap customization UI
+- theme/font/spellcheck/word count/auto-focus settings
+
+### 완료 기준
+
+- 실수나 sync 문제 발생 시 사용자가 과거 상태로 되돌아갈 수 있다.
+- 개인 설정이 문서 데이터와 분리되어 sync/export 정책을 명확히 가진다.
+
+## Phase 14: 모바일 패키징 - 웹 MVP 이후
 
 ### 목표
 

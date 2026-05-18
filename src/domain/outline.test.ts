@@ -11,6 +11,7 @@ import {
   removeEmptyNodeOrPromoteChildren,
   splitNode,
   toggleCollapse,
+  updateNodeMetadata,
   updateNodeText,
   zoomInto,
   zoomToAncestor
@@ -245,5 +246,17 @@ describe("exporters", () => {
     const [_, b] = doc.nodes[doc.rootId].children;
     const nested = indentNode(doc, b, () => 10);
     expect(exportToMarkdown(nested)).toBe("- A\n  - B");
+  });
+
+  it("exports heading, numbered, color, and note metadata", () => {
+    const doc = makeDocumentWithTexts(["Title"]);
+    const [title] = doc.nodes[doc.rootId].children;
+    const formatted = updateNodeMetadata(
+      doc,
+      title,
+      { heading: 2, numbered: true, color: "#336699", note: "More context" },
+      () => 10
+    );
+    expect(exportToMarkdown(formatted)).toBe("1. ## Title {color=#336699}\n  > More context");
   });
 });

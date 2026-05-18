@@ -3,6 +3,8 @@ import type {
   IdGenerator,
   NodeId,
   OutlineDocument,
+  OutlineLink,
+  OutlineNodeMetadata,
   OutlineNode,
   ViewState
 } from "./outlineTypes";
@@ -71,6 +73,40 @@ export function updateNodeText(
   return replaceNode(document, {
     ...node,
     text,
+    updatedAt: now()
+  });
+}
+
+export function updateNodeLinks(
+  document: OutlineDocument,
+  nodeId: NodeId,
+  links: OutlineLink[],
+  now: Clock = Date.now
+): OutlineDocument {
+  const node = document.nodes[nodeId];
+  if (!node || nodeId === document.rootId) {
+    return document;
+  }
+  return replaceNode(document, {
+    ...node,
+    links,
+    updatedAt: now()
+  });
+}
+
+export function updateNodeMetadata(
+  document: OutlineDocument,
+  nodeId: NodeId,
+  metadata: Partial<OutlineNodeMetadata>,
+  now: Clock = Date.now
+): OutlineDocument {
+  const node = document.nodes[nodeId];
+  if (!node || nodeId === document.rootId) {
+    return document;
+  }
+  return replaceNode(document, {
+    ...node,
+    ...metadata,
     updatedAt: now()
   });
 }
@@ -360,6 +396,25 @@ export function toggleCollapse(document: OutlineDocument, nodeId: NodeId, now: C
     collapsed: !node.collapsed,
     updatedAt: now()
   });
+}
+
+export function revealNode(document: OutlineDocument, nodeId: NodeId, now: Clock = Date.now): OutlineDocument {
+  if (!document.nodes[nodeId]) {
+    return document;
+  }
+  let next = document;
+  for (const ancestorId of getAncestorIds(document, nodeId)) {
+    const node = next.nodes[ancestorId];
+    if (!node || ancestorId === document.rootId || !node.collapsed) {
+      continue;
+    }
+    next = replaceNode(next, {
+      ...node,
+      collapsed: false,
+      updatedAt: now()
+    });
+  }
+  return next;
 }
 
 export function removeEmptyNodeOrPromoteChildren(

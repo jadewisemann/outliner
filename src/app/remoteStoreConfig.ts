@@ -1,9 +1,15 @@
 import { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
+import { BrowserRemoteStore } from "../sync/browserRemoteStore";
 import { FirebaseRemoteStore } from "../sync/firebaseRemoteStore";
 import type { RemoteStore } from "../sync/syncTypes";
 
 export function createConfiguredRemoteStore(): RemoteStore | undefined {
+  const searchParams = new URLSearchParams(window.location.search);
+  if (searchParams.get("remote") === "browser") {
+    return new BrowserRemoteStore(searchParams.get("workspace") ?? "root");
+  }
+
   const {
     VITE_FIREBASE_API_KEY,
     VITE_FIREBASE_AUTH_DOMAIN,

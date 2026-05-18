@@ -22,7 +22,7 @@ Dynalist의 핵심 경험인 무한 뎁스 아웃라이너를 로컬 퍼스트 �
 - JSON 내보내기
 - Markdown 내보내기
 
-### 제외
+### MVP 제외
 
 - 파일/폴더 시스템
 - 다중 문서
@@ -35,6 +35,45 @@ Dynalist의 핵심 경험인 무한 뎁스 아웃라이너를 로컬 퍼스트 �
 - 모바일 앱 패키징
 - 리치텍스트/마크다운 자동 변환
 - TODO/checkbox 노드
+
+### 제품 방향상 제외
+
+- Dynalist식 파일/폴더/다중 문서 시스템은 만들지 않는다. 이 앱의 문서는 앱 안의 파일 pane이 아니라 로컬/동기화 저장소의 단일 workspace 또는 추후 외부 파일 기반 저장 전략으로 다룬다.
+- 태스크 관리 기능은 제품 핵심에서 제외한다. TODO/checkbox, 완료 상태, due date, recurring date, calendar sync, overdue highlight는 구현하지 않는다.
+- 공유와 협업 기능은 제외한다. 개인 다기기 동기화는 유지하지만, public share, collaborator, 권한 모델, 댓글/알림은 만들지 않는다.
+
+## 2.1 MVP 이후 기능 후보
+
+MVP 이후 Dynalist와의 기능 차이는 아래 순서로 줄인다. 단, 제품 방향상 제외한 파일 시스템, 태스크 관리, 공유/협업은 이 목록에 포함하지 않는다.
+
+1. 검색과 필터
+   - 현재 zoom root 안에서 빠르게 텍스트를 찾는다.
+   - 접힌 subtree 안의 match를 발견하고, 사용자가 결과로 이동하면 필요한 조상 노드를 펼친다.
+   - 검색 결과는 outline 문맥 보기와 flat 결과 보기를 모두 검토한다.
+   - 초기 버전은 인메모리 선형 검색으로 구현하고, 대량 문서에서 병목이 확인될 때 인덱싱을 도입한다.
+2. 태그, 내부 링크, 백링크
+   - `#tag`, `@tag`를 텍스트 토큰으로 인식하고 tag filter와 tag list를 제공한다.
+   - `[[...]]` 입력으로 같은 workspace 안의 노드 링크를 삽입한다.
+   - 노드 id 기반 internal link를 저장해 rename 또는 text 변경에도 링크가 깨지지 않게 한다.
+   - 링크된 노드의 참조 목록을 볼 수 있게 한다.
+3. 리치 포맷과 노트
+   - Markdown-like source를 유지하되 inactive row에서는 bold, italic, inline code, strikethrough, link, image link preview, LaTeX 표시를 단계적으로 지원한다.
+   - heading, color label, numbered list는 노드 속성으로 분리해 구조 편집과 충돌하지 않게 한다.
+   - 본문 `text`와 별도 `note` 필드를 추가해 아이템 설명을 접거나 보일 수 있게 한다.
+   - TODO/checkbox와 date 계열은 리치 포맷 단계에서도 제외한다.
+4. 가져오기/내보내기 확장
+   - 현재 JSON/Markdown export에 더해 OPML export/import를 지원한다.
+   - indentation plain text import/export를 명시적 메뉴로 제공한다.
+   - visible items only export 옵션을 추가한다.
+   - import는 기존 workspace에 붙여넣기, 새 root 하위로 병합, 전체 교체를 구분한다.
+5. 히스토리와 백업
+   - 로컬 snapshot history를 저장해 특정 시점으로 복원할 수 있게 한다.
+   - 수동 백업 파일 다운로드와 자동 백업 정책을 제공한다.
+   - 원격 update log compaction과 snapshot history 보존 정책을 함께 설계한다.
+6. 사용자 설정과 접근성
+   - 키보드 shortcut 커스터마이즈를 command registry 기반으로 제공한다.
+   - theme, font size, spellcheck, word count, auto-focus, bullet click 동작 같은 개인 설정을 저장한다.
+   - 설정은 문서 데이터와 분리된 local/user preference로 저장한다.
 
 ## 3. 핵심 사용자 시나리오
 
@@ -214,8 +253,9 @@ Dynalist의 핵심 경험인 무한 뎁스 아웃라이너를 로컬 퍼스트 �
 
 ### 남은 MVP 체크리스트
 
-- 두 브라우저 창 또는 Firebase-backed 환경의 원격 sync E2E를 추가한다.
-- 10,000개 노드 fixture에서 visible 계산과 기본 편집이 사용 가능한 성능을 보인다.
+- browser-backed 원격 sync E2E는 추가되었다.
+- Firebase-backed 환경의 원격 sync smoke를 실제 프로젝트 설정으로 검증한다.
+- 10,000개 노드 fixture에서 visible 계산과 기본 편집이 사용 가능한 성능을 보인다. - 완료됨
 
 ## 7. 제품 결정
 

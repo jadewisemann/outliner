@@ -20,7 +20,15 @@ export function exportToMarkdown(document: OutlineDocument): string {
       return;
     }
     const indent = "  ".repeat(depth);
-    lines.push(`${indent}- ${node.text}`);
+    const marker = node.numbered ? "1." : "-";
+    const headingPrefix = node.heading ? `${"#".repeat(node.heading)} ` : "";
+    const colorSuffix = node.color ? ` {color=${node.color}}` : "";
+    lines.push(`${indent}${marker} ${headingPrefix}${node.text}${colorSuffix}`);
+    if (node.note) {
+      for (const line of node.note.split("\n")) {
+        lines.push(`${indent}  > ${line}`);
+      }
+    }
     for (const childId of node.children) {
       visit(childId, depth + 1);
     }

@@ -5,8 +5,22 @@ export type OutlineNode = {
   text: string;
   children: NodeId[];
   collapsed: boolean;
+  links?: OutlineLink[];
+  note?: string;
+  noteVisible?: boolean;
+  heading?: 1 | 2 | 3;
+  color?: string;
+  numbered?: boolean;
   createdAt: number;
   updatedAt: number;
+};
+
+export type OutlineNodeMetadata = Pick<OutlineNode, "note" | "noteVisible" | "heading" | "color" | "numbered">;
+
+export type OutlineLink = {
+  source: string;
+  targetNodeId: NodeId;
+  label: string;
 };
 
 export type OutlineDocument = {

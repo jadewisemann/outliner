@@ -427,4 +427,159 @@ describe("Outliner", () => {
       );
     });
   });
+
+  it("focuses search with mod f and navigates to the next result", async () => {
+    const document = makeDocumentWithTexts(["Alpha", "Beta target"]);
+    const onViewChange = vi.fn();
+    render(
+      <Outliner
+        document={document}
+        view={createInitialView(document)}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={vi.fn()}
+        onViewChange={onViewChange}
+      />
+    );
+    fireEvent.keyDown(window, { key: "f", code: "KeyF", metaKey: true });
+    expect(screen.getByRole("searchbox", { name: "Search outline" })).toHaveFocus();
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search outline" }), "target");
+    await userEvent.click(screen.getByRole("button", { name: "Next search result" }));
+    expect(onViewChange).toHaveBeenCalledWith(expect.objectContaining({ selectedNodeId: "n-2" }));
+  });
+
+  it("renders flat search results without changing the document structure", async () => {
+    const document = makeDocumentWithTexts(["Alpha", "Beta target", "Gamma"]);
+    const onDocumentChange = vi.fn();
+    render(
+      <Outliner
+        document={document}
+        view={createInitialView(document)}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={onDocumentChange}
+        onViewChange={vi.fn()}
+      />
+    );
+    await userEvent.type(screen.getByRole("searchbox", { name: "Search outline" }), "target");
+    await userEvent.click(screen.getByRole("button", { name: "Flat" }));
+    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
+    expect(screen.getByText("Beta target")).toBeInTheDocument();
+    expect(onDocumentChange).not.toHaveBeenCalled();
+  });
+
+  it("applies and clears a tag filter", async () => {
+    const document = makeDocumentWithTexts(["Alpha #phase9", "Beta"]);
+    render(
+      <Outliner
+        document={document}
+        view={{ ...createInitialView(document), selectedNodeId: "n-2" }}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={vi.fn()}
+        onViewChange={vi.fn()}
+      />
+    );
+    await userEvent.click(screen.getByLabelText("Tags").querySelector("button")!);
+    expect(screen.getByRole("searchbox", { name: "Search outline" })).toHaveValue("#phase9");
+    expect(screen.getByRole("searchbox", { name: "Search outline" })).toHaveValue("#phase9");
+    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByRole("searchbox", { name: "Search outline" })).toHaveValue("");
+  });
+
+  it("stores metadata when choosing an internal link candidate", async () => {
+    const document = makeDocumentWithTexts(["Source [[Tar", "Target"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: "n-1" });
+      return (
+        <>
+          <Outliner
+            document={currentDocument}
+            view={view}
+            createId={() => "new"}
+            now={() => 1}
+            onDocumentChange={setCurrentDocument}
+            onViewChange={setView}
+          />
+          <div data-testid="source-links">{JSON.stringify(currentDocument.nodes["n-1"].links ?? [])}</div>
+        </>
+      );
+    }
+    render(<Harness />);
+    await userEvent.click(screen.getByRole("button", { name: "Target" }));
+    expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("Source [[Target]]");
+    expect(screen.getByTestId("source-links")).toHaveTextContent('"targetNodeId":"n-2"');
+  });
+
+  it("renders markdown-like source richly only for inactive rows", () => {
+    const document = makeDocumentWithTexts(["**Bold**", "**Source**"]);
+    render(
+      <Outliner
+        document={document}
+        view={{ ...createInitialView(document), selectedNodeId: "n-2" }}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={vi.fn()}
+        onViewChange={vi.fn()}
+      />
+    );
+    expect(screen.getByText("Bold").tagName).toBe("STRONG");
+    expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("**Source**");
+  });
+
+  it("updates node formatting metadata and shows notes", async () => {
+    const document = makeDocumentWithTexts(["Formatted", "Other"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: "n-1" });
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Heading" }), "2");
+    await userEvent.click(screen.getByRole("checkbox", { name: "Numbered node" }));
+    await userEvent.type(screen.getByRole("textbox", { name: "Node note" }), "A note");
+    await userEvent.click(screen.getByText("Other"));
+    expect(screen.getByText("Formatted").closest(".outline-row")).toHaveClass("outline-row-heading-2");
+    expect(screen.getByText("A note")).toHaveClass("node-note");
+  });
+
+  it("keeps rich metadata while moving nodes", async () => {
+    const document = makeDocumentWithTexts(["A", "B"]);
+    document.nodes["n-2"] = { ...document.nodes["n-2"], heading: 1, note: "Details" };
+    const onDocumentChange = vi.fn();
+    render(
+      <Outliner
+        document={document}
+        view={{ ...createInitialView(document), selectedNodeId: "n-2" }}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={onDocumentChange}
+        onViewChange={vi.fn()}
+      />
+    );
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "ArrowUp",
+      code: "ArrowUp",
+      altKey: true
+    });
+    await waitFor(() => {
+      expect(onDocumentChange).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nodes: expect.objectContaining({
+            "n-2": expect.objectContaining({ heading: 1, note: "Details" })
+          })
+        })
+      );
+    });
+  });
 });

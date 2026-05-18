@@ -27,9 +27,12 @@
 
 ### 다음 테스트 우선순위
 
-1. 두 browser context 또는 browser-backed sync E2E
-2. reload 후 문서, collapsed state, zoom state 복원 E2E
-3. 10,000 node visible selector 성능 테스트
+1. Firebase-backed sync smoke
+2. 50,000 node 병목 profiling
+3. render profiling 기준 문서화
+4. OPML import/export round-trip
+5. 히스토리와 preference store 테스트
+6. 모바일 persistence adapter 계약 테스트
 
 ### 단위 테스트
 
@@ -44,6 +47,11 @@
 - visible node selector
 - breadcrumb selector
 - export serializer
+- search selector
+- tag/internal link parser
+- backlink selector
+- OPML parser/serializer
+- preference reducer/store
 - sync queue state machine
 - Yjs helper encode/decode wrapper
 
@@ -220,6 +228,45 @@ test("edits multiple rows with keyboard multi cursors", async ({ page }) => {});
 test("restores the outline after reload", async ({ page }) => {});
 test("syncs edits between two browser contexts", async ({ browser }) => {});
 test("keeps offline edits and syncs them after reconnect", async ({ page }) => {});
+```
+
+### 4.9 MVP 이후 기능 테스트
+
+```ts
+describe("outline search", () => {
+  it("finds text matches under the current zoom root", () => {}); // 완료됨
+  it("includes matches inside collapsed descendants", () => {}); // 완료됨
+  it("reveals collapsed ancestors when navigating to a match", () => {}); // 완료됨
+  it("renders flat search results without changing the document structure", () => {}); // 완료됨
+});
+
+describe("tags and internal links", () => {
+  it("extracts hash and at tags from node text", () => {}); // 완료됨
+  it("filters visible results by tag", () => {}); // 완료됨
+  it("stores internal links by target node id", () => {}); // 완료됨
+  it("keeps links valid after the target text changes", () => {}); // 완료됨
+  it("finds backlinks for a target node", () => {}); // 완료됨
+});
+
+describe("rich formatting and notes", () => {
+  it("renders markdown-like inline formatting for inactive rows", () => {}); // 완료됨
+  it("keeps active row editing in source text", () => {}); // 완료됨
+  it("stores note text separately from node text", () => {}); // 완료됨
+  it("applies heading, color, and numbered metadata without changing children order", () => {}); // 완료됨
+});
+
+describe("import and export", () => {
+  it("exports OPML while preserving hierarchy", () => {});
+  it("imports OPML into node drafts without mutating the current document", () => {});
+  it("exports only visible items when requested", () => {});
+  it("rejects invalid import input without data loss", () => {});
+});
+
+describe("history and preferences", () => {
+  it("stores restorable local snapshot history", () => {});
+  it("restores a selected snapshot as one undoable action", () => {});
+  it("keeps user preferences outside the outline undo stack", () => {});
+});
 ```
 
 ## 5. 테스트 작성 규칙

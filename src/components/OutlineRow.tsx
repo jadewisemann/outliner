@@ -21,19 +21,23 @@ import {
   COPY_COMMAND,
   type EditorState
 } from "lexical";
-import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { OutlineNode } from "../domain/outlineTypes";
 import type { CursorTextEdit } from "../domain/multiCursor";
+import { extractTags } from "../domain/searchSelectors";
+import { renderInlineMarkdown } from "../domain/richText";
 
 type OutlineRowProps = {
   node: OutlineNode;
   depth: number;
   active: boolean;
   selected: boolean;
+  highlighted: boolean;
   hasCursor: boolean;
   hasBulkSelection: boolean;
   hasMultiCursor: boolean;
   onSelect: () => void;
+  onSelectTag: (tag: string) => void;
   onTextChange: (text: string) => void;
   onCreateAfter: (offset?: number) => void;
   onPasteText: (offset: number, text: string) => void;
@@ -53,17 +57,17 @@ type OutlineRowProps = {
 };
 
 function OutlineRowComponent(props: OutlineRowProps) {
-  const { node, depth, active, selected, hasCursor, onSelect, onToggleCollapse, onZoom } = props;
+  const { node, depth, active, selected, highlighted, hasCursor, onSelect, onSelectTag, onToggleCollapse, onZoom } = props;
   props.onRender?.(node.id);
   const hasChildren = node.children.length > 0;
   return (
     <div
       className={`outline-row ${active ? "outline-row-active" : ""} ${selected ? "outline-row-selected" : ""} ${
-        hasCursor ? "outline-row-cursor" : ""
-      }`}
+        highlighted ? "outline-row-highlighted" : ""
+      } ${node.heading ? `outline-row-heading-${node.heading}` : ""} ${hasCursor ? "outline-row-cursor" : ""}`}
       data-node-id={node.id}
       data-node-text={node.text}
-      style={{ "--depth": depth } as CSSProperties}
+      style={{ "--depth": depth, "--node-color": node.color ?? "inherit" } as CSSProperties}
     >
       <button
         className="collapse-button"
@@ -87,7 +91,11 @@ function OutlineRowComponent(props: OutlineRowProps) {
         }}
       />
       <div className="row-editor" onClick={onSelect}>
-        {active ? <ActiveRowEditor {...props} /> : <span className="plain-row-text">{node.text || "\u00a0"}</span>}
+        {active ? (
+          <ActiveRowEditor {...props} />
+        ) : (
+          <PlainRowText node={node} onSelectTag={onSelectTag} />
+        )}
       </div>
     </div>
   );
@@ -99,11 +107,54 @@ export const OutlineRow = memo(OutlineRowComponent, (previous, next) => {
     previous.depth === next.depth &&
     previous.active === next.active &&
     previous.selected === next.selected &&
+    previous.highlighted === next.highlighted &&
     previous.hasCursor === next.hasCursor &&
     previous.hasBulkSelection === next.hasBulkSelection &&
     previous.hasMultiCursor === next.hasMultiCursor
   );
 });
+
+function PlainRowText({ node, onSelectTag }: { node: OutlineNode; onSelectTag: (tag: string) => void }) {
+  const { text } = node;
+  const tags = extractTags(text);
+  if (tags.length === 0) {
+    return <RichRowText node={node} content={renderInlineMarkdown(text)} />;
+  }
+  const parts: JSX.Element[] = [];
+  let cursor = 0;
+  for (const tag of tags) {
+    if (tag.start > cursor) {
+      parts.push(<span key={`text-${cursor}`}>{renderInlineMarkdown(text.slice(cursor, tag.start))}</span>);
+    }
+    parts.push(
+      <button
+        key={`${tag.source}-${tag.start}`}
+        className="inline-tag"
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onSelectTag(tag.source);
+        }}
+      >
+        {tag.source}
+      </button>
+    );
+    cursor = tag.end;
+  }
+  if (cursor < text.length) {
+    parts.push(<span key={`text-${cursor}`}>{renderInlineMarkdown(text.slice(cursor))}</span>);
+  }
+  return <RichRowText node={node} content={parts.length > 0 ? parts : "\u00a0"} />;
+}
+
+function RichRowText({ node, content }: { node: OutlineNode; content: ReactNode }) {
+  return (
+    <span className={`plain-row-text ${node.numbered ? "plain-row-numbered" : ""}`}>
+      <span>{content}</span>
+      {node.note && node.noteVisible !== false ? <span className="node-note">{renderInlineMarkdown(node.note)}</span> : null}
+    </span>
+  );
+}
 
 function ActiveRowEditor({
   node,

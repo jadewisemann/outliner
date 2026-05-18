@@ -103,3 +103,12 @@ Architecture Decision Record 형식으로 제품/기술 결정을 남긴다. 결
 - 이유: 키보드 기반 아웃라이너는 작성뿐 아니라 구조 재배치와 반복 편집도 마우스 없이 빨라야 한다. UI shortcut만으로 처리하면 persistence, sync, Undo/Redo, 테스트 기준이 흩어진다.
 - 영향: Phase 7에서 `moveNodeUp/Down`, `bulkMoveNodesUp/Down`, `OutlineCursor` 상태, Lexical command bridge, Undo/Redo transaction grouping을 함께 설계한다.
 - 제약: 노드 이동은 기본적으로 같은 부모 안의 이전/다음 sibling block과 순서를 교환한다. 단, 첫 자식을 위로 이동하거나 마지막 자식을 아래로 이동하는 경우에는 부모 경계를 넘는다. 이전/다음 부모 sibling이 있으면 그 sibling의 마지막/첫 자식으로 이동하고, 없으면 현재 부모 앞/뒤로 outdent한다.
+
+## ADR-015: Dynalist 격차 축소 범위
+
+- 상태: 확정
+- 결정: MVP 이후 Dynalist와의 기능 차이는 검색, 태그/내부 링크/백링크, 리치 포맷/노트, OPML 포함 import/export, 히스토리/백업/설정 순서로 줄인다.
+- 제외: 파일/폴더/다중 문서 시스템, 태스크 관리 기능, 공유/협업 기능은 제품 범위에서 제외한다. 태스크 관리에는 TODO/checkbox, 완료 상태, due date, recurring date, calendar sync, overdue highlight가 포함된다. 공유/협업에는 public share, collaborator, 권한, 댓글, 멘션, 알림이 포함된다.
+- 이유: 이 제품의 핵심은 개인이 빠르게 쓰는 로컬 퍼스트 아웃라이너다. 파일 시스템, 태스크 관리, 협업 권한 모델을 함께 넣으면 제품 성격이 흐려지고 구현 복잡도가 크게 늘어난다.
+- 영향: 데이터 모델은 단일 workspace의 node graph를 기준으로 유지한다. 개인 다기기 동기화는 계속 지원하지만 다중 사용자 권한 모델은 설계하지 않는다. 후속 기능은 node text, node metadata, selector, import/export adapter, preference store를 확장하는 방식으로 구현한다.
+- 제약: 후속 리치 포맷 단계에서도 checkbox/date 계열은 넣지 않는다. 태그의 `@tag`는 collaborator mention이 아니라 개인 분류 토큰으로만 해석한다.
