@@ -7,7 +7,7 @@ const env = loadFirebaseEnv();
 test.describe("Firebase sync smoke", () => {
   test.skip(!env, "Firebase env is not configured");
 
-  test("syncs edits between two pages through Firebase Realtime Database", async ({ context }) => {
+  test("syncs edits between two pages through Firebase startup pull", async ({ context }) => {
     if (!env) {
       return;
     }
@@ -24,13 +24,16 @@ test.describe("Firebase sync smoke", () => {
     await pastePlainText(pageA, "Firebase A\nFirebase B");
 
     await expect(outlineText(pageA, "Firebase A")).toBeVisible();
+    await pageB.reload();
     await expect(outlineText(pageB, "Firebase A")).toBeVisible();
     await expect(outlineText(pageB, "Firebase B")).toBeVisible();
 
     await focusRow(pageB, "Firebase B");
-    await pastePlainText(pageB, " synced");
+    await pageB.keyboard.press("End");
+    await pageB.keyboard.type(" synced");
 
     await expect(outlineText(pageB, "Firebase B synced")).toBeVisible();
+    await pageA.reload();
     await expect(outlineText(pageA, "Firebase B synced")).toBeVisible();
   });
 });

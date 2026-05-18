@@ -4,7 +4,8 @@ import { makeDocumentWithTexts } from "../test/factories";
 import { FakeRemoteStoreV2 } from "./fakeRemoteStoreV2";
 import { createRemoteSnapshotRecord, writeRemoteSnapshotV2 } from "./remoteSyncV2";
 import { estimateEncodedSnapshotBytes } from "./remoteEncoding";
-import { createYjsWorkspace } from "./yjsAdapter";
+import { createSnapshotPatch, estimateEncodedPatchBytes } from "./snapshotPatch";
+import { createYjsWorkspace, getYjsSnapshot, mergeIntoNewWorkspace } from "./yjsAdapter";
 
 describe("remote sync v2", () => {
   it("reads and writes the latest snapshot through a fake v2 store", async () => {
@@ -77,5 +78,36 @@ describe("remote sync v2", () => {
 
     expect(status).toBe("error");
     expect(await store.readLatestSnapshot()).toBeNull();
+  });
+
+  it("writes and reads a small snapshot patch without re-sending the full snapshot", async () => {
+    const store = new FakeRemoteStoreV2();
+    const firstDocument = makeDocumentWithTexts(["A", "B"]);
+    const firstSnapshot = { document: firstDocument, view: createInitialView(firstDocument) };
+    const firstRecord = createRemoteSnapshotRecord(createYjsWorkspace(firstSnapshot), "client-a", 1, 10);
+    await store.writeLatestSnapshot(firstRecord);
+
+    const nodeId = firstDocument.nodes[firstDocument.rootId].children[0];
+    const secondDocument = {
+      ...firstDocument,
+      nodes: {
+        ...firstDocument.nodes,
+        [nodeId]: { ...firstDocument.nodes[nodeId], text: "A changed", updatedAt: 11 }
+      }
+    };
+    const patch = createSnapshotPatch(firstSnapshot, { document: secondDocument, view: createInitialView(secondDocument) });
+    const beforePatchBytes = store.getMetering().writeBytes;
+
+    await expect(
+      store.writeSnapshotPatch?.({ baseVersion: 1, version: 2, clientId: "client-a", updatedAt: 11, patch })
+    ).resolves.toBe("accepted");
+    await expect(store.readSnapshotPatch?.(1)).resolves.toMatchObject({ version: 2, baseVersion: 1 });
+
+    const latest = await store.readLatestSnapshot();
+    expect(latest).not.toBeNull();
+    const materialized = getYjsSnapshot(mergeIntoNewWorkspace(latest!.state));
+    expect(materialized?.document.nodes[nodeId].text).toBe("A changed");
+    expect(store.getMetering().writeBytes - beforePatchBytes).toBe(estimateEncodedPatchBytes(patch));
+    expect(estimateEncodedPatchBytes(patch)).toBeLessThan(estimateEncodedSnapshotBytes(createRemoteSnapshotRecord(createYjsWorkspace({ document: secondDocument, view: createInitialView(secondDocument) }), "client-a", 2, 11)));
   });
 });

@@ -426,19 +426,19 @@ Phase 12-B 이후 남은 가장 중요한 문제는 “latest snapshot 하나만
 
 - 10분/1시간 realistic typing cadence 테스트를 fake timer로 작성
   - debounce보다 빠른 입력
-  - debounce보다 느린 입력
-  - 큰 문서에서 한 글자 수정
+  - debounce보다 느린 입력 - fake v2 patch write 회귀 테스트 추가됨
+  - 큰 문서에서 한 글자 수정 - fake v2 patch write 회귀 테스트 추가됨
   - 연결된 두 번째 클라이언트가 있을 때 read bytes
 - Firebase realtime subscription을 기본 경로에서 제거하거나 명시적 실험 옵션으로 격리
 - full snapshot write를 줄이는 후보 중 하나를 구현 후보로 결정
   - object/blob storage + small metadata CAS
   - chunked snapshot with content hash
-  - bounded delta log + periodic compacted snapshot
+  - bounded delta log + periodic compacted snapshot - 1차 구현 후보로 선택, fake v2 adapter에 latest patch 경로 추가됨
   - 서버/API 기반 conditional write와 compaction
 - `RemoteStoreV2`를 유지할지 `RemoteStoreV3`로 분리할지 결정
 - 비용 acceptance 기준 정의
   - stored bytes는 최신 문서 크기 근처로 bounded
-  - write bytes는 10분/1시간 입력에서 문서 크기 * 입력 횟수로 선형 폭증하지 않을 것
+  - write bytes는 10분/1시간 입력에서 문서 크기 * 입력 횟수로 선형 폭증하지 않을 것 - fake v2 slow large-document test 추가됨
   - read bytes는 새 기기 최초 sync와 포커스 복귀 외에 realtime listener로 반복 폭증하지 않을 것
 
 ### 완료 기준

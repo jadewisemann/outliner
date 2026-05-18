@@ -6,7 +6,14 @@ import {
   setYjsSnapshot,
   type YjsWorkspace
 } from "./yjsAdapter";
-import type { RemoteSnapshotRecord, RemoteStoreV2, RemoteSyncV2State, SyncStatus } from "./syncTypes";
+import type {
+  RemoteSnapshotPatchRecord,
+  RemoteSnapshotRecord,
+  RemoteStoreV2,
+  RemoteSyncV2State,
+  SyncStatus
+} from "./syncTypes";
+import { estimateEncodedPatchBytes } from "./snapshotPatch";
 
 export const DEFAULT_REMOTE_SNAPSHOT_BYTE_BUDGET = 256 * 1024;
 
@@ -44,6 +51,25 @@ export async function writeRemoteSnapshotV2(
   }
   try {
     const result = await store.writeLatestSnapshot(record);
+    return result === "accepted" ? "synced" : "conflict";
+  } catch {
+    return "offline";
+  }
+}
+
+export async function writeRemoteSnapshotPatchV2(
+  store: RemoteStoreV2,
+  record: RemoteSnapshotPatchRecord,
+  maxPatchBytes = DEFAULT_REMOTE_SNAPSHOT_BYTE_BUDGET
+): Promise<SyncStatus> {
+  if (!store.writeSnapshotPatch) {
+    return "error";
+  }
+  if (estimateEncodedPatchBytes(record.patch) > maxPatchBytes) {
+    return "error";
+  }
+  try {
+    const result = await store.writeSnapshotPatch(record);
     return result === "accepted" ? "synced" : "conflict";
   } catch {
     return "offline";

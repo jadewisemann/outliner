@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createInitialView, createNodeAfter, updateNodeText } from "../domain/outline";
 import type { OutlineSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
-import { makeDocumentWithTexts } from "../test/factories";
+import { makeDocumentWithTexts, makeLargeDocument } from "../test/factories";
 import { FakeRemoteStoreV2 } from "../sync/fakeRemoteStoreV2";
 import { createRemoteSnapshotRecord } from "../sync/remoteSyncV2";
 import { createYjsWorkspace } from "../sync/yjsAdapter";
@@ -255,6 +255,46 @@ describe("useOutlineWorkspace", () => {
     const metering = remoteStore.getMetering();
     expect(metering.writeBytes).toBe(metering.storedBytes);
     expect(metering.readBytes).toBeLessThan(metering.storedBytes * 3);
+  });
+
+  it("keeps slow large-document edits from writing a full snapshot every time", async () => {
+    let document = makeLargeDocument(200);
+    const nodeId = document.nodes[document.rootId].children[0];
+    const initialSnapshot = { document, view: createInitialView(document) };
+    const persistence = memoryPersistence(initialSnapshot);
+    const remoteStore = new FakeRemoteStoreV2();
+    await remoteStore.writeLatestSnapshot(createRemoteSnapshotRecord(createYjsWorkspace(initialSnapshot), "seed", 1, 1));
+    const initialWriteBytes = remoteStore.getMetering().writeBytes;
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        remoteStore,
+        createId: () => "new",
+        createClientId: () => "client-a",
+        now: vi.fn()
+          .mockReturnValueOnce(10)
+          .mockReturnValueOnce(11)
+          .mockReturnValueOnce(12)
+          .mockReturnValueOnce(13)
+          .mockReturnValueOnce(14)
+          .mockReturnValue(15),
+        remoteDebounceMs: 0
+      })
+    );
+    await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
+
+    for (let index = 0; index < 5; index += 1) {
+      act(() => {
+        document = updateNodeText(document, nodeId, `Edited ${index}`, () => 20 + index);
+        result.current.commitSnapshot({ document, view: createInitialView(document) });
+      });
+      await waitFor(async () => expect((await remoteStore.readLatestSnapshot())?.version).toBe(2 + index));
+      await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
+    }
+
+    const fullSnapshotBytes = remoteStore.getMetering().storedBytes;
+    const slowEditWriteBytes = remoteStore.getMetering().writeBytes - initialWriteBytes;
+    expect(slowEditWriteBytes).toBeLessThan(fullSnapshotBytes * 2);
   });
 
   it("keeps local persistence when a remote payload exceeds the byte budget", async () => {

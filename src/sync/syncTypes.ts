@@ -1,3 +1,5 @@
+import type { OutlineSnapshotPatch } from "./snapshotPatch";
+
 export type SyncStatus = "local-only" | "offline" | "syncing" | "synced" | "error" | "conflict";
 
 export type RemoteUpdate = {
@@ -39,6 +41,11 @@ export type RemoteSnapshotRecord = RemoteSnapshotMetadata & {
   vector?: Uint8Array;
 };
 
+export type RemoteSnapshotPatchRecord = RemoteSnapshotMetadata & {
+  baseVersion: number;
+  patch: OutlineSnapshotPatch;
+};
+
 export type RemoteSyncV2State = {
   status: SyncStatus;
   version: number;
@@ -58,6 +65,8 @@ export interface RemoteStore {
 export interface RemoteStoreV2 {
   readLatestSnapshot(): Promise<RemoteSnapshotRecord | null>;
   writeLatestSnapshot(record: RemoteSnapshotRecord): Promise<RemoteSnapshotWriteResult>;
+  readSnapshotPatch?(afterVersion: number): Promise<RemoteSnapshotPatchRecord | null>;
+  writeSnapshotPatch?(record: RemoteSnapshotPatchRecord): Promise<RemoteSnapshotWriteResult>;
   subscribe?(onSnapshotChanged: () => void): () => void;
   getMetering?(): RemoteStoreMetering;
 }

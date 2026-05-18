@@ -12,15 +12,27 @@ import {
   createRemoteSyncV2State,
   DEFAULT_REMOTE_SNAPSHOT_BYTE_BUDGET,
   applyRemoteSnapshotRecord,
+  writeRemoteSnapshotPatchV2,
   writeRemoteSnapshotV2
 } from "../sync/remoteSyncV2";
-import type { RemoteSnapshotRecord, RemoteStoreV2, RemoteSyncV2State, SyncStatus } from "../sync/syncTypes";
+import { applySnapshotPatch, createSnapshotPatch, estimateEncodedPatchBytes, isEmptySnapshotPatch } from "../sync/snapshotPatch";
+import type {
+  RemoteSnapshotPatchRecord,
+  RemoteSnapshotRecord,
+  RemoteStoreV2,
+  RemoteSyncV2State,
+  SyncStatus
+} from "../sync/syncTypes";
 import {
   createYjsWorkspace,
   getYjsSnapshot,
   setYjsSnapshot,
   type YjsWorkspace
 } from "../sync/yjsAdapter";
+
+type PendingRemoteChange =
+  | { kind: "snapshot"; record: RemoteSnapshotRecord }
+  | { kind: "patch"; record: RemoteSnapshotPatchRecord };
 
 export type OutlineWorkspaceRuntime = {
   snapshot: OutlineSnapshot;
@@ -64,7 +76,7 @@ export function useOutlineWorkspace({
   const redoStackRef = useRef<OutlineSnapshot[]>([]);
   const remoteStateRef = useRef<RemoteSyncV2State>(createRemoteSyncV2State());
   const clientIdRef = useRef<string>(createClientId());
-  const pendingRemoteRecordRef = useRef<RemoteSnapshotRecord | null>(null);
+  const pendingRemoteRecordRef = useRef<PendingRemoteChange | null>(null);
   const remoteDebounceRef = useRef<ReturnType<typeof setTimeout> | undefined>();
   const pullingRemoteRef = useRef(false);
   const remoteWriteTokenRef = useRef(0);
@@ -117,23 +129,27 @@ export function useOutlineWorkspace({
     if (!remoteStore || !pendingRemoteRecordRef.current) {
       return;
     }
-    const record = pendingRemoteRecordRef.current;
+    const pending = pendingRemoteRecordRef.current;
     const writeToken = (remoteWriteTokenRef.current += 1);
-    writeRemoteSnapshotV2(remoteStore, record, maxRemoteSnapshotBytes).then((status) => {
+    const write =
+      pending.kind === "patch"
+        ? writeRemoteSnapshotPatchV2(remoteStore, pending.record, maxRemoteSnapshotBytes)
+        : writeRemoteSnapshotV2(remoteStore, pending.record, maxRemoteSnapshotBytes);
+    write.then((status) => {
       if (writeToken !== remoteWriteTokenRef.current) {
         return;
       }
       if (status === "synced") {
-        if (pendingRemoteRecordRef.current === record) {
+        if (pendingRemoteRecordRef.current === pending) {
           pendingRemoteRecordRef.current = null;
         }
-        if (isStateNewerThanRecord(remoteStateRef.current, record)) {
+        if (isStateNewerThanRecord(remoteStateRef.current, pending.record)) {
           return;
         }
         setRemoteState({
           status,
-          version: record.version,
-          updatedAt: record.updatedAt,
+          version: pending.record.version,
+          updatedAt: pending.record.updatedAt,
           hasPendingLocalChanges: false
         });
         return;
@@ -149,8 +165,8 @@ export function useOutlineWorkspace({
   }, [maxRemoteSnapshotBytes, remoteStore, setRemoteState]);
 
   const scheduleRemoteSnapshot = useCallback(
-    (record: RemoteSnapshotRecord) => {
-      pendingRemoteRecordRef.current = record;
+    (change: PendingRemoteChange) => {
+      pendingRemoteRecordRef.current = change;
       setSyncStatus("syncing");
       if (remoteDebounceRef.current) {
         clearTimeout(remoteDebounceRef.current);
@@ -175,6 +191,19 @@ export function useOutlineWorkspace({
     [saveSnapshot]
   );
 
+  const applyRemotePatchRecord = useCallback(
+    async (record: RemoteSnapshotPatchRecord) => {
+      const patched = applySnapshotPatch(snapshotRef.current, record.patch);
+      const normalized = normalizeSnapshot(patched, createIdRef.current, nowRef.current);
+      setYjsSnapshot(workspaceRef.current, normalized);
+      workspaceRef.current.undoManager.stopCapturing();
+      snapshotRef.current = normalized;
+      setSnapshot(normalized);
+      await saveSnapshot(normalized);
+    },
+    [saveSnapshot]
+  );
+
   const pullLatestRemoteSnapshot = useCallback(async () => {
     if (!remoteStore) {
       return;
@@ -184,48 +213,79 @@ export function useOutlineWorkspace({
     }
     pullingRemoteRef.current = true;
     try {
-    const record = await remoteStore.readLatestSnapshot();
-    if (!record || !isRemoteNewer(record, remoteStateRef.current)) {
-      return;
-    }
-    remoteWriteTokenRef.current += 1;
-    const hadPendingLocalChanges = remoteStateRef.current.hasPendingLocalChanges || pendingRemoteRecordRef.current !== null;
-    if (hadPendingLocalChanges) {
-      await persistence.saveConflictBackup(cloneSnapshot(snapshotRef.current));
-    }
-    await applyRemoteRecord(record);
-    setRemoteState({
-      status: hadPendingLocalChanges ? "conflict" : "synced",
-      version: record.version,
-      updatedAt: record.updatedAt,
-      hasPendingLocalChanges: false
-    });
-    pendingRemoteRecordRef.current = null;
+      const patch = await remoteStore.readSnapshotPatch?.(remoteStateRef.current.version);
+      if (patch && isRemoteNewer(patch, remoteStateRef.current)) {
+        remoteWriteTokenRef.current += 1;
+        const hadPendingLocalChanges = remoteStateRef.current.hasPendingLocalChanges || pendingRemoteRecordRef.current !== null;
+        if (hadPendingLocalChanges) {
+          await persistence.saveConflictBackup(cloneSnapshot(snapshotRef.current));
+        }
+        await applyRemotePatchRecord(patch);
+        setRemoteState({
+          status: hadPendingLocalChanges ? "conflict" : "synced",
+          version: patch.version,
+          updatedAt: patch.updatedAt,
+          hasPendingLocalChanges: false
+        });
+        pendingRemoteRecordRef.current = null;
+        return;
+      }
+      const record = await remoteStore.readLatestSnapshot();
+      if (!record || !isRemoteNewer(record, remoteStateRef.current)) {
+        return;
+      }
+      remoteWriteTokenRef.current += 1;
+      const hadPendingLocalChanges = remoteStateRef.current.hasPendingLocalChanges || pendingRemoteRecordRef.current !== null;
+      if (hadPendingLocalChanges) {
+        await persistence.saveConflictBackup(cloneSnapshot(snapshotRef.current));
+      }
+      await applyRemoteRecord(record);
+      setRemoteState({
+        status: hadPendingLocalChanges ? "conflict" : "synced",
+        version: record.version,
+        updatedAt: record.updatedAt,
+        hasPendingLocalChanges: false
+      });
+      pendingRemoteRecordRef.current = null;
     } finally {
       pullingRemoteRef.current = false;
     }
-  }, [applyRemoteRecord, persistence, remoteStore, setRemoteState]);
+  }, [applyRemotePatchRecord, applyRemoteRecord, persistence, remoteStore, setRemoteState]);
   pullLatestRemoteSnapshotRef.current = pullLatestRemoteSnapshot;
 
   const publishSnapshot = useCallback(
     (next: OutlineSnapshot) => {
+      const previous = snapshotRef.current;
       const normalized = normalizeSnapshot(next, createId, now);
-      if (!snapshotsEqual(snapshotRef.current, normalized)) {
-        undoStackRef.current = [...undoStackRef.current, snapshotRef.current];
+      if (!snapshotsEqual(previous, normalized)) {
+        undoStackRef.current = [...undoStackRef.current, previous];
         redoStackRef.current = [];
       }
       replaceSnapshot(normalized);
       if (remoteStore && loadedRef.current) {
         const updatedAt = now();
-        const version = Math.max(remoteStateRef.current.version, pendingRemoteRecordRef.current?.version ?? 0) + 1;
-        const record = createRemoteSnapshotRecord(workspaceRef.current, clientIdRef.current, version, updatedAt);
+        const baseVersion = remoteStateRef.current.version;
+        const canWritePatch = !!remoteStore.writeSnapshotPatch && !remoteStateRef.current.hasPendingLocalChanges && !pendingRemoteRecordRef.current;
+        const version = Math.max(remoteStateRef.current.version, pendingRemoteRecordRef.current?.record.version ?? 0) + 1;
         remoteStateRef.current = {
           status: "syncing",
           version,
           updatedAt,
           hasPendingLocalChanges: true
         };
-        scheduleRemoteSnapshot(record);
+        scheduleRemoteSnapshot(
+          createPendingRemoteChange(
+            remoteStore,
+            previous,
+            normalized,
+            workspaceRef.current,
+            clientIdRef.current,
+            baseVersion,
+            version,
+            updatedAt,
+            canWritePatch
+          )
+        );
       }
     },
     [createId, now, remoteStore, replaceSnapshot, scheduleRemoteSnapshot]
@@ -386,14 +446,14 @@ function snapshotsEqual(left: OutlineSnapshot, right: OutlineSnapshot): boolean 
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
-function isRemoteNewer(record: RemoteSnapshotRecord, state: RemoteSyncV2State): boolean {
+function isRemoteNewer(record: { version: number; updatedAt: number }, state: RemoteSyncV2State): boolean {
   if (record.version !== state.version) {
     return record.version > state.version;
   }
   return record.updatedAt > state.updatedAt;
 }
 
-function isStateNewerThanRecord(state: RemoteSyncV2State, record: RemoteSnapshotRecord): boolean {
+function isStateNewerThanRecord(state: RemoteSyncV2State, record: { version: number; updatedAt: number }): boolean {
   if (state.version !== record.version) {
     return state.version > record.version;
   }
@@ -402,4 +462,35 @@ function isStateNewerThanRecord(state: RemoteSyncV2State, record: RemoteSnapshot
 
 function cloneSnapshot(snapshot: OutlineSnapshot): OutlineSnapshot {
   return JSON.parse(JSON.stringify(snapshot)) as OutlineSnapshot;
+}
+
+function createPendingRemoteChange(
+  remoteStore: RemoteStoreV2,
+  previous: OutlineSnapshot,
+  next: OutlineSnapshot,
+  workspace: YjsWorkspace,
+  clientId: string,
+  baseVersion: number,
+  version: number,
+  updatedAt: number,
+  canWritePatch: boolean
+): PendingRemoteChange {
+  const snapshotRecord = createRemoteSnapshotRecord(workspace, clientId, version, updatedAt);
+  if (!canWritePatch || baseVersion <= 0 || !remoteStore.writeSnapshotPatch) {
+    return { kind: "snapshot", record: snapshotRecord };
+  }
+  const patch = createSnapshotPatch(previous, next);
+  if (isEmptySnapshotPatch(patch) || estimateEncodedPatchBytes(patch) >= snapshotRecord.state.byteLength) {
+    return { kind: "snapshot", record: snapshotRecord };
+  }
+  return {
+    kind: "patch",
+    record: {
+      baseVersion,
+      version,
+      clientId,
+      updatedAt,
+      patch
+    }
+  };
 }
