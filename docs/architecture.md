@@ -203,35 +203,36 @@ MVP 저장 전략:
 
 ## 6. 원격 동기화 구조
 
-전체 문서 blob을 계속 덮어쓰지 않는다. 동시 업데이트 유실을 피하기 위해 snapshot과 updates를 분리한다.
+현재 원격 sync의 앱 기본 경계는 `RemoteStoreV2` snapshot-primary sync다. v2는 전체 문서 상태를 update log에 계속 append하지 않고 최신 snapshot 1개를 덮어쓴다. 이로써 저장량과 신규 클라이언트 최초 sync가 과거 누적 로그에 비례해 폭증하는 문제는 줄었다.
 
-현재 구현의 snapshot 기반 update append는 프로토타입 수준이다. 편집마다 전체 문서 상태가 원격 update log에 append되면 Firebase read/write가 실제 사용자 데이터 크기보다 크게 증폭될 수 있으므로, Phase 12에서 비용 안정화가 완료되기 전까지 Firebase sync는 명시적 opt-in으로만 사용한다.
+단, v2 snapshot-primary는 최종 비용 해법이 아니다. 문서가 커진 상태에서 작은 편집이 발생해도 remote write payload는 전체 snapshot 크기에 비례한다. Firebase RTDB에 realtime listener가 붙어 있으면 다른 클라이언트의 read bandwidth도 전체 snapshot 크기에 비례할 수 있다. 따라서 Phase 12 이후 최우선 과제는 full-snapshot write/read bandwidth를 줄이는 저장소 또는 sync protocol 재설계다.
 
 원격 sync의 제품 목표는 다중 사용자 공동편집이 아니라 개인 다기기 동기화다. 따라서 아키텍처의 우선순위는 항상 켜진 realtime stream보다 예측 가능한 비용, 작은 payload, bounded log, 복구 가능한 local-first 동작이다. RTDB는 현재 adapter 중 하나일 뿐이며, 저장소 교체 가능성을 `RemoteStore` 경계 안에 유지한다.
 
 ```txt
 users/{userId}/workspaces/root/
-  snapshot/
-    state: string
-    vector: string
-    updatedAt: number
-  updates/{updateId}/
+  v2/snapshot
+    version: number
     clientId: string
-    seq: number
-    update: string
-    createdAt: number
+    updatedAt: number
+    state: string
+    vector?: string
+
+  # legacy only
+  snapshot/{state, vector, updatedAt}
+  updates/{updateId}/
 ```
 
 동작:
 
 1. 앱은 로컬 persistence에서 먼저 Y.Doc 또는 `OutlineSnapshot`을 복원한다.
-2. 원격 설정이 있으면 snapshot을 가져와 Yjs workspace에 적용한다.
-3. 아직 적용하지 않은 updates를 적용한다.
-4. 로컬 변경은 update log에 append한다.
-5. subscribe로 받은 remote update는 applied id set으로 중복을 막고 workspace에 적용한다.
-6. 일정 기준을 넘으면 snapshot을 다시 만들고 오래된 updates를 정리한다.
+2. 원격 설정이 있으면 v2 latest snapshot을 가져와 Yjs workspace에 적용한다.
+3. 로컬 변경은 debounce 후 v2 latest snapshot으로 conditional write한다.
+4. 같은 version의 다른 client write는 reject/conflict로 처리한다.
+5. 더 최신 remote snapshot이 pending local change를 밀어내면 현재 local snapshot을 conflict backup에 저장하고 `conflict` 상태를 표시한다.
+6. 앱 시작, 포커스 복귀, optional adapter notification에서 remote pull을 수행한다.
 
-앱의 런타임 흐름은 `local persistence -> Yjs workspace -> RemoteStore sync` 순서다. `RemoteStore`가 주입되지 않으면 Firebase 설정이 없는 것으로 보고 `local-only` 상태로 기존 로컬 편집/저장/Undo/Redo 동작을 유지한다.
+앱의 런타임 흐름은 `local persistence -> Yjs workspace -> RemoteStoreV2 sync` 순서다. `RemoteStoreV2`가 주입되지 않으면 Firebase 설정이 없는 것으로 보고 `local-only` 상태로 기존 로컬 편집/저장/Undo/Redo 동작을 유지한다.
 
 Phase 12-A 단기 비용 안정화 규칙:
 
@@ -246,11 +247,17 @@ Phase 12-A 단기 비용 안정화 규칙:
 
 Phase 12-B 중기 저장소 재검토 규칙:
 
-- `RemoteStore` v2는 최신 compacted snapshot을 primary artifact로 두고, change log는 최근 변경 또는 충돌 병합에 필요한 범위로 제한한다.
+- `RemoteStoreV2`는 최신 compacted snapshot을 primary artifact로 두며, 현재 앱 런타임은 v2 adapter를 사용한다.
 - realtime subscription은 필수 contract가 아니다. provider가 realtime을 지원하지 않으면 앱 시작, 포커스 복귀, 수동 sync, 짧은 polling/debounce sync로 동작할 수 있어야 한다.
 - 저장소 후보는 RTDB, Firestore, Supabase/Postgres, object storage 기반 snapshot 저장소를 같은 비용 모델로 비교한다.
 - 기본 판단 기준은 10분 입력 테스트, 1시간 입력 테스트, 새 기기 최초 sync, 오프라인 후 재연결에서의 write bytes, read bytes, stored bytes다.
 - 개인 다기기 동기화만 필요하면 정적 snapshot/blob 중심 저장소를 우선 후보로 둔다.
+
+Phase 12-C 최우선 비용 과제:
+
+- snapshot-primary v2는 remote stored bytes를 bounded하게 만들지만, write/read bandwidth는 문서 크기와 편집 빈도에 비례한다.
+- Firebase RTDB를 계속 쓰는 경우 realtime listener는 전체 snapshot read를 반복할 수 있으므로 비용 검증 전까지 기본 요구사항이 아니다.
+- 다음 구현은 full snapshot을 매 편집마다 보내지 않는 방향을 우선한다. 후보는 chunked snapshot, content-addressed blob/object storage, metadata-only CAS, 작고 bounded한 delta log, 서버/API 기반 compaction이다.
 
 ## 7. Sync 상태
 
@@ -260,7 +267,8 @@ type SyncStatus =
   | "offline"
   | "syncing"
   | "synced"
-  | "error";
+  | "error"
+  | "conflict";
 ```
 
 - `local-only`: Phase 0~5의 기본 상태. 로그인 또는 원격 설정 없이 로컬만 사용
@@ -268,6 +276,7 @@ type SyncStatus =
 - `syncing`: 원격 update 송수신 중
 - `synced`: 로컬 대기 update 없음
 - `error`: 마지막 원격 작업 실패
+- `conflict`: 더 최신 remote snapshot이 pending local change를 밀어냈고, 밀려난 local snapshot을 conflict backup에 저장함
 
 ## 8. 주요 인터페이스 초안
 

@@ -267,14 +267,18 @@ describe("input stability", () => {
 
 describe("remote sync cost controls", () => {
   it("keeps Firebase disabled unless remote=firebase is explicit", () => {}); // 완료됨
-  it("batches repeated local text commits before remote append", () => {});
-  it("rejects remote append payloads over the byte budget", () => {});
-  it("compacts snapshot and cleans old update logs", () => {});
-  it("meters fake remote read and write bytes", () => {});
-  it("queries only updates after the compacted cursor", () => {});
-  it("does not replay old update logs as fresh subscription events", () => {});
-  it("syncs through a RemoteStore without realtime subscribe", () => {});
-  it("keeps a 10 minute typing simulation under the byte budget", () => {});
+  it("batches repeated local text commits before remote append", () => {}); // v1 guard 완료
+  it("rejects remote append payloads over the byte budget", () => {}); // 완료됨
+  it("compacts snapshot and cleans old update logs", () => {}); // v1 guard 완료
+  it("meters fake remote read and write bytes", () => {}); // 완료됨
+  it("queries only updates after the compacted cursor", () => {}); // v1 guard 완료
+  it("does not replay old update logs as fresh subscription events", () => {}); // v1 guard 완료
+  it("syncs through a RemoteStore without realtime subscribe", () => {}); // 완료됨
+  it("keeps a 10 minute typing simulation under the stored byte budget", () => {}); // 완료됨
+  it("rejects equal-version writes from different v2 clients", () => {}); // 완료됨
+  it("retries a failed v2 snapshot write on focus", () => {}); // 완료됨
+  it("backs up local changes when a newer remote snapshot wins", () => {}); // 완료됨
+  it("keeps full-snapshot write/read bandwidth below the Phase 12-C budget", () => {}); // 최우선, 미완료
 });
 
 describe("import and export", () => {

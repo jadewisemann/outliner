@@ -63,11 +63,12 @@ MVP 이후 Dynalist와의 기능 차이는 아래 순서로 줄인다. 단, 제�
    - TODO/checkbox와 date 계열은 리치 포맷 단계에서도 제외한다.
 4. 원격 sync 비용 안정화
    - Firebase 원격 sync는 명시적 opt-in으로만 활성화한다.
-   - 정상적인 텍스트 입력이 매 keypress마다 전체 문서 update를 원격에 append하지 않게 batching/debounce한다.
-   - snapshot compaction과 update log cleanup으로 새 클라이언트가 과거 전체 로그를 반복 read하지 않게 한다.
-   - 원격 payload size guard와 read/write byte metering 테스트를 둔다.
+   - 정상적인 텍스트 입력이 매 keypress마다 전체 문서 update를 원격에 append하지 않게 batching/debounce한다. - 완료됨
+   - `RemoteStoreV2`는 최신 snapshot 1개를 primary artifact로 저장해 update log 저장량 폭증을 막는다. - 완료됨
+   - 같은 version의 다른 client write는 conflict로 처리하고, 밀려난 local snapshot은 conflict backup에 보존한다. - 완료됨
+   - 원격 payload size guard와 encoded read/write byte metering 테스트를 둔다. - 완료됨
    - 개인 다기기 동기화가 목표이므로 realtime subscription을 필수 요구사항으로 두지 않는다.
-   - 단기적으로 RTDB adapter 비용 누수를 막고, 중기적으로 정적 snapshot/blob 중심 저장소를 포함한 `RemoteStore` v2 후보를 결정한다.
+   - 최우선 미해결 과제는 full snapshot write/read bandwidth 비용이다. 큰 문서에서 작은 편집이 발생할 때 전체 snapshot을 반복 전송하지 않는 저장소 또는 sync protocol을 Phase 13보다 먼저 결정한다.
 5. 가져오기/내보내기 확장
    - 현재 JSON/Markdown export에 더해 OPML export/import를 지원한다.
    - indentation plain text import/export를 명시적 메뉴로 제공한다.
@@ -270,7 +271,7 @@ MVP 이후 Dynalist와의 기능 차이는 아래 순서로 줄인다. 단, 제�
 ## 7. 제품 결정
 
 - Phase 0~6은 로그인 없는 로컬 단일 문서, Yjs-backed local runtime, optional RemoteStore sync를 우선한다.
-- 원격 동기화는 optional RemoteStore adapter로 연결하며, Firebase Realtime Database는 현재 구현된 adapter로 유지하되 Phase 12에서 기본 저장소 여부를 재검토한다.
+- 원격 동기화는 optional `RemoteStoreV2` adapter로 연결한다. Firebase Realtime Database는 v2 adapter를 제공하지만, full snapshot bandwidth 비용이 해결되기 전까지 기본 장기 저장소로 확정하지 않는다.
 - MVP 텍스트는 플레인 텍스트 중심이다.
 - TODO/checkbox 노드는 MVP에서 제외한다.
 - 자식 있는 빈 노드에서 `Backspace`를 누르면 자식을 같은 레벨로 승격한다.
