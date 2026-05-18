@@ -28,12 +28,13 @@
 
 ### 다음 테스트 우선순위
 
-1. OPML import/export round-trip
-2. 50,000 node 병목 profiling
-3. render profiling 기준 문서화
-4. 히스토리/설정 E2E smoke
-5. 히스토리와 preference store 테스트
-6. 모바일 persistence adapter 계약 테스트
+1. Remote sync 비용 안정화: Firebase opt-in guard, update batching, payload size guard, compaction cleanup, byte metering
+2. OPML import/export round-trip
+3. 50,000 node 병목 profiling
+4. render profiling 기준 문서화
+5. 히스토리/설정 E2E smoke
+6. 히스토리와 preference store 테스트
+7. 모바일 persistence adapter 계약 테스트
 
 ### 단위 테스트
 
@@ -67,6 +68,7 @@
 - Yjs adapter
 - IndexedDB persistence
 - fake remote store sync
+- remote byte metering and compaction cleanup
 
 ### E2E 테스트
 
@@ -261,6 +263,14 @@ describe("input stability", () => {
   it("commits Korean text from IME composition end", () => {}); // 완료됨
   it("does not treat composing Enter or Backspace as outline commands", () => {}); // 완료됨
   it("keeps normal Enter and Backspace behavior after IME composition ends", () => {}); // 완료됨
+});
+
+describe("remote sync cost controls", () => {
+  it("keeps Firebase disabled unless remote=firebase is explicit", () => {}); // 완료됨
+  it("batches repeated local text commits before remote append", () => {});
+  it("rejects remote append payloads over the byte budget", () => {});
+  it("compacts snapshot and cleans old update logs", () => {});
+  it("meters fake remote read and write bytes", () => {});
 });
 
 describe("import and export", () => {

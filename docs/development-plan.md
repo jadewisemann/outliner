@@ -2,7 +2,7 @@
 
 모든 Phase는 TDD로 진행한다. 각 기능은 실패하는 테스트를 먼저 만들고, 최소 구현으로 통과시킨 뒤, 리팩터링한다.
 
-현재 구현 상태는 Phase 0~11 완료다. Phase 8은 Firebase-backed 원격 sync smoke 실환경 검증까지 완료되었고, Phase 9 검색/필터, Phase 10 태그/내부 링크/백링크, Phase 11 리치 포맷과 노트는 selector/metadata 기반 v1으로 완료되었다. Phase 12 착수 전 active row의 한글 IME 입력 안정성 blocker를 수정해 composition 중 editor remount와 구조 키 interception 회귀 테스트를 추가했다. 이후 Dynalist와의 기능 차이는 파일/폴더/다중 문서, 태스크 관리, 공유/협업을 제외하고 import/export, 히스토리/설정 순서로 줄인다.
+현재 구현 상태는 Phase 0~11 완료다. Phase 8은 Firebase-backed 원격 sync smoke 실환경 검증까지 완료되었고, Phase 9 검색/필터, Phase 10 태그/내부 링크/백링크, Phase 11 리치 포맷과 노트는 selector/metadata 기반 v1으로 완료되었다. Phase 12 착수 전 active row의 한글 IME 입력 안정성 blocker를 수정해 composition 중 editor remount와 구조 키 interception 회귀 테스트를 추가했다. 또한 Firebase 사용량 급증 원인이 확인되어 import/export보다 원격 sync 비용 안정화를 먼저 진행한다. 이후 Dynalist와의 기능 차이는 파일/폴더/다중 문서, 태스크 관리, 공유/협업을 제외하고 원격 sync 비용 안정화, import/export, 히스토리/설정 순서로 줄인다.
 
 ## Phase 0: 프로젝트 부트스트랩 - 완료됨
 
@@ -267,7 +267,7 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 
 - 10,000개 노드 fixture에서 사용 가능한 성능을 보인다.
 - 입력 시 전체 트리를 불필요하게 재렌더링하지 않는다.
-- 50,000개 노드 목표를 막는 구조적 병목은 Phase 12 이후 profiling에서 재평가한다.
+- 50,000개 노드 목표를 막는 구조적 병목은 원격 sync 비용 안정화와 import/export 이후 profiling에서 재평가한다.
 
 ## Phase 9: 검색과 필터 - 완료됨
 
@@ -357,7 +357,40 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - 저장 모델이 plain text MVP 데이터를 migration 없이 읽을 수 있다.
 - formatting command는 Undo/Redo와 sync에 하나의 사용자 action으로 기록된다.
 
-## Phase 12: 가져오기/내보내기 확장
+## Phase 12: 원격 sync 비용 안정화
+
+### 목표
+
+현재 snapshot 기반 update append 구조가 정상 사용량보다 큰 Firebase read/write를 만들 수 있음을 명시하고, 원격 sync가 dev와 실제 사용 환경에서 비용 상한을 넘지 않게 재설계한다. 이 Phase가 끝나기 전까지 Firebase sync는 명시적 opt-in 상태로 유지하며, import/export 확장보다 우선한다.
+
+### 먼저 작성할 테스트
+
+- Firebase configuration이 있어도 `?remote=firebase` 없이는 remote adapter를 만들지 않는다. - 완료됨
+- 로컬 텍스트 입력 여러 번이 원격 append 여러 번으로 즉시 증폭되지 않고 debounce/batch된다.
+- 단일 update payload가 정해진 byte budget을 넘으면 append하지 않고 `error` 또는 `offline` 상태로 전환한다.
+- snapshot compaction 후 오래된 update log를 정리해 새 클라이언트가 전체 누적 로그를 다시 읽지 않는다.
+- 앱 시작 시 remote pull이 snapshot 이후 필요한 update만 읽고, 이미 compact된 update를 다시 받지 않는다.
+- sync 비용 회귀를 잡기 위해 fake remote store가 read/write byte count를 기록한다.
+
+### 구현 항목
+
+- Firebase remote mode는 명시적 `?remote=firebase` opt-in 유지
+- remote update debounce/batching
+- update payload size guard와 사용자에게 보이는 sync error 상태
+- snapshot compaction trigger와 update log cleanup contract
+- `RemoteStore` read/write byte accounting test helper
+- full snapshot append 대신 변경분 또는 compacted snapshot 중심 전략 재검토
+- Firebase emulator 또는 fake metering 기반 비용 회귀 테스트
+
+### 완료 기준
+
+- 일반 dev 실행은 Firebase env가 있어도 `local-only`이며, 실수로 원격 비용을 발생시키지 않는다.
+- 정상적인 텍스트 입력이 매 keypress마다 전체 문서 update를 Firebase에 append하지 않는다.
+- 누적 update log가 무한히 커지지 않고 compact/cleanup된다.
+- 새 클라이언트가 동기화할 때 과거 전체 로그를 반복 read하지 않는다.
+- 원격 sync 비용 모델과 한계가 문서화되어 Phase 13 이후 기능이 안전하게 원격 데이터를 다룰 수 있다.
+
+## Phase 13: 가져오기/내보내기 확장
 
 ### 목표
 
@@ -384,7 +417,7 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - 사용자가 주요 outliner 형식으로 데이터를 안전하게 가져오고 내보낼 수 있다.
 - import 실패가 기존 로컬 데이터와 sync queue를 손상시키지 않는다.
 
-## Phase 13: 히스토리, 백업, 설정
+## Phase 14: 히스토리, 백업, 설정
 
 ### 목표
 
@@ -413,7 +446,7 @@ snapshot + updates 방식으로 같은 사용자의 여러 브라우저/기기 �
 - 실수나 sync 문제 발생 시 사용자가 과거 상태로 되돌아갈 수 있다.
 - 개인 설정이 문서 데이터와 분리되어 sync/export 정책을 명확히 가진다.
 
-## Phase 14: 모바일 패키징 - 웹 MVP 이후
+## Phase 15: 모바일 패키징 - 웹 MVP 이후
 
 ### 목표
 

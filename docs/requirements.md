@@ -61,16 +61,21 @@ MVP 이후 Dynalist와의 기능 차이는 아래 순서로 줄인다. 단, 제�
    - heading, color label, numbered list는 노드 속성으로 분리해 구조 편집과 충돌하지 않게 한다.
    - 본문 `text`와 별도 `note` 필드를 추가해 아이템 설명을 접거나 보일 수 있게 한다.
    - TODO/checkbox와 date 계열은 리치 포맷 단계에서도 제외한다.
-4. 가져오기/내보내기 확장
+4. 원격 sync 비용 안정화
+   - Firebase 원격 sync는 명시적 opt-in으로만 활성화한다.
+   - 정상적인 텍스트 입력이 매 keypress마다 전체 문서 update를 원격에 append하지 않게 batching/debounce한다.
+   - snapshot compaction과 update log cleanup으로 새 클라이언트가 과거 전체 로그를 반복 read하지 않게 한다.
+   - 원격 payload size guard와 read/write byte metering 테스트를 둔다.
+5. 가져오기/내보내기 확장
    - 현재 JSON/Markdown export에 더해 OPML export/import를 지원한다.
    - indentation plain text import/export를 명시적 메뉴로 제공한다.
    - visible items only export 옵션을 추가한다.
    - import는 기존 workspace에 붙여넣기, 새 root 하위로 병합, 전체 교체를 구분한다.
-5. 히스토리와 백업
+6. 히스토리와 백업
    - 로컬 snapshot history를 저장해 특정 시점으로 복원할 수 있게 한다.
    - 수동 백업 파일 다운로드와 자동 백업 정책을 제공한다.
    - 원격 update log compaction과 snapshot history 보존 정책을 함께 설계한다.
-6. 사용자 설정과 접근성
+7. 사용자 설정과 접근성
    - 키보드 shortcut 커스터마이즈를 command registry 기반으로 제공한다.
    - theme, font size, spellcheck, word count, auto-focus, bullet click 동작 같은 개인 설정을 저장한다.
    - 설정은 문서 데이터와 분리된 local/user preference로 저장한다.

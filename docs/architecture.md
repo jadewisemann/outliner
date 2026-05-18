@@ -205,6 +205,8 @@ MVP 저장 전략:
 
 전체 문서 blob을 계속 덮어쓰지 않는다. 동시 업데이트 유실을 피하기 위해 snapshot과 updates를 분리한다.
 
+현재 구현의 snapshot 기반 update append는 프로토타입 수준이다. 편집마다 전체 문서 상태가 원격 update log에 append되면 Firebase read/write가 실제 사용자 데이터 크기보다 크게 증폭될 수 있으므로, Phase 12에서 비용 안정화가 완료되기 전까지 Firebase sync는 명시적 opt-in으로만 사용한다.
+
 ```txt
 users/{userId}/workspaces/root/
   snapshot/
@@ -228,6 +230,14 @@ users/{userId}/workspaces/root/
 6. 일정 기준을 넘으면 snapshot을 다시 만들고 오래된 updates를 정리한다.
 
 앱의 런타임 흐름은 `local persistence -> Yjs workspace -> RemoteStore sync` 순서다. `RemoteStore`가 주입되지 않으면 Firebase 설정이 없는 것으로 보고 `local-only` 상태로 기존 로컬 편집/저장/Undo/Redo 동작을 유지한다.
+
+Phase 12에서 확정할 비용 안정화 규칙:
+
+- 원격 append는 keypress 단위가 아니라 의미 있는 transaction 또는 debounce window 단위로 batch한다.
+- 단일 remote payload에는 byte budget을 두고, 초과 시 append하지 않는다.
+- snapshot compaction은 오래된 update log cleanup과 함께 실행되어야 한다.
+- RemoteStore 테스트 더블은 read/write byte count를 기록해 비용 회귀를 테스트한다.
+- 새 클라이언트 sync는 최신 snapshot과 필요한 update만 읽어야 한다.
 
 ## 7. Sync 상태
 
@@ -296,11 +306,11 @@ interface RemoteStore {
 - 파일/폴더/다중 문서 시스템은 제품 범위에서 제외한다.
 - 태스크 관리 기능은 제품 범위에서 제외한다.
 - 공유/협업 범위는 제외하고 개인 다기기 동기화만 유지한다.
-- MVP 이후 기능은 검색, 태그/내부 링크/백링크, 리치 포맷/노트, import/export 확장, 히스토리/백업/설정 순서로 검토한다.
+- MVP 이후 기능은 검색, 태그/내부 링크/백링크, 리치 포맷/노트, 원격 sync 비용 안정화, import/export 확장, 히스토리/백업/설정 순서로 검토한다.
 
 검증 필요:
 
 - 검색/태그/링크를 selector 재계산으로 충분히 처리할 수 있는지, 별도 인덱스가 필요한지
 - 리치텍스트 단계에서 Lexical custom node 또는 `@lexical/yjs` 중심 구조가 필요한지
-- snapshot 기반 Yjs adapter가 10,000개 노드와 Undo/Redo에서 충분한지
+- snapshot 기반 Yjs adapter가 10,000개 노드, Undo/Redo, 원격 sync 비용에서 충분한지
 - 모바일 단계에서 IndexedDB를 유지할지 SQLite로 전환할지

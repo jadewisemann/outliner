@@ -95,7 +95,7 @@ Architecture Decision Record 형식으로 제품/기술 결정을 남긴다. 결
 - 결정: 앱은 기본적으로 `local-only`로 실행하고, `?remote=firebase`처럼 사용자가 명시적으로 원격 모드를 선택했을 때만 `RemoteStore`를 주입해 remote snapshot/update sync를 활성화한다.
 - 이유: 로컬 우선 MVP는 Firebase 설정이나 네트워크 상태 때문에 첫 실행과 편집이 막히면 안 된다. 같은 인터페이스로 `FakeRemoteStore`와 `FirebaseRemoteStore`를 교체 가능하게 두면 테스트 가능성도 유지된다.
 - 영향: `App`과 workspace runtime은 optional `remoteStore`를 받는다. Firebase configuration이 있더라도 명시적 remote mode가 없으면 remote adapter를 만들지 않고 기존 로컬 저장, Undo/Redo, export 기능을 그대로 유지한다.
-- 비용 제약: snapshot 기반 update는 현재 전체 상태를 전송하므로 dev 기본값으로 Firebase에 연결하지 않는다. 원격 sync 비용/compaction 정책은 Phase 13 이전에 재검토한다.
+- 비용 제약: snapshot 기반 update는 현재 전체 상태를 전송하므로 dev 기본값으로 Firebase에 연결하지 않는다. 원격 sync 비용/compaction 정책은 Phase 12에서 import/export보다 먼저 재검토한다.
 
 ## ADR-014: 키보드 파워 편집은 visible order 기반 domain command로 구현한다
 
@@ -108,8 +108,16 @@ Architecture Decision Record 형식으로 제품/기술 결정을 남긴다. 결
 ## ADR-015: Dynalist 격차 축소 범위
 
 - 상태: 확정
-- 결정: MVP 이후 Dynalist와의 기능 차이는 검색, 태그/내부 링크/백링크, 리치 포맷/노트, OPML 포함 import/export, 히스토리/백업/설정 순서로 줄인다.
+- 결정: MVP 이후 Dynalist와의 기능 차이는 검색, 태그/내부 링크/백링크, 리치 포맷/노트, 원격 sync 비용 안정화, OPML 포함 import/export, 히스토리/백업/설정 순서로 줄인다.
 - 제외: 파일/폴더/다중 문서 시스템, 태스크 관리 기능, 공유/협업 기능은 제품 범위에서 제외한다. 태스크 관리에는 TODO/checkbox, 완료 상태, due date, recurring date, calendar sync, overdue highlight가 포함된다. 공유/협업에는 public share, collaborator, 권한, 댓글, 멘션, 알림이 포함된다.
 - 이유: 이 제품의 핵심은 개인이 빠르게 쓰는 로컬 퍼스트 아웃라이너다. 파일 시스템, 태스크 관리, 협업 권한 모델을 함께 넣으면 제품 성격이 흐려지고 구현 복잡도가 크게 늘어난다.
 - 영향: 데이터 모델은 단일 workspace의 node graph를 기준으로 유지한다. 개인 다기기 동기화는 계속 지원하지만 다중 사용자 권한 모델은 설계하지 않는다. 후속 기능은 node text, node metadata, selector, import/export adapter, preference store를 확장하는 방식으로 구현한다.
 - 제약: 후속 리치 포맷 단계에서도 checkbox/date 계열은 넣지 않는다. 태그의 `@tag`는 collaborator mention이 아니라 개인 분류 토큰으로만 해석한다.
+
+## ADR-016: 원격 sync 비용 안정화를 import/export보다 우선한다
+
+- 상태: 확정
+- 결정: Phase 12는 OPML import/export가 아니라 원격 sync 비용 안정화로 진행한다. import/export는 Phase 13으로 이동한다.
+- 이유: 현재 snapshot 기반 update append는 정상 사용보다 큰 Firebase read/write를 만들 수 있다. 데이터 가져오기/내보내기보다 원격 비용 폭증과 update log 누적을 먼저 막아야 한다.
+- 영향: Firebase sync는 명시적 opt-in으로 유지하고, update batching, payload size guard, snapshot compaction, update log cleanup, byte metering 테스트를 먼저 구현한다.
+- 완료 조건: 정상 편집이 keypress마다 전체 문서를 append하지 않고, 새 클라이언트가 compact된 과거 로그를 반복 read하지 않으며, 비용 회귀를 테스트에서 감지할 수 있어야 한다.
