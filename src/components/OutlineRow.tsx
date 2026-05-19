@@ -41,6 +41,7 @@ type OutlineRowProps = {
   onSelect: () => void;
   onSelectTag: (tag: string) => void;
   onTextChange: (text: string) => void;
+  onInsertLineBreak: (offset: number) => void;
   onCreateAfter: (offset?: number) => void;
   onPasteText: (offset: number, text: string) => void;
   onIndent: () => void;
@@ -55,6 +56,7 @@ type OutlineRowProps = {
   onToggleCollapse: () => void;
   onCopySelection: () => string | undefined;
   onZoom: () => void;
+  onFocusNote: () => void;
   onRender?: (nodeId: string) => void;
 };
 
@@ -163,6 +165,7 @@ function RichRowText({ node, content }: { node: OutlineNode; content: ReactNode 
 function ActiveRowEditor({
   node,
   onTextChange,
+  onInsertLineBreak,
   onCreateAfter,
   onPasteText,
   onIndent,
@@ -175,6 +178,7 @@ function ActiveRowEditor({
   onApplyTextToCursors,
   onClearPowerSelection,
   onCopySelection,
+  onFocusNote,
   hasBulkSelection,
   hasMultiCursor,
   spellcheck,
@@ -252,6 +256,7 @@ function ActiveRowEditor({
       />
       <KeyboardPlugin
         nodeText={node.text}
+        onInsertLineBreak={onInsertLineBreak}
         onCreateAfter={onCreateAfter}
         onIndent={onIndent}
         onOutdent={onOutdent}
@@ -264,6 +269,7 @@ function ActiveRowEditor({
         onClearPowerSelection={onClearPowerSelection}
         onPasteText={onPasteText}
         onCopySelection={onCopySelection}
+        onFocusNote={onFocusNote}
         hasBulkSelection={hasBulkSelection}
         hasMultiCursor={hasMultiCursor}
       />
@@ -291,6 +297,7 @@ function SyncInitialTextPlugin({ text }: { text: string }) {
 
 function KeyboardPlugin({
   nodeText,
+  onInsertLineBreak,
   onCreateAfter,
   onIndent,
   onOutdent,
@@ -303,10 +310,12 @@ function KeyboardPlugin({
   onClearPowerSelection,
   onPasteText,
   onCopySelection,
+  onFocusNote,
   hasBulkSelection,
   hasMultiCursor
 }: {
   nodeText: string;
+  onInsertLineBreak: (offset: number) => void;
   onCreateAfter: (offset?: number) => void;
   onIndent: () => void;
   onOutdent: () => void;
@@ -319,6 +328,7 @@ function KeyboardPlugin({
   onClearPowerSelection: () => void;
   onPasteText: (offset: number, text: string) => void;
   onCopySelection: () => string | undefined;
+  onFocusNote: () => void;
   hasBulkSelection: boolean;
   hasMultiCursor: boolean;
 }) {
@@ -340,6 +350,16 @@ function KeyboardPlugin({
       (event) => {
         if (isComposingEvent(event)) {
           return false;
+        }
+        if (event?.shiftKey) {
+          event.preventDefault();
+          onFocusNote();
+          return true;
+        }
+        if (event?.ctrlKey || event?.metaKey) {
+          event.preventDefault();
+          onInsertLineBreak(readOffset());
+          return true;
         }
         event?.preventDefault();
         onCreateAfter(readOffset());
@@ -484,6 +504,12 @@ function KeyboardPlugin({
         }
         return;
       }
+      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
+        onInsertLineBreak(readOffset());
+        return;
+      }
       if (event.key === "Escape" && (hasMultiCursor || hasBulkSelection)) {
         event.preventDefault();
         event.stopPropagation();
@@ -519,6 +545,8 @@ function KeyboardPlugin({
     onClearPowerSelection,
     onCopySelection,
     onCreateAfter,
+    onFocusNote,
+    onInsertLineBreak,
     onExtendSelection,
     onIndent,
     onMoveNode,

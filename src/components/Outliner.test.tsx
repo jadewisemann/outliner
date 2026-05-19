@@ -215,6 +215,63 @@ describe("Outliner", () => {
     });
   });
 
+  it("inserts a line break into the current node with mod enter", async () => {
+    const document = makeDocumentWithTexts(["Line"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Enter",
+      code: "Enter",
+      ctrlKey: true
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Line").closest(".outline-row")).toHaveAttribute("data-node-text", "Line\n");
+    });
+    expect(screen.getAllByRole("textbox", { name: "Outline node text" })).toHaveLength(1);
+  });
+
+  it("focuses the selected node note editor with shift enter", async () => {
+    const document = makeDocumentWithTexts(["With note"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Enter",
+      code: "Enter",
+      shiftKey: true
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Node note" })).toHaveFocus();
+    });
+  });
+
   it("keeps normal Backspace behavior after IME composition ends", async () => {
     const document = makeDocumentWithTexts([""]);
     const onDocumentChange = vi.fn();

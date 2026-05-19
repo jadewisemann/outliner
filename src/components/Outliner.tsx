@@ -1,4 +1,13 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
+import {
+  useCallback,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type RefObject,
+  type SetStateAction
+} from "react";
 import { Breadcrumb } from "./Breadcrumb";
 import { OutlineRow } from "./OutlineRow";
 import {
@@ -88,6 +97,7 @@ export function Outliner({
 }: OutlinerProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const noteInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [viewport, setViewport] = useState({ scrollTop: 0, height: FALLBACK_VIEWPORT_HEIGHT });
   const [query, setQuery] = useState("");
   const [tagFilter, setTagFilter] = useState<string | undefined>();
@@ -208,11 +218,30 @@ export function Outliner({
     onDocumentChange((current) => updateNodeText(current, nodeId, text, now));
   });
 
+  const insertLineBreak = useStableCallback((nodeId: NodeId, offset: number) => {
+    const node = document.nodes[nodeId];
+    if (!node) {
+      return;
+    }
+    const safeOffset = Math.max(0, Math.min(offset, node.text.length));
+    updateText(nodeId, `${node.text.slice(0, safeOffset)}\n${node.text.slice(safeOffset)}`);
+  });
+
   const updateMetadata = useStableCallback((metadata: Partial<OutlineNodeMetadata>) => {
     if (!view.selectedNodeId) {
       return;
     }
     onDocumentChange((current) => updateNodeMetadata(current, view.selectedNodeId!, metadata, now));
+  });
+
+  const focusSelectedNote = useStableCallback(() => {
+    if (!view.selectedNodeId) {
+      return;
+    }
+    updateMetadata({ note: selectedNode?.note ?? "", noteVisible: true });
+    window.setTimeout(() => {
+      noteInputRef.current?.focus();
+    }, 0);
   });
 
   const goToResult = useStableCallback((result: SearchResult, index: number) => {
@@ -421,6 +450,12 @@ export function Outliner({
         searchInputRef.current?.focus();
         return;
       }
+      if (event.shiftKey && event.key === "Enter" && view.selectedNodeId) {
+        event.preventDefault();
+        event.stopPropagation();
+        focusSelectedNote();
+        return;
+      }
       if (event.key === "Tab" && view.selectedNodeId) {
         event.preventDefault();
         event.stopPropagation();
@@ -533,7 +568,7 @@ export function Outliner({
         </div>
       ) : null}
       <Breadcrumb document={document} zoomNodeId={view.zoomNodeId} onNavigate={navigate} />
-      {selectedNode ? <FormatToolbar node={selectedNode} onChange={updateMetadata} /> : null}
+      {selectedNode ? <FormatToolbar node={selectedNode} noteInputRef={noteInputRef} onChange={updateMetadata} /> : null}
       {searchMode === "flat" && searchResults.length > 0 ? (
         <div className="flat-result-context" aria-label="Flat search context">
           {searchResults.map((result) => (
@@ -583,6 +618,7 @@ export function Outliner({
                 onSelect={() => selectNode(item.id)}
                 onSelectTag={selectTagFilter}
                 onTextChange={(text) => updateText(item.id, text)}
+                onInsertLineBreak={(offset) => insertLineBreak(item.id, offset)}
                 onCreateAfter={(offset) => createAfter(item.id, offset)}
                 onPasteText={(offset, text) => pasteText(item.id, offset, text)}
                 onIndent={() => indent(item.id)}
@@ -597,6 +633,7 @@ export function Outliner({
                 onToggleCollapse={() => toggle(item.id)}
                 onCopySelection={copySelection}
                 onZoom={() => zoom(item.id)}
+                onFocusNote={focusSelectedNote}
                 onRender={onRenderRow}
               />
             ))}
@@ -637,9 +674,11 @@ export function Outliner({
 
 function FormatToolbar({
   node,
+  noteInputRef,
   onChange
 }: {
   node: { heading?: 1 | 2 | 3; color?: string; numbered?: boolean; note?: string; noteVisible?: boolean };
+  noteInputRef: RefObject<HTMLTextAreaElement>;
   onChange: (metadata: Partial<OutlineNodeMetadata>) => void;
 }) {
   return (
@@ -685,6 +724,7 @@ function FormatToolbar({
         />
       </label>
       <textarea
+        ref={noteInputRef}
         aria-label="Node note"
         value={node.note ?? ""}
         placeholder="Note"
