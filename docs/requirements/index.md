@@ -15,6 +15,6 @@
 
 ## TODO / 확인 포인트
 
-- [ ] Phase 12-C 전까지 원격 sync는 full snapshot bandwidth 미해결 상태로 취급한다.
+- [x] Phase 12-C에서 원격 sync full snapshot bandwidth 비용을 patch 경로로 해소했다.
 - [ ] TODO/checkbox, due date, 공유/협업, 파일/폴더/다중 문서는 제품 범위에 다시 넣지 않는다.
 - [ ] 요구사항을 바꾸면 관련 테스트 스키마도 함께 업데이트한다.

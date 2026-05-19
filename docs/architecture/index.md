@@ -19,6 +19,6 @@
 
 ## TODO / 확인 포인트
 
-- [ ] Phase 12-C에서 full snapshot bandwidth를 줄이는 저장소 또는 sync protocol을 결정한다.
+- [x] Phase 12-C에서 `RemoteStoreV2` optional patch capability를 sync protocol로 결정했다.
 - [ ] 리치텍스트가 커지면 Lexical custom node 또는 @lexical/yjs 중심 구조가 필요한지 재검토한다.
 - [ ] 모바일 단계에서 IndexedDB 유지 또는 SQLite 전환을 검증한다.

@@ -43,7 +43,7 @@ describe("remote sync cost controls", () => {
   it("rejects equal-version writes from different v2 clients", () => {}); // 완료됨
   it("retries a failed v2 snapshot write on focus", () => {}); // 완료됨
   it("backs up local changes when a newer remote snapshot wins", () => {}); // 완료됨
-  it("keeps full-snapshot write/read bandwidth below the Phase 12-C budget", () => {}); // 최우선, 미완료
+  it("keeps full-snapshot write/read bandwidth below the Phase 12-C budget", () => {}); // 완료됨
 });
 
 describe("import and export", () => {

@@ -8,7 +8,7 @@ Phase 12는 세 단계로 나눈다.
 
 - Phase 12-A 단기 안정화: 기존 RTDB adapter에서 즉시 비용 누수를 막는다. - 완료됨
 - Phase 12-B 중기 재설계: 개인 다기기 sync에 맞는 `RemoteStoreV2` snapshot-primary sync로 전환한다. - 완료됨
-- Phase 12-C 최우선 비용 해소: full snapshot write/read bandwidth를 줄이는 저장소 또는 sync protocol로 전환한다. - 최우선
+- Phase 12-C 최우선 비용 해소: full snapshot write/read bandwidth를 줄이는 저장소 또는 sync protocol로 전환한다. - 완료됨
 
 제품 범위는 다중 사용자 공동편집이 아니라 개인 다기기 동기화다. 따라서 realtime subscription은 있으면 좋은 구현 옵션이지 필수 요구사항이 아니다. 기본 목표는 local-first 동작을 유지하면서 작은 payload, bounded log, 예측 가능한 비용으로 여러 기기를 맞추는 것이다.
 
@@ -23,7 +23,7 @@ Phase 12는 세 단계로 나눈다.
 - RTDB adapter가 기본 앱 경로에서 `updates` append/list를 사용하지 않는다. - 완료됨
 - RemoteStore v2 fake adapter가 realtime subscription 없이 앱 시작/포커스 복귀 sync를 통과한다. - 완료됨
 - 10분 입력 시뮬레이션에서 stored bytes가 최신 snapshot 크기로 bounded됨을 검증한다. - 완료됨
-- 큰 문서에서 편집 cadence가 debounce window보다 길 때 full snapshot write/read bytes가 비용 상한 안에 머문다. - 미완료, Phase 12-C 최우선
+- 큰 문서에서 편집 cadence가 debounce window보다 길 때 full snapshot write/read bytes가 비용 상한 안에 머문다. - 완료됨
 
 ### Phase 12-A 구현 항목
 
@@ -52,35 +52,35 @@ Phase 12는 세 단계로 나눈다.
 - conflict backup 구현 - 완료됨
   - 더 최신 remote snapshot이 pending local change를 밀어내면 local conflict backup에 저장
   - SyncStatus `conflict`
-- 저장소 후보별 비용/복잡도 비교 문서 작성 - 진행 중
+- 저장소 후보별 비용/복잡도 비교 문서 작성 - 완료됨
   - Firebase RTDB: realtime은 쉽지만 bandwidth와 listener 비용 관리가 필요하다.
   - Firestore: document 단위 read/write 과금이라 update log를 작게 쪼갤 수 있지만 listener/read 비용과 index overhead를 관리해야 한다.
   - Supabase/Postgres 또는 서버 API: query와 compaction 제어가 쉽지만 auth/API 운영이 필요하다.
   - Object storage 기반 snapshot/blob: 개인 sync에는 가장 정적이고 저렴할 수 있지만 충돌 병합과 auth URL 설계가 필요하다.
-- 기본 후보를 정적 snapshot/blob 중심 저장소로 둘지 결정 - Phase 12-C
-- 현재 RTDB adapter를 유지, 축소, 제거 중 하나로 결정 - Phase 12-C
-- Phase 13 이후 import/export/history가 저장소 구현에 직접 의존하지 않도록 경계 재확인
+- 기본 후보를 정적 snapshot/blob 중심 저장소로 둘지 결정 - latest bounded patch + compacted snapshot을 1차 protocol로 선택
+- 현재 RTDB adapter를 유지, 축소, 제거 중 하나로 결정 - v2 adapter는 유지하되 realtime은 필수 경로로 두지 않음
+- Phase 13 이후 import/export/history가 저장소 구현에 직접 의존하지 않도록 경계 재확인 - 완료됨
 
-### Phase 12-C 구현 항목 - 최우선
+### Phase 12-C 구현 항목 - 완료됨
 
-Phase 12-B 이후 남은 가장 중요한 문제는 “latest snapshot 하나만 저장하더라도 매 remote write/read payload가 전체 문서 크기에 비례한다”는 점이다. 이 문제를 해결하기 전까지 Phase 13 import/export보다 원격 비용 작업을 우선한다.
+Phase 12-B 이후 남은 가장 중요한 문제는 “latest snapshot 하나만 저장하더라도 매 remote write/read payload가 전체 문서 크기에 비례한다”는 점이었다. Phase 12-C에서는 `RemoteStoreV2`에 optional patch capability를 추가해 같은 base version을 가진 클라이언트가 full snapshot 대신 작은 snapshot patch를 읽고 쓸 수 있게 했다. patch가 없거나 base가 맞지 않을 때만 latest snapshot을 읽는다.
 
 - 10분/1시간 realistic typing cadence 테스트를 fake timer로 작성
-  - debounce보다 빠른 입력
-  - debounce보다 느린 입력 - fake v2 patch write 회귀 테스트 추가됨
+  - debounce보다 빠른 입력 - fake timer 1시간 bounded write 회귀 테스트 추가됨
+  - debounce보다 느린 입력 - fake timer 1시간 patch write 회귀 테스트 추가됨
   - 큰 문서에서 한 글자 수정 - fake v2 patch write 회귀 테스트 추가됨
   - 연결된 두 번째 클라이언트가 있을 때 read bytes - fake v2 patch read 회귀 테스트 추가됨
-- Firebase realtime subscription을 기본 경로에서 제거하거나 명시적 실험 옵션으로 격리
-- full snapshot write를 줄이는 후보 중 하나를 구현 후보로 결정
+- Firebase realtime subscription을 기본 경로에서 제거하거나 명시적 실험 옵션으로 격리 - 완료됨
+- full snapshot write를 줄이는 후보 중 하나를 구현 후보로 결정 - 완료됨
   - object/blob storage + small metadata CAS
   - chunked snapshot with content hash
-  - bounded delta log + periodic compacted snapshot - 1차 구현 후보로 선택, fake/browser/Firebase v2 adapter에 latest patch 경로 추가됨
+  - latest bounded patch + compacted snapshot - 1차 구현 후보로 선택, fake/browser/Firebase v2 adapter에 latest patch 경로 추가됨
   - 서버/API 기반 conditional write와 compaction
 - `RemoteStoreV2`를 유지할지 `RemoteStoreV3`로 분리할지 결정 - v2 optional patch capability 유지로 결정
-- 비용 acceptance 기준 정의
-  - stored bytes는 최신 문서 크기 근처로 bounded
-  - write bytes는 10분/1시간 입력에서 문서 크기 * 입력 횟수로 선형 폭증하지 않을 것 - fake v2 slow large-document test 추가됨
-  - read bytes는 새 기기 최초 sync와 포커스 복귀 외에 realtime listener로 반복 폭증하지 않을 것 - patch read path 테스트 추가됨
+- 비용 acceptance 기준 정의 - 완료됨
+  - stored bytes는 최신 문서 크기 근처로 bounded - 10분 입력 테스트와 v2 metering으로 검증됨
+  - write bytes는 10분/1시간 입력에서 문서 크기 * 입력 횟수로 선형 폭증하지 않을 것 - fake v2 slow large-document test와 1시간 patch write 테스트로 검증됨
+  - read bytes는 새 기기 최초 sync와 포커스 복귀 외에 realtime listener로 반복 폭증하지 않을 것 - patch read path 테스트로 검증됨
 
 ### 완료 기준
 
@@ -89,6 +89,6 @@ Phase 12-B 이후 남은 가장 중요한 문제는 “latest snapshot 하나만
 - 누적 update log가 무한히 커지지 않고 latest snapshot 중심으로 bounded된다.
 - 새 클라이언트가 동기화할 때 과거 전체 로그를 반복 read하지 않는다.
 - 10분 입력 테스트가 GB 단위 저장량으로 증폭되지 않는다.
-- 단, full snapshot bandwidth 비용은 provider별 patch 경로가 검증되기 전까지 미해결로 간주한다.
+- full snapshot bandwidth 비용은 `RemoteStoreV2` patch 경로와 fake/browser/Firebase adapter 테스트 기준으로 해결된 것으로 간주한다.
 - 원격 sync 비용 모델과 한계가 문서화되어 Phase 13 이후 기능이 안전하게 원격 데이터를 다룰 수 있다.
 - 중기 저장소 방향이 결정되어 RTDB를 계속 쓸지, 정적/저비용 저장소로 바꿀지 다음 구현 Phase로 넘길 수 있다.

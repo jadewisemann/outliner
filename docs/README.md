@@ -28,7 +28,7 @@
 
 ## TODO / 작업 큐
 
-- [ ] Phase 12-C: full snapshot write/read bandwidth 비용을 줄이는 patch 기반 sync protocol 완성
+- [x] Phase 12-C: full snapshot write/read bandwidth 비용을 줄이는 patch 기반 sync protocol 완성
 - [ ] Phase 13: OPML과 indentation plain text import/export 확장
 - [ ] Phase 14: 히스토리, 백업, 사용자 설정
 - [ ] Phase 15: 모바일 패키징은 웹 MVP 이후 별도 검증

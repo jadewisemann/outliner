@@ -1,5 +1,5 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInitialView, createNodeAfter, updateNodeText } from "../domain/outline";
 import type { OutlineSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
@@ -44,6 +44,10 @@ function memoryPersistence(
 }
 
 describe("useOutlineWorkspace", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("loads a persisted snapshot into a Yjs-backed runtime", async () => {
     const document = makeDocumentWithTexts(["Saved"]);
     const persistence = memoryPersistence({ document, view: createInitialView(document) });
@@ -258,6 +262,46 @@ describe("useOutlineWorkspace", () => {
     expect(metering.readBytes).toBeLessThan(metering.storedBytes * 3);
   });
 
+  it("keeps one hour of faster-than-debounce typing to one bounded remote write", async () => {
+    let document = makeDocumentWithTexts(["A"]);
+    const nodeId = document.nodes[document.rootId].children[0];
+    const persistence = memoryPersistence({ document, view: createInitialView(document) });
+    const remoteStore = new FakeRemoteStoreV2();
+    let currentTime = 10;
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        remoteStore,
+        createId: () => "new",
+        createClientId: () => "client-a",
+        now: () => currentTime,
+        remoteDebounceMs: 60_000
+      })
+    );
+    await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
+
+    vi.useFakeTimers();
+    try {
+      act(() => {
+        for (let index = 0; index < 120; index += 1) {
+          currentTime += 30_000;
+          document = updateNodeText(document, nodeId, `A ${index}`, () => currentTime);
+          result.current.commitSnapshot({ document, view: createInitialView(document) });
+          vi.advanceTimersByTime(30_000);
+        }
+      });
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(60_000);
+      });
+
+      expect((await remoteStore.readLatestSnapshot())?.version).toBe(120);
+      const metering = remoteStore.getMetering();
+      expect(metering.writeBytes).toBe(metering.storedBytes);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps slow large-document edits from writing a full snapshot every time", async () => {
     let document = makeLargeDocument(200);
     const nodeId = document.nodes[document.rootId].children[0];
@@ -296,6 +340,49 @@ describe("useOutlineWorkspace", () => {
     const fullSnapshotBytes = remoteStore.getMetering().storedBytes;
     const slowEditWriteBytes = remoteStore.getMetering().writeBytes - initialWriteBytes;
     expect(slowEditWriteBytes).toBeLessThan(fullSnapshotBytes * 2);
+  });
+
+  it("keeps one hour of slow large-document edits on the patch path", async () => {
+    let document = makeLargeDocument(500);
+    const nodeId = document.nodes[document.rootId].children[0];
+    const initialSnapshot = { document, view: createInitialView(document) };
+    const persistence = memoryPersistence(initialSnapshot);
+    const remoteStore = new FakeRemoteStoreV2();
+    await remoteStore.writeLatestSnapshot(createRemoteSnapshotRecord(createYjsWorkspace(initialSnapshot), "seed", 1, 1));
+    const initialWriteBytes = remoteStore.getMetering().writeBytes;
+    let currentTime = 10;
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        remoteStore,
+        createId: () => "new",
+        createClientId: () => "client-a",
+        now: () => currentTime,
+        remoteDebounceMs: 1_000
+      })
+    );
+    await waitFor(() => expect(result.current.syncStatus).toBe("synced"));
+
+    vi.useFakeTimers();
+    try {
+      for (let index = 0; index < 20; index += 1) {
+        act(() => {
+          currentTime += 180_000;
+          document = updateNodeText(document, nodeId, `Edited ${index}`, () => currentTime);
+          result.current.commitSnapshot({ document, view: createInitialView(document) });
+        });
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(1_001);
+        });
+        expect((await remoteStore.readLatestSnapshot())?.version).toBe(2 + index);
+      }
+
+      const fullSnapshotBytes = remoteStore.getMetering().storedBytes;
+      const slowEditWriteBytes = remoteStore.getMetering().writeBytes - initialWriteBytes;
+      expect(slowEditWriteBytes).toBeLessThan(fullSnapshotBytes * 3);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("keeps local persistence when a remote payload exceeds the byte budget", async () => {

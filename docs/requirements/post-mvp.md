@@ -24,7 +24,7 @@ MVP 이후 Dynalist와의 기능 차이는 아래 순서로 줄인다. 단, 제�
    - 같은 version의 다른 client write는 conflict로 처리하고, 밀려난 local snapshot은 conflict backup에 보존한다. - 완료됨
    - 원격 payload size guard와 encoded read/write byte metering 테스트를 둔다. - 완료됨
    - 개인 다기기 동기화가 목표이므로 realtime subscription을 필수 요구사항으로 두지 않는다.
-   - 최우선 미해결 과제는 full snapshot write/read bandwidth 비용이다. 큰 문서에서 작은 편집이 발생할 때 전체 snapshot을 반복 전송하지 않는 저장소 또는 sync protocol을 Phase 13보다 먼저 결정한다.
+   - 큰 문서에서 작은 편집이 발생할 때 전체 snapshot을 반복 전송하지 않도록 `RemoteStoreV2` optional patch capability를 추가했다. - 완료됨
 5. 가져오기/내보내기 확장
    - 현재 JSON/Markdown export에 더해 OPML export/import를 지원한다.
    - indentation plain text import/export를 명시적 메뉴로 제공한다.

@@ -25,7 +25,7 @@ TDD 루프와 테스트 스키마를 찾는 입구다. 구현할 기능과 가�
 
 ## TODO / 다음 테스트 우선순위
 
-- [ ] Remote sync Phase 12-C: full-snapshot write/read bandwidth budget 테스트
+- [x] Remote sync Phase 12-C: full-snapshot write/read bandwidth budget 테스트
 - [ ] OPML import/export round-trip
 - [ ] 50,000 node 병목 profiling
 - [ ] 히스토리/설정 E2E smoke

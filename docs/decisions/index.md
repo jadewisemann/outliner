@@ -24,5 +24,5 @@
 
 ## TODO / 확인 포인트
 
-- [ ] Phase 12-C 저장소 또는 sync protocol 결정이 나면 새 ADR로 남긴다.
+- [x] Phase 12-C sync protocol 결정은 ADR-017에 반영했다.
 - [ ] 기존 ADR을 뒤집는 경우 새 ADR에서 supersedes 관계를 명시한다.

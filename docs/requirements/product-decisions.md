@@ -1,7 +1,7 @@
 # 7. 제품 결정
 
 - Phase 0~6은 로그인 없는 로컬 단일 문서, Yjs-backed local runtime, optional RemoteStore sync를 우선한다.
-- 원격 동기화는 optional `RemoteStoreV2` adapter로 연결한다. Firebase Realtime Database는 v2 adapter를 제공하지만, full snapshot bandwidth 비용이 해결되기 전까지 기본 장기 저장소로 확정하지 않는다.
+- 원격 동기화는 optional `RemoteStoreV2` adapter로 연결한다. Firebase Realtime Database는 v2 adapter를 제공하고, full snapshot bandwidth 비용은 optional patch capability로 줄인다. realtime subscription은 개인 sync의 필수 요구사항이 아니다.
 - MVP 텍스트는 플레인 텍스트 중심이다.
 - TODO/checkbox 노드는 MVP에서 제외한다.
 - 자식 있는 빈 노드에서 `Backspace`를 누르면 자식을 같은 레벨로 승격한다.

@@ -1,8 +1,8 @@
 # 6. 원격 동기화 구조
 
-현재 원격 sync의 앱 기본 경계는 `RemoteStoreV2` snapshot-primary sync다. v2는 전체 문서 상태를 update log에 계속 append하지 않고 최신 snapshot 1개를 덮어쓴다. 이로써 저장량과 신규 클라이언트 최초 sync가 과거 누적 로그에 비례해 폭증하는 문제는 줄었다.
+현재 원격 sync의 앱 기본 경계는 `RemoteStoreV2` snapshot-primary sync와 optional patch capability다. v2는 전체 문서 상태를 update log에 계속 append하지 않고 최신 snapshot 1개를 primary artifact로 유지한다. 같은 base version을 가진 클라이언트는 latest patch를 먼저 읽고 쓸 수 있어, 작은 편집이 full snapshot write/read로 반복 증폭되는 비용을 줄인다.
 
-단, v2 snapshot-primary는 최종 비용 해법이 아니다. 문서가 커진 상태에서 작은 편집이 발생해도 remote write payload는 전체 snapshot 크기에 비례한다. Firebase RTDB에 realtime listener가 붙어 있으면 다른 클라이언트의 read bandwidth도 전체 snapshot 크기에 비례할 수 있다. 따라서 Phase 12 이후 최우선 과제는 full-snapshot write/read bandwidth를 줄이는 저장소 또는 sync protocol 재설계다.
+patch가 없거나 base version이 맞지 않으면 latest snapshot을 읽어 복구한다. Firebase RTDB에 realtime listener가 붙어 있으면 read bandwidth 관리가 다시 중요해지므로, realtime은 필수 contract가 아니라 adapter별 선택 기능으로 둔다.
 
 원격 sync의 제품 목표는 다중 사용자 공동편집이 아니라 개인 다기기 동기화다. 따라서 아키텍처의 우선순위는 항상 켜진 realtime stream보다 예측 가능한 비용, 작은 payload, bounded log, 복구 가능한 local-first 동작이다. RTDB는 현재 adapter 중 하나일 뿐이며, 저장소 교체 가능성을 `RemoteStore` 경계 안에 유지한다.
 
@@ -15,6 +15,13 @@ users/{userId}/workspaces/root/
     state: string
     vector?: string
 
+  v2/patch
+    baseVersion: number
+    version: number
+    clientId: string
+    updatedAt: number
+    patch: OutlineSnapshotPatch
+
   # legacy only
   snapshot/{state, vector, updatedAt}
   updates/{updateId}/
@@ -23,8 +30,8 @@ users/{userId}/workspaces/root/
 동작:
 
 1. 앱은 로컬 persistence에서 먼저 Y.Doc 또는 `OutlineSnapshot`을 복원한다.
-2. 원격 설정이 있으면 v2 latest snapshot을 가져와 Yjs workspace에 적용한다.
-3. 로컬 변경은 debounce 후 v2 latest snapshot으로 conditional write한다.
+2. 원격 설정이 있으면 v2 latest patch를 먼저 확인하고, 적용할 patch가 없으면 latest snapshot을 가져와 Yjs workspace에 적용한다.
+3. 로컬 변경은 debounce 후 가능하면 v2 latest patch로 conditional write하고, patch가 비어 있거나 full snapshot보다 크면 latest snapshot으로 write한다.
 4. 같은 version의 다른 client write는 reject/conflict로 처리한다.
 5. 더 최신 remote snapshot이 pending local change를 밀어내면 현재 local snapshot을 conflict backup에 저장하고 `conflict` 상태를 표시한다.
 6. 앱 시작, 포커스 복귀, optional adapter notification에서 remote pull을 수행한다.
@@ -50,9 +57,9 @@ Phase 12-B 중기 저장소 재검토 규칙:
 - 기본 판단 기준은 10분 입력 테스트, 1시간 입력 테스트, 새 기기 최초 sync, 오프라인 후 재연결에서의 write bytes, read bytes, stored bytes다.
 - 개인 다기기 동기화만 필요하면 정적 snapshot/blob 중심 저장소를 우선 후보로 둔다.
 
-Phase 12-C 최우선 비용 과제:
+Phase 12-C 완료된 비용 전략:
 
-- snapshot-primary v2는 remote stored bytes를 bounded하게 만들지만, write/read bandwidth는 문서 크기와 편집 빈도에 비례한다.
-- Firebase RTDB를 계속 쓰는 경우 realtime listener는 전체 snapshot read를 반복할 수 있으므로 비용 검증 전까지 기본 요구사항이 아니다.
-- 현재 1차 구현은 `RemoteStoreV2` optional patch capability다. 클라이언트가 같은 base version을 갖고 있으면 latest patch를 먼저 읽고, patch가 없거나 base가 맞지 않을 때만 latest snapshot을 읽는다.
-- 다음 검증은 provider별 patch write/read byte가 full snapshot 반복보다 낮게 유지되는지 확인하고, 필요하면 chunked snapshot, content-addressed blob/object storage, metadata-only CAS, 서버/API 기반 compaction으로 확장한다.
+- snapshot-primary v2는 remote stored bytes를 bounded하게 만들고, optional patch capability는 작은 편집의 write/read bandwidth를 문서 전체 크기와 분리한다.
+- Firebase RTDB를 계속 쓰는 경우 realtime listener는 전체 snapshot read를 반복할 수 있으므로 기본 요구사항이 아니다.
+- 클라이언트가 같은 base version을 갖고 있으면 latest patch를 먼저 읽고, patch가 없거나 base가 맞지 않을 때만 latest snapshot을 읽는다.
+- fake/browser/Firebase v2 adapter는 latest patch write/read 경로를 제공한다. 이후 더 큰 비용 최적화가 필요하면 chunked snapshot, content-addressed blob/object storage, metadata-only CAS, 서버/API 기반 compaction을 별도 Phase에서 검토한다.
