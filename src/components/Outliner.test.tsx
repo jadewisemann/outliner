@@ -232,6 +232,7 @@ describe("Outliner", () => {
       );
     }
     render(<Harness />);
+    expect(screen.queryByRole("textbox", { name: "Node note" })).not.toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
       key: "Enter",
       code: "Enter",
@@ -269,6 +270,15 @@ describe("Outliner", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("textbox", { name: "Node note" })).toHaveFocus();
+    });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Node note" }), {
+      key: "Enter",
+      code: "Enter",
+      shiftKey: true
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("textbox", { name: "Node note" })).not.toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveFocus();
     });
   });
 
@@ -784,10 +794,21 @@ describe("Outliner", () => {
     render(<Harness />);
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Heading" }), "2");
     await userEvent.click(screen.getByRole("checkbox", { name: "Numbered node" }));
-    await userEvent.type(screen.getByRole("textbox", { name: "Node note" }), "A note");
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Enter",
+      code: "Enter",
+      shiftKey: true
+    });
+    const noteEditor = screen.getByRole("textbox", { name: "Node note" });
+    await userEvent.type(noteEditor, "A note");
+    await waitFor(() => {
+      expect(noteEditor).toHaveValue("A note");
+    });
     await userEvent.click(screen.getByText("Other"));
     expect(screen.getByText("Formatted").closest(".outline-row")).toHaveClass("outline-row-heading-2");
-    expect(screen.getByText("A note")).toHaveClass("node-note");
+    await waitFor(() => {
+      expect(screen.getByText("A note")).toHaveClass("node-note");
+    });
   });
 
   it("keeps rich metadata while moving nodes", async () => {

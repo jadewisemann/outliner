@@ -39,6 +39,7 @@ type OutlineRowProps = {
   hasMultiCursor: boolean;
   spellcheck: boolean;
   autoFocus: boolean;
+  noteEditing: boolean;
   onSelect: () => void;
   onSelectTag: (tag: string) => void;
   onTextChange: (text: string) => void;
@@ -60,12 +61,25 @@ type OutlineRowProps = {
   onCopySelection: () => string | undefined;
   onZoom: () => void;
   onFocusNote: () => void;
+  onFocusText: () => void;
   noteInputRef?: RefObject<HTMLTextAreaElement>;
   onRender?: (nodeId: string) => void;
 };
 
 function OutlineRowComponent(props: OutlineRowProps) {
-  const { node, depth, active, selected, highlighted, hasCursor, onSelect, onSelectTag, onToggleCollapse, onZoom } = props;
+  const {
+    node,
+    depth,
+    active,
+    selected,
+    highlighted,
+    hasCursor,
+    noteEditing,
+    onSelect,
+    onSelectTag,
+    onToggleCollapse,
+    onZoom
+  } = props;
   props.onRender?.(node.id);
   const hasChildren = node.children.length > 0;
   return (
@@ -102,14 +116,24 @@ function OutlineRowComponent(props: OutlineRowProps) {
         {active ? (
           <>
             <ActiveRowEditor {...props} />
-            <textarea
-              ref={props.noteInputRef}
-              className="node-note-editor"
-              aria-label="Node note"
-              value={node.note ?? ""}
-              placeholder="Note"
-              onChange={(event) => props.onNoteChange(event.target.value)}
-            />
+            {noteEditing ? (
+              <textarea
+                ref={props.noteInputRef}
+                className="node-note-editor"
+                aria-label="Node note"
+                value={node.note ?? ""}
+                placeholder="Note"
+                onClick={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" && event.shiftKey) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    props.onFocusText();
+                  }
+                }}
+                onChange={(event) => props.onNoteChange(event.target.value)}
+              />
+            ) : null}
           </>
         ) : (
           <PlainRowText node={node} onSelectTag={onSelectTag} />
@@ -130,7 +154,8 @@ export const OutlineRow = memo(OutlineRowComponent, (previous, next) => {
     previous.hasBulkSelection === next.hasBulkSelection &&
     previous.hasMultiCursor === next.hasMultiCursor &&
     previous.spellcheck === next.spellcheck &&
-    previous.autoFocus === next.autoFocus
+    previous.autoFocus === next.autoFocus &&
+    previous.noteEditing === next.noteEditing
   );
 });
 

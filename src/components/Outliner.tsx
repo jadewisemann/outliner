@@ -102,6 +102,7 @@ export function Outliner({
   const [tagFilter, setTagFilter] = useState<string | undefined>();
   const [searchMode, setSearchMode] = useState<SearchMode>("context");
   const [activeResultIndex, setActiveResultIndex] = useState(-1);
+  const [noteEditingNodeId, setNoteEditingNodeId] = useState<NodeId>();
   const visibleNodes = useMemo(() => getVisibleNodes(document, view.zoomNodeId), [document, view.zoomNodeId]);
   const searchResults = useMemo(() => {
     if (tagFilter) {
@@ -172,6 +173,7 @@ export function Outliner({
   );
 
   const selectNode = useStableCallback((nodeId: NodeId) => {
+    setNoteEditingNodeId(undefined);
     onViewChange({
       ...view,
       selectedNodeId: nodeId,
@@ -277,13 +279,30 @@ export function Outliner({
     onDocumentChange((current) => updateNodeMetadata(current, view.selectedNodeId!, metadata, now));
   });
 
+  const updateNote = useStableCallback((nodeId: NodeId, note: string) => {
+    onDocumentChange((current) => updateNodeMetadata(current, nodeId, { note }, now));
+  });
+
   const focusSelectedNote = useStableCallback(() => {
     if (!view.selectedNodeId) {
       return;
     }
+    setNoteEditingNodeId(view.selectedNodeId);
     updateMetadata({ note: selectedNode?.note ?? "", noteVisible: true });
     window.setTimeout(() => {
       noteInputRef.current?.focus();
+    }, 0);
+  });
+
+  const focusSelectedText = useStableCallback(() => {
+    const selectedNodeId = view.selectedNodeId;
+    setNoteEditingNodeId(undefined);
+    window.setTimeout(() => {
+      if (!selectedNodeId) {
+        return;
+      }
+      const editor = listRef.current?.querySelector<HTMLElement>(`[data-node-id="${selectedNodeId}"] [role="textbox"]`);
+      editor?.focus();
     }, 0);
   });
 
@@ -493,6 +512,12 @@ export function Outliner({
         searchInputRef.current?.focus();
         return;
       }
+      if (activeElement?.getAttribute("aria-label") === "Node note" && event.shiftKey && event.key === "Enter") {
+        event.preventDefault();
+        event.stopPropagation();
+        focusSelectedText();
+        return;
+      }
       if (event.shiftKey && event.key === "Enter" && view.selectedNodeId) {
         event.preventDefault();
         event.stopPropagation();
@@ -658,10 +683,11 @@ export function Outliner({
                 hasMultiCursor={hasMultiCursor}
                 spellcheck={spellcheck}
                 autoFocus={autoFocus}
+                noteEditing={noteEditingNodeId === item.id}
                 onSelect={() => selectNode(item.id)}
                 onSelectTag={selectTagFilter}
                 onTextChange={(text) => updateText(item.id, text)}
-                onNoteChange={(note) => updateMetadata({ note })}
+                onNoteChange={(note) => updateNote(item.id, note)}
                 onInsertLineBreak={(offset) => insertLineBreak(item.id, offset)}
                 onApplyHeadingShortcut={(heading) => applyHeadingShortcut(item.id, heading)}
                 onCreateAfter={(offset) => createAfter(item.id, offset)}
@@ -679,6 +705,7 @@ export function Outliner({
                 onCopySelection={copySelection}
                 onZoom={() => zoom(item.id)}
                 onFocusNote={focusSelectedNote}
+                onFocusText={focusSelectedText}
                 noteInputRef={view.selectedNodeId === item.id ? noteInputRef : undefined}
                 onRender={onRenderRow}
               />

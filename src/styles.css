@@ -398,12 +398,27 @@ button {
   font-weight: 700;
 }
 
+.outline-row-heading-1 .lexical-editor {
+  font-size: 20px;
+  font-weight: 700;
+}
+
 .outline-row-heading-2 .plain-row-text {
   font-size: 17px;
   font-weight: 700;
 }
 
+.outline-row-heading-2 .lexical-editor {
+  font-size: 17px;
+  font-weight: 700;
+}
+
 .outline-row-heading-3 .plain-row-text {
+  font-size: 15px;
+  font-weight: 650;
+}
+
+.outline-row-heading-3 .lexical-editor {
   font-size: 15px;
   font-weight: 650;
 }
