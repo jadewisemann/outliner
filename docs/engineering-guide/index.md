@@ -12,8 +12,10 @@
 - [6. 구현 순서 규칙](./implementation-order.md)
 - [7. 금지할 패턴](./forbidden-patterns.md)
 - [8. 문서 업데이트 규칙](./documentation-updates.md)
+- [9. Git 작업 흐름](./git-workflow.md)
 
 ## TODO / 확인 포인트
 
 - [ ] 새 패턴을 추가하기 전 기존 디렉터리 구조와 명명 규칙에 맞는지 확인한다.
 - [ ] 문서를 바꿔야 하는 구현 변경은 같은 작업에서 함께 반영한다.
+- [ ] LLM 변경은 새 브랜치에서 작은 커밋으로 진행하고, `main` 반영은 squash merge로 정리한다.
