@@ -21,11 +21,15 @@ export function getVisibleNodes(document: OutlineDocument, zoomNodeId: NodeId = 
     if (node.collapsed) {
       continue;
     }
-    for (let index = node.children.length - 1; index >= 0; index -= 1) {
-      stack.push({ nodeId: node.children[index], depth: depth + 1 });
-    }
+    pushChildren(stack, node.children, depth + 1);
   }
   return visible;
+}
+
+function pushChildren(stack: Array<{ nodeId: NodeId; depth: number }>, children: NodeId[], depth: number): void {
+  for (let index = children.length - 1; index >= 0; index -= 1) {
+    stack.push({ nodeId: children[index], depth });
+  }
 }
 
 export function getBreadcrumbPath(document: OutlineDocument, nodeId: NodeId): NodeId[] {

@@ -8,28 +8,41 @@ export type OutlineSnapshotPatch = {
 };
 
 export function createSnapshotPatch(previous: OutlineSnapshot, next: OutlineSnapshot): OutlineSnapshotPatch {
-  const upsertedNodes: Record<NodeId, OutlineNode> = {};
-  const deletedNodeIds: NodeId[] = [];
+  return {
+    ...createRootChildrenPatch(previous, next),
+    upsertedNodes: collectUpsertedNodes(previous, next),
+    deletedNodeIds: collectDeletedNodeIds(previous, next),
+    ...(viewEqual(previous.view, next.view) ? {} : { view: next.view })
+  };
+}
 
+function collectUpsertedNodes(previous: OutlineSnapshot, next: OutlineSnapshot): Record<NodeId, OutlineNode> {
+  const upsertedNodes: Record<NodeId, OutlineNode> = {};
   for (const [nodeId, node] of Object.entries(next.document.nodes)) {
     if (!nodesEqual(previous.document.nodes[nodeId], node)) {
       upsertedNodes[nodeId] = node;
     }
   }
+  return upsertedNodes;
+}
+
+function collectDeletedNodeIds(previous: OutlineSnapshot, next: OutlineSnapshot): NodeId[] {
+  const deletedNodeIds: NodeId[] = [];
   for (const nodeId of Object.keys(previous.document.nodes)) {
     if (!next.document.nodes[nodeId]) {
       deletedNodeIds.push(nodeId);
     }
   }
+  return deletedNodeIds;
+}
 
-  return {
-    ...(arraysEqual(previous.document.nodes[previous.document.rootId]?.children, next.document.nodes[next.document.rootId]?.children)
-      ? {}
-      : { rootChildren: [...next.document.nodes[next.document.rootId].children] }),
-    upsertedNodes,
-    deletedNodeIds,
-    ...(viewEqual(previous.view, next.view) ? {} : { view: next.view })
-  };
+function createRootChildrenPatch(
+  previous: OutlineSnapshot,
+  next: OutlineSnapshot
+): Pick<OutlineSnapshotPatch, "rootChildren"> {
+  const previousChildren = previous.document.nodes[previous.document.rootId]?.children;
+  const nextChildren = next.document.nodes[next.document.rootId].children;
+  return arraysEqual(previousChildren, nextChildren) ? {} : { rootChildren: [...nextChildren] };
 }
 
 export function applySnapshotPatch(snapshot: OutlineSnapshot, patch: OutlineSnapshotPatch): OutlineSnapshot {
