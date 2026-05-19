@@ -1,0 +1,31 @@
+# 3. 테스트 파일 구조
+
+```txt
+src/
+  domain/
+    outline.ts
+    outline.test.ts
+    bulkOutline.ts
+    bulkOutline.test.ts
+  editor/
+    lexicalAdapter.ts
+    lexicalAdapter.test.ts
+  sync/
+    yjsAdapter.ts
+    yjsAdapter.test.ts
+    remoteSync.ts
+    remoteSync.test.ts
+    syncQueue.ts
+    syncQueue.test.ts
+  persistence/
+    localPersistence.ts
+    localPersistence.test.ts
+  components/
+    Outliner.tsx
+    Outliner.test.tsx
+e2e/
+  smoke.spec.ts
+  bulk-editing.spec.ts
+  persistence.spec.ts
+  sync.spec.ts
+```

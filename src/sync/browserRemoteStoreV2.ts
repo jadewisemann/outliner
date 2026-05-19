@@ -1,6 +1,15 @@
-import type { RemoteSnapshotRecord, RemoteStoreMetering, RemoteStoreV2 } from "./syncTypes";
+import type { RemoteSnapshotPatchRecord, RemoteSnapshotRecord, RemoteStoreMetering, RemoteStoreV2 } from "./syncTypes";
 import { base64ToBytes, bytesToBase64, estimateEncodedSnapshotBytes } from "./remoteEncoding";
 import { canReplaceRemoteSnapshot } from "./remoteSyncV2";
+import { applySnapshotPatch, estimateEncodedPatchBytes } from "./snapshotPatch";
+import {
+  createYjsWorkspace,
+  encodeState,
+  encodeStateVector,
+  getYjsSnapshot,
+  mergeIntoNewWorkspace,
+  setYjsSnapshot
+} from "./yjsAdapter";
 
 type StoredRemoteSnapshotV2 = {
   version: number;
@@ -8,6 +17,10 @@ type StoredRemoteSnapshotV2 = {
   updatedAt: number;
   state: string;
   vector?: string;
+};
+
+type StoredRemotePatchV2 = Omit<RemoteSnapshotPatchRecord, "patch"> & {
+  patch: RemoteSnapshotPatchRecord["patch"];
 };
 
 type StoredRemoteUpdateV1 = {
@@ -26,6 +39,7 @@ type StoredRemoteStateV1 = {
 
 export class BrowserRemoteStoreV2 implements RemoteStoreV2 {
   private readonly key: string;
+  private readonly patchKey: string;
   private readonly legacyKey: string;
   private channel?: BroadcastChannel;
   private readonly subscribers = new Set<() => void>();
@@ -34,6 +48,7 @@ export class BrowserRemoteStoreV2 implements RemoteStoreV2 {
 
   constructor(workspaceId: string) {
     this.key = `outliner:browser-remote:${workspaceId}:v2`;
+    this.patchKey = `${this.key}:patch`;
     this.legacyKey = `outliner:browser-remote:${workspaceId}`;
   }
 
@@ -58,12 +73,42 @@ export class BrowserRemoteStoreV2 implements RemoteStoreV2 {
     if (!canReplaceRemoteSnapshot(record, previous ? decodeRecord(previous) : null)) {
       return "rejected";
     }
+    const previousPatch = this.readStoredPatch();
     this.metering.writeBytes += estimateEncodedSnapshotBytes(record);
     this.metering.storedBytes -= previous ? estimateEncodedSnapshotBytes(decodeRecord(previous)) : 0;
+    this.metering.storedBytes -= previousPatch ? estimateEncodedPatchBytes(previousPatch.patch) : 0;
     this.writeStoredSnapshot(encodeRecord(record));
+    this.removeStoredPatch();
     this.metering.storedBytes += estimateEncodedSnapshotBytes(record);
     this.notify();
     this.channel?.postMessage({ type: "snapshot-written" });
+    return "accepted";
+  }
+
+  async readSnapshotPatch(afterVersion: number): Promise<RemoteSnapshotPatchRecord | null> {
+    const stored = this.readStoredPatch();
+    if (!stored || stored.baseVersion !== afterVersion) {
+      return null;
+    }
+    this.metering.readBytes += estimateEncodedPatchBytes(stored.patch);
+    return clonePatchRecord(stored);
+  }
+
+  async writeSnapshotPatch(record: RemoteSnapshotPatchRecord): Promise<"accepted" | "rejected"> {
+    const previous = this.readStoredSnapshot();
+    if (!previous || previous.version !== record.baseVersion) {
+      return "rejected";
+    }
+    const previousPatch = this.readStoredPatch();
+    const next = materializePatch(decodeRecord(previous), record);
+    this.metering.writeBytes += estimateEncodedPatchBytes(record.patch);
+    this.metering.storedBytes -= estimateEncodedSnapshotBytes(decodeRecord(previous));
+    this.metering.storedBytes -= previousPatch ? estimateEncodedPatchBytes(previousPatch.patch) : 0;
+    this.writeStoredSnapshot(encodeRecord(next));
+    this.writeStoredPatch(clonePatchRecord(record));
+    this.metering.storedBytes += estimateEncodedSnapshotBytes(next) + estimateEncodedPatchBytes(record.patch);
+    this.notify();
+    this.channel?.postMessage({ type: "patch-written" });
     return "accepted";
   }
 
@@ -85,7 +130,7 @@ export class BrowserRemoteStoreV2 implements RemoteStoreV2 {
   }
 
   private readonly handleStorage = (event: StorageEvent) => {
-    if (event.key === this.key) {
+    if (event.key === this.key || event.key === this.patchKey) {
       this.notify();
     }
   };
@@ -107,6 +152,19 @@ export class BrowserRemoteStoreV2 implements RemoteStoreV2 {
 
   private writeStoredSnapshot(snapshot: StoredRemoteSnapshotV2): void {
     window.localStorage.setItem(this.key, JSON.stringify(snapshot));
+  }
+
+  private readStoredPatch(): StoredRemotePatchV2 | null {
+    const raw = window.localStorage.getItem(this.patchKey);
+    return raw ? (JSON.parse(raw) as StoredRemotePatchV2) : null;
+  }
+
+  private writeStoredPatch(patch: StoredRemotePatchV2): void {
+    window.localStorage.setItem(this.patchKey, JSON.stringify(patch));
+  }
+
+  private removeStoredPatch(): void {
+    window.localStorage.removeItem(this.patchKey);
   }
 
   private readLegacySnapshot(): StoredRemoteSnapshotV2 | null {
@@ -168,5 +226,26 @@ function decodeRecord(record: StoredRemoteSnapshotV2): RemoteSnapshotRecord {
     updatedAt: record.updatedAt,
     state: base64ToBytes(record.state),
     vector: record.vector ? base64ToBytes(record.vector) : undefined
+  };
+}
+
+function clonePatchRecord(record: RemoteSnapshotPatchRecord): RemoteSnapshotPatchRecord {
+  return JSON.parse(JSON.stringify(record)) as RemoteSnapshotPatchRecord;
+}
+
+function materializePatch(snapshot: RemoteSnapshotRecord, patch: RemoteSnapshotPatchRecord): RemoteSnapshotRecord {
+  const currentSnapshot = getYjsSnapshot(mergeIntoNewWorkspace(snapshot.state));
+  if (!currentSnapshot) {
+    return snapshot;
+  }
+  const nextSnapshot = applySnapshotPatch(currentSnapshot, patch.patch);
+  const workspace = createYjsWorkspace();
+  setYjsSnapshot(workspace, nextSnapshot);
+  return {
+    version: patch.version,
+    clientId: patch.clientId,
+    updatedAt: patch.updatedAt,
+    state: encodeState(workspace),
+    vector: encodeStateVector(workspace)
   };
 }

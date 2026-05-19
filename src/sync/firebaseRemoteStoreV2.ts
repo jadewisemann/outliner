@@ -1,9 +1,10 @@
 import type { Database } from "firebase/database";
 import { child, get, ref, runTransaction } from "firebase/database";
 import { base64ToBytes, bytesToBase64 } from "./remoteEncoding";
-import { applyUpdate, createYjsWorkspace, encodeState, encodeStateVector } from "./yjsAdapter";
+import { applyUpdate, createYjsWorkspace, encodeState, encodeStateVector, getYjsSnapshot, mergeIntoNewWorkspace, setYjsSnapshot } from "./yjsAdapter";
 import { canReplaceRemoteSnapshot } from "./remoteSyncV2";
-import type { RemoteSnapshotRecord, RemoteStoreV2 } from "./syncTypes";
+import type { RemoteSnapshotPatchRecord, RemoteSnapshotRecord, RemoteStoreV2 } from "./syncTypes";
+import { applySnapshotPatch } from "./snapshotPatch";
 
 type FirebaseRemoteSnapshotV2 = {
   version: number;
@@ -11,6 +12,15 @@ type FirebaseRemoteSnapshotV2 = {
   updatedAt: number;
   state: string;
   vector?: string;
+};
+
+type FirebaseRemotePatchV2 = Omit<RemoteSnapshotPatchRecord, "patch"> & {
+  patch: RemoteSnapshotPatchRecord["patch"];
+};
+
+type FirebaseRemoteStateV2 = {
+  snapshot?: FirebaseRemoteSnapshotV2;
+  patch?: FirebaseRemotePatchV2 | null;
 };
 
 type FirebaseRemoteUpdateV1 = {
@@ -41,12 +51,37 @@ export class FirebaseRemoteStoreV2 implements RemoteStoreV2 {
   }
 
   async writeLatestSnapshot(record: RemoteSnapshotRecord): Promise<"accepted" | "rejected"> {
-    const result = await runTransaction(this.snapshotRef(), (current: FirebaseRemoteSnapshotV2 | null) => {
-      const currentRecord = current ? decodeRecord(current) : null;
+    const result = await runTransaction(this.v2Ref(), (current: FirebaseRemoteStateV2 | null) => {
+      const currentRecord = current?.snapshot ? decodeRecord(current.snapshot) : null;
       if (!canReplaceRemoteSnapshot(record, currentRecord)) {
         return;
       }
-      return encodeRecord(record);
+      return { ...(current ?? {}), snapshot: encodeRecord(record), patch: null };
+    });
+    return result.committed ? "accepted" : "rejected";
+  }
+
+  async readSnapshotPatch(afterVersion: number): Promise<RemoteSnapshotPatchRecord | null> {
+    const snapshot = await get(this.patchRef());
+    if (!snapshot.exists()) {
+      return null;
+    }
+    const record = decodePatchRecord(snapshot.val() as FirebaseRemotePatchV2);
+    return record.baseVersion === afterVersion ? record : null;
+  }
+
+  async writeSnapshotPatch(record: RemoteSnapshotPatchRecord): Promise<"accepted" | "rejected"> {
+    const result = await runTransaction(this.v2Ref(), (current: FirebaseRemoteStateV2 | null) => {
+      if (!current?.snapshot || current.snapshot.version !== record.baseVersion) {
+        return;
+      }
+      const currentRecord = decodeRecord(current.snapshot);
+      const nextRecord = materializePatch(currentRecord, record);
+      return {
+        ...(current ?? {}),
+        snapshot: encodeRecord(nextRecord),
+        patch: encodePatchRecord(record)
+      };
     });
     return result.committed ? "accepted" : "rejected";
   }
@@ -104,6 +139,14 @@ export class FirebaseRemoteStoreV2 implements RemoteStoreV2 {
   private snapshotRef() {
     return child(this.workspaceRef(), "v2/snapshot");
   }
+
+  private patchRef() {
+    return child(this.workspaceRef(), "v2/patch");
+  }
+
+  private v2Ref() {
+    return child(this.workspaceRef(), "v2");
+  }
 }
 
 function encodeRecord(record: RemoteSnapshotRecord): FirebaseRemoteSnapshotV2 {
@@ -126,6 +169,31 @@ function decodeRecord(record: FirebaseRemoteSnapshotV2): RemoteSnapshotRecord {
     updatedAt: record.updatedAt,
     state: base64ToBytes(record.state),
     vector: record.vector ? base64ToBytes(record.vector) : undefined
+  };
+}
+
+function encodePatchRecord(record: RemoteSnapshotPatchRecord): FirebaseRemotePatchV2 {
+  return JSON.parse(JSON.stringify(record)) as FirebaseRemotePatchV2;
+}
+
+function decodePatchRecord(record: FirebaseRemotePatchV2): RemoteSnapshotPatchRecord {
+  return JSON.parse(JSON.stringify(record)) as RemoteSnapshotPatchRecord;
+}
+
+function materializePatch(snapshot: RemoteSnapshotRecord, patch: RemoteSnapshotPatchRecord): RemoteSnapshotRecord {
+  const currentSnapshot = getYjsSnapshot(mergeIntoNewWorkspace(snapshot.state));
+  if (!currentSnapshot) {
+    return snapshot;
+  }
+  const nextSnapshot = applySnapshotPatch(currentSnapshot, patch.patch);
+  const workspace = createYjsWorkspace();
+  setYjsSnapshot(workspace, nextSnapshot);
+  return {
+    version: patch.version,
+    clientId: patch.clientId,
+    updatedAt: patch.updatedAt,
+    state: encodeState(workspace),
+    vector: encodeStateVector(workspace)
   };
 }
 

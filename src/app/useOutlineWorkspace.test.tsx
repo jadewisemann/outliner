@@ -6,6 +6,7 @@ import type { LocalPersistence } from "../persistence/localPersistence";
 import { makeDocumentWithTexts, makeLargeDocument } from "../test/factories";
 import { FakeRemoteStoreV2 } from "../sync/fakeRemoteStoreV2";
 import { createRemoteSnapshotRecord } from "../sync/remoteSyncV2";
+import type { RemoteStoreV2 } from "../sync/syncTypes";
 import { createYjsWorkspace } from "../sync/yjsAdapter";
 import { useOutlineWorkspace } from "./useOutlineWorkspace";
 
@@ -389,6 +390,55 @@ describe("useOutlineWorkspace", () => {
 
     const childId = second.nodes[second.rootId].children[0];
     await waitFor(() => expect(clientB.result.current.snapshot.document.nodes[childId].text).toBe("B"));
+  });
+
+  it("lets a second runtime pull slow large-document edits as patches", async () => {
+    let document = makeLargeDocument(200);
+    const firstSnapshot = { document, view: createInitialView(document) };
+    const nodeId = document.nodes[document.rootId].children[0];
+    const remoteStore = new FakeRemoteStoreV2();
+    const writerStore: RemoteStoreV2 = {
+      readLatestSnapshot: () => remoteStore.readLatestSnapshot(),
+      writeLatestSnapshot: (record) => remoteStore.writeLatestSnapshot(record),
+      readSnapshotPatch: (afterVersion) => remoteStore.readSnapshotPatch(afterVersion),
+      writeSnapshotPatch: (record) => remoteStore.writeSnapshotPatch(record)
+    };
+    await remoteStore.writeLatestSnapshot(createRemoteSnapshotRecord(createYjsWorkspace(firstSnapshot), "seed", 1, 1));
+    const persistenceA = memoryPersistence(firstSnapshot);
+    const persistenceB = memoryPersistence(firstSnapshot);
+    const clientA = renderHook(() =>
+      useOutlineWorkspace({
+        persistence: persistenceA,
+        remoteStore: writerStore,
+        createId: () => "new-a",
+        createClientId: () => "client-a",
+        now: () => 10,
+        remoteDebounceMs: 0
+      })
+    );
+    const clientB = renderHook(() =>
+      useOutlineWorkspace({
+        persistence: persistenceB,
+        remoteStore,
+        createId: () => "new-b",
+        createClientId: () => "client-b",
+        now: () => 11,
+        remoteDebounceMs: 0
+      })
+    );
+    await waitFor(() => expect(clientA.result.current.syncStatus).toBe("synced"));
+    await waitFor(() => expect(clientB.result.current.syncStatus).toBe("synced"));
+    const readBytesBeforeEdit = remoteStore.getMetering().readBytes;
+    const snapshotBytes = remoteStore.getMetering().storedBytes;
+
+    act(() => {
+      document = updateNodeText(document, nodeId, "Edited from A", () => 20);
+      clientA.result.current.commitSnapshot({ document, view: createInitialView(document) });
+    });
+
+    await waitFor(() => expect(clientB.result.current.snapshot.document.nodes[nodeId].text).toBe("Edited from A"));
+    const readBytesForPatch = remoteStore.getMetering().readBytes - readBytesBeforeEdit;
+    expect(readBytesForPatch).toBeLessThan(snapshotBytes);
   });
 
   it("pulls the latest snapshot on focus without a realtime subscription", async () => {
