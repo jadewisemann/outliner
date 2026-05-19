@@ -443,6 +443,7 @@ button {
 }
 
 .row-editor {
+  position: relative;
   min-width: 0;
   min-height: 26px;
   padding: 2px 4px;
@@ -501,6 +502,8 @@ button {
 
 .editor-placeholder {
   position: absolute;
+  top: 2px;
+  left: 4px;
   pointer-events: none;
   color: #9aa5b2;
 }
