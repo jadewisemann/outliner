@@ -30,10 +30,10 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
 
 ### 구현 항목
 
-- [ ] Custom CSS
-  - CSS 입력/저장 UI를 설정 창에 추가한다.
-  - 적용 범위를 editor root 또는 app theme layer로 제한한다.
-  - CSS 비활성화, 초기화, 오류 표시를 제공한다.
+- [x] Custom CSS
+  - [x] CSS 입력/저장 UI를 설정 창에 추가한다.
+  - [x] 적용 범위를 editor root 또는 app theme layer로 제한한다.
+  - [x] CSS 비활성화, 초기화, 오류 표시를 제공한다.
 - [ ] Rich text format 확장
   - heading
   - strikethrough
@@ -42,9 +42,9 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
   - code block
   - 기존 bold/italic/link 등과 함께 command registry에 통합한다.
 - [ ] Command palette와 전역 검색
-  - `Ctrl+P` 기본 단축키를 추가한다.
-  - 명령 실행, 노드 검색, 최근 문서/최근 노드 이동을 같은 palette에서 처리한다.
-  - 검색 결과는 키보드 이동, preview, 현재 노드로 점프를 지원한다.
+  - [x] `Ctrl+P` 기본 단축키를 추가한다.
+  - [ ] 명령 실행, 노드 검색, 최근 문서/최근 노드 이동을 같은 palette에서 처리한다.
+  - [ ] 검색 결과는 키보드 이동, preview, 현재 노드로 점프를 지원한다.
 - [ ] 노드 메모
   - `Shift+Enter`로 현재 노드의 note를 생성/편집한다.
   - note는 본문과 분리된 보조 텍스트로 저장한다.
@@ -65,9 +65,9 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
   - reserved shortcut, OS별 shortcut, 충돌 shortcut을 구분한다.
   - 기본값 복원과 export/import를 제공한다.
 - [ ] 설정 창
-  - Preferences를 한 화면이 아니라 섹션형 settings dialog로 정리한다.
-  - General, Editor, Appearance, Shortcuts, Custom CSS, Sync/Account 준비 섹션을 둔다.
-  - 설정 변경은 outline document Undo/Redo stack에 들어가지 않게 유지한다.
+  - [x] Preferences를 한 화면이 아니라 섹션형 settings dialog로 정리한다.
+  - [x] General, Editor, Appearance, Shortcuts, Custom CSS, Sync/Account 준비 섹션을 둔다.
+  - [x] 설정 변경은 outline document Undo/Redo stack에 들어가지 않게 유지한다.
 
 ### 완료 기준
 

@@ -132,9 +132,11 @@ describe("App", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     fireEvent.change(screen.getByLabelText("Theme"), { target: { value: "dark" } });
-    fireEvent.change(screen.getByLabelText("Font"), { target: { value: "mono" } });
-    fireEvent.click(screen.getByLabelText("Spellcheck"));
     fireEvent.click(screen.getByLabelText("Word count"));
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    fireEvent.change(screen.getByLabelText("Font"), { target: { value: "mono" } });
+    fireEvent.click(screen.getByRole("button", { name: "Editor" }));
+    fireEvent.click(screen.getByLabelText("Spellcheck"));
 
     await waitFor(() => expect(persistence.preferences.theme).toBe("dark"));
     expect(persistence.preferences.font).toBe("mono");
@@ -144,5 +146,42 @@ describe("App", () => {
     fireEvent.keyDown(window, { key: "z", code: "KeyZ", ctrlKey: true });
     expect(screen.getByText("A")).toBeInTheDocument();
     expect(window.document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("scopes saved custom CSS to the outliner editor", async () => {
+    const outlineDocument = makeDocumentWithTexts(["A"]);
+    const persistence = memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) });
+    render(<App persistence={persistence} />);
+    await screen.findByText("A");
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Custom CSS" }));
+    fireEvent.click(screen.getByLabelText("Enable custom CSS"));
+    fireEvent.change(screen.getByLabelText("Custom CSS"), {
+      target: { value: ".outline-row-active { background: rgb(255, 244, 191); }" }
+    });
+
+    await waitFor(() => expect(persistence.preferences.customCssEnabled).toBe(true));
+    expect(persistence.preferences.customCss).toContain(".outline-row-active");
+    expect(screen.getByTestId("custom-css-style")).toHaveTextContent(
+      ".outliner-custom-css-scope .outline-row-active"
+    );
+
+    fireEvent.change(screen.getByLabelText("Custom CSS"), { target: { value: "@import url('bad.css');" } });
+    expect(await screen.findByRole("alert")).toHaveTextContent("cannot use @import");
+    expect(screen.getByTestId("custom-css-style")).toHaveTextContent("");
+  });
+
+  it("opens the command palette from the keyboard and jumps to a searched node", async () => {
+    const outlineDocument = makeDocumentWithTexts(["Alpha", "Beta"]);
+    render(<App persistence={memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) })} />);
+    await screen.findByText("Alpha");
+
+    fireEvent.keyDown(window, { key: "p", code: "KeyP", ctrlKey: true });
+    const paletteSearch = await screen.findByRole("searchbox", { name: "Command palette search" });
+    fireEvent.change(paletteSearch, { target: { value: "Beta" } });
+    fireEvent.keyDown(paletteSearch, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => expect(screen.getByText("Beta").closest(".outline-row")).toHaveClass("outline-row-active"));
   });
 });

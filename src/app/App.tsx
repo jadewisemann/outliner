@@ -1,4 +1,12 @@
-import { useEffect, useMemo, useRef, useState, type ChangeEvent, type SetStateAction } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ChangeEvent,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type SetStateAction
+} from "react";
 import { Outliner } from "../components/Outliner";
 import { SyncStatusBadge } from "../components/SyncStatusBadge";
 import {
@@ -12,6 +20,8 @@ import {
   type ImportFormat
 } from "../domain/exporters";
 import type { OutlineDocument, ViewState } from "../domain/outlineTypes";
+import { revealNode } from "../domain/outline";
+import { searchOutline } from "../domain/searchSelectors";
 import { createBrowserLocalPersistence, type LocalPersistence } from "../persistence/localPersistence";
 import type { RemoteStoreV2 } from "../sync/syncTypes";
 import { createManualBackup, serializeManualBackup } from "./backup";
@@ -45,14 +55,49 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
   const [preferences, setPreferences] = useState<PreferenceSettings>(DEFAULT_PREFERENCES);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
+  const [commandPaletteIndex, setCommandPaletteIndex] = useState(0);
+  const [customCssError, setCustomCssError] = useState<string>();
   latestSnapshotRef.current = snapshot;
   const { document, view } = snapshot;
+  const scopedCustomCss = useMemo(
+    () => (preferences.customCssEnabled ? scopeCustomCss(preferences.customCss) : { css: "" }),
+    [preferences.customCss, preferences.customCssEnabled]
+  );
+  const commandPaletteItems = useMemo(
+    () =>
+      buildCommandPaletteItems({
+        document,
+        view,
+        query: commandPaletteQuery,
+        openSettings: (section) => {
+          setSettingsSection(section);
+          setSettingsOpen(true);
+        },
+        closePalette: () => setCommandPaletteOpen(false),
+        jumpToNode: (nodeId) => {
+          const current = latestSnapshotRef.current;
+          const nextDocument = revealNode(current.document, nodeId, now);
+          commit(nextDocument, { ...current.view, selectedNodeId: nodeId });
+        }
+      }),
+    [commandPaletteQuery, document, view]
+  );
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (matchesKeyBinding(event, preferences.keymap.toggleSettings)) {
         event.preventDefault();
         setSettingsOpen((open) => !open);
+        return;
+      }
+      if (matchesKeyBinding(event, preferences.keymap.openCommandPalette)) {
+        event.preventDefault();
+        setCommandPaletteOpen((open) => !open);
+        setCommandPaletteQuery("");
+        setCommandPaletteIndex(0);
         return;
       }
       if (matchesKeyBinding(event, preferences.keymap.redo)) {
@@ -69,7 +114,14 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
     return () => {
       window.removeEventListener("keydown", onKeyDown, { capture: true });
     };
-  }, [preferences.keymap.redo, preferences.keymap.toggleSettings, preferences.keymap.undo, redo, undo]);
+  }, [
+    preferences.keymap.openCommandPalette,
+    preferences.keymap.redo,
+    preferences.keymap.toggleSettings,
+    preferences.keymap.undo,
+    redo,
+    undo
+  ]);
 
   useEffect(() => {
     let cancelled = false;
@@ -95,6 +147,10 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
     window.document.documentElement.dataset.theme = preferences.theme;
     window.document.documentElement.dataset.font = preferences.font;
   }, [preferences.font, preferences.theme]);
+
+  useEffect(() => {
+    setCustomCssError(scopedCustomCss.error);
+  }, [scopedCustomCss.error]);
 
   const commit = (nextDocument: OutlineDocument, nextView: ViewState) => {
     const next = { document: nextDocument, view: nextView };
@@ -177,6 +233,38 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
     );
   };
 
+  const runCommandPaletteItem = (item: CommandPaletteItem | undefined) => {
+    if (!item) {
+      return;
+    }
+    item.run();
+    setCommandPaletteOpen(false);
+    setCommandPaletteQuery("");
+    setCommandPaletteIndex(0);
+  };
+
+  const handleCommandPaletteKeyDown = (event: ReactKeyboardEvent<HTMLInputElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      setCommandPaletteOpen(false);
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setCommandPaletteIndex((index) => Math.min(index + 1, Math.max(0, commandPaletteItems.length - 1)));
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setCommandPaletteIndex((index) => Math.max(0, index - 1));
+      return;
+    }
+    if (event.key === "Enter") {
+      event.preventDefault();
+      runCommandPaletteItem(commandPaletteItems[commandPaletteIndex]);
+    }
+  };
+
   const importOutlineFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -200,6 +288,7 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
 
   return (
     <main className="app-shell">
+      <style data-testid="custom-css-style">{scopedCustomCss.css}</style>
       <header className="top-bar">
         <div>
           <h1>Outliner</h1>
@@ -260,68 +349,14 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
         {importError ? <p role="alert">Import failed: {importError}</p> : null}
       </header>
       {settingsOpen ? (
-        <aside className="settings-panel" aria-label="Settings panel">
-          <label>
-            Theme
-            <select
-              aria-label="Theme"
-              value={preferences.theme}
-              onChange={(event) => updatePreference("theme", event.target.value as PreferenceSettings["theme"])}
-            >
-              <option value="light">Light</option>
-              <option value="dark">Dark</option>
-            </select>
-          </label>
-          <label>
-            Font
-            <select
-              aria-label="Font"
-              value={preferences.font}
-              onChange={(event) => updatePreference("font", event.target.value as PreferenceSettings["font"])}
-            >
-              <option value="system">System</option>
-              <option value="serif">Serif</option>
-              <option value="mono">Mono</option>
-            </select>
-          </label>
-          <label>
-            <input
-              aria-label="Spellcheck"
-              type="checkbox"
-              checked={preferences.spellcheck}
-              onChange={(event) => updatePreference("spellcheck", event.target.checked)}
-            />
-            Spellcheck
-          </label>
-          <label>
-            <input
-              aria-label="Word count"
-              type="checkbox"
-              checked={preferences.showWordCount}
-              onChange={(event) => updatePreference("showWordCount", event.target.checked)}
-            />
-            Word count
-          </label>
-          <label>
-            <input
-              aria-label="Auto focus"
-              type="checkbox"
-              checked={preferences.autoFocus}
-              onChange={(event) => updatePreference("autoFocus", event.target.checked)}
-            />
-            Auto focus
-          </label>
-          {(["undo", "redo", "toggleSettings"] as CommandId[]).map((command) => (
-            <label key={command}>
-              {commandLabel(command)}
-              <input
-                aria-label={`${commandLabel(command)} shortcut`}
-                value={preferences.keymap[command]}
-                onChange={(event) => updateKeyBinding(command, event.target.value)}
-              />
-            </label>
-          ))}
-        </aside>
+        <SettingsPanel
+          preferences={preferences}
+          section={settingsSection}
+          customCssError={customCssError}
+          onSectionChange={setSettingsSection}
+          onPreferenceChange={updatePreference}
+          onKeyBindingChange={updateKeyBinding}
+        />
       ) : null}
       {preferences.showWordCount ? <p className="word-count">{countWords(document)} words</p> : null}
       {snapshotHistory.length > 0 ? (
@@ -334,18 +369,207 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
         </aside>
       ) : null}
       {loaded ? (
-        <Outliner
-          document={document}
-          view={view}
-          createId={createId}
-          now={now}
-          spellcheck={preferences.spellcheck}
-          autoFocus={preferences.autoFocus}
-          onDocumentChange={setDocument}
-          onViewChange={setView}
-        />
+        <div className="outliner-custom-css-scope">
+          <Outliner
+            document={document}
+            view={view}
+            createId={createId}
+            now={now}
+            spellcheck={preferences.spellcheck}
+            autoFocus={preferences.autoFocus}
+            onDocumentChange={setDocument}
+            onViewChange={setView}
+          />
+        </div>
+      ) : null}
+      {commandPaletteOpen ? (
+        <div className="command-palette-backdrop" role="presentation" onMouseDown={() => setCommandPaletteOpen(false)}>
+          <section
+            className="command-palette"
+            role="dialog"
+            aria-label="Command palette"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <input
+              autoFocus
+              type="search"
+              aria-label="Command palette search"
+              value={commandPaletteQuery}
+              placeholder="Search commands and nodes"
+              onChange={(event) => {
+                setCommandPaletteQuery(event.target.value);
+                setCommandPaletteIndex(0);
+              }}
+              onKeyDown={handleCommandPaletteKeyDown}
+            />
+            <div className="command-palette-results" role="listbox" aria-label="Command palette results">
+              {commandPaletteItems.map((item, index) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={index === commandPaletteIndex ? "command-palette-result-active" : ""}
+                  role="option"
+                  aria-selected={index === commandPaletteIndex}
+                  onMouseEnter={() => setCommandPaletteIndex(index)}
+                  onClick={() => runCommandPaletteItem(item)}
+                >
+                  <span>{item.title}</span>
+                  <small>{item.kind}</small>
+                </button>
+              ))}
+            </div>
+          </section>
+        </div>
       ) : null}
     </main>
+  );
+}
+
+type SettingsSection = "general" | "editor" | "appearance" | "shortcuts" | "customCss" | "sync";
+
+type CommandPaletteItem = {
+  id: string;
+  title: string;
+  kind: string;
+  run: () => void;
+};
+
+function SettingsPanel({
+  preferences,
+  section,
+  customCssError,
+  onSectionChange,
+  onPreferenceChange,
+  onKeyBindingChange
+}: {
+  preferences: PreferenceSettings;
+  section: SettingsSection;
+  customCssError?: string;
+  onSectionChange: (section: SettingsSection) => void;
+  onPreferenceChange: <K extends keyof PreferenceSettings>(key: K, value: PreferenceSettings[K]) => void;
+  onKeyBindingChange: (command: CommandId, value: string) => void;
+}) {
+  const keyCommands: CommandId[] = ["undo", "redo", "toggleSettings", "openCommandPalette"];
+  const duplicateShortcuts = findDuplicateShortcuts(preferences.keymap);
+  return (
+    <aside className="settings-panel" aria-label="Settings panel">
+      <nav className="settings-tabs" aria-label="Settings sections">
+        {SETTINGS_SECTIONS.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={section === item.id ? "settings-tab-active" : ""}
+            onClick={() => onSectionChange(item.id)}
+          >
+            {item.label}
+          </button>
+        ))}
+      </nav>
+      <div className="settings-section">
+        {section === "general" ? (
+          <>
+            <label>
+              Theme
+              <select
+                aria-label="Theme"
+                value={preferences.theme}
+                onChange={(event) => onPreferenceChange("theme", event.target.value as PreferenceSettings["theme"])}
+              >
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+            <label>
+              <input
+                aria-label="Word count"
+                type="checkbox"
+                checked={preferences.showWordCount}
+                onChange={(event) => onPreferenceChange("showWordCount", event.target.checked)}
+              />
+              Word count
+            </label>
+          </>
+        ) : null}
+        {section === "editor" ? (
+          <>
+            <label>
+              <input
+                aria-label="Spellcheck"
+                type="checkbox"
+                checked={preferences.spellcheck}
+                onChange={(event) => onPreferenceChange("spellcheck", event.target.checked)}
+              />
+              Spellcheck
+            </label>
+            <label>
+              <input
+                aria-label="Auto focus"
+                type="checkbox"
+                checked={preferences.autoFocus}
+                onChange={(event) => onPreferenceChange("autoFocus", event.target.checked)}
+              />
+              Auto focus
+            </label>
+          </>
+        ) : null}
+        {section === "appearance" ? (
+          <label>
+            Font
+            <select
+              aria-label="Font"
+              value={preferences.font}
+              onChange={(event) => onPreferenceChange("font", event.target.value as PreferenceSettings["font"])}
+            >
+              <option value="system">System</option>
+              <option value="serif">Serif</option>
+              <option value="mono">Mono</option>
+            </select>
+          </label>
+        ) : null}
+        {section === "shortcuts" ? (
+          <>
+            {keyCommands.map((command) => {
+              const duplicate = duplicateShortcuts.has(preferences.keymap[command].toLocaleLowerCase());
+              return (
+                <label key={command}>
+                  {commandLabel(command)}
+                  <input
+                    aria-label={`${commandLabel(command)} shortcut`}
+                    value={preferences.keymap[command]}
+                    onChange={(event) => onKeyBindingChange(command, event.target.value)}
+                  />
+                  {duplicate ? <span role="alert">Shortcut conflict</span> : null}
+                </label>
+              );
+            })}
+          </>
+        ) : null}
+        {section === "customCss" ? (
+          <>
+            <label>
+              <input
+                aria-label="Enable custom CSS"
+                type="checkbox"
+                checked={preferences.customCssEnabled}
+                onChange={(event) => onPreferenceChange("customCssEnabled", event.target.checked)}
+              />
+              Enable custom CSS
+            </label>
+            <textarea
+              aria-label="Custom CSS"
+              value={preferences.customCss}
+              placeholder=".outline-row-active { background: #fff4bf; }"
+              onChange={(event) => onPreferenceChange("customCss", event.target.value)}
+            />
+            <button type="button" onClick={() => onPreferenceChange("customCss", "")}>
+              Reset CSS
+            </button>
+            {customCssError ? <p role="alert">{customCssError}</p> : null}
+          </>
+        ) : null}
+        {section === "sync" ? <p>Sync and account settings are reserved for Phase 16.</p> : null}
+      </div>
+    </aside>
   );
 }
 
@@ -374,5 +598,135 @@ function previewSnapshot(document: OutlineDocument): string {
 }
 
 function commandLabel(command: CommandId): string {
-  return command === "toggleSettings" ? "Settings" : command === "undo" ? "Undo" : "Redo";
+  return command === "toggleSettings"
+    ? "Settings"
+    : command === "openCommandPalette"
+      ? "Command palette"
+      : command === "undo"
+        ? "Undo"
+        : "Redo";
+}
+
+const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
+  { id: "general", label: "General" },
+  { id: "editor", label: "Editor" },
+  { id: "appearance", label: "Appearance" },
+  { id: "shortcuts", label: "Shortcuts" },
+  { id: "customCss", label: "Custom CSS" },
+  { id: "sync", label: "Sync" }
+];
+
+function buildCommandPaletteItems({
+  document,
+  view,
+  query,
+  openSettings,
+  closePalette,
+  jumpToNode
+}: {
+  document: OutlineDocument;
+  view: ViewState;
+  query: string;
+  openSettings: (section: SettingsSection) => void;
+  closePalette: () => void;
+  jumpToNode: (nodeId: string) => void;
+}): CommandPaletteItem[] {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const commands: CommandPaletteItem[] = [
+    {
+      id: "command:settings",
+      title: "Open settings",
+      kind: "Command",
+      run: () => {
+        openSettings("general");
+      }
+    },
+    {
+      id: "command:shortcuts",
+      title: "Edit shortcuts",
+      kind: "Command",
+      run: () => {
+        openSettings("shortcuts");
+      }
+    },
+    {
+      id: "command:custom-css",
+      title: "Edit custom CSS",
+      kind: "Command",
+      run: () => {
+        openSettings("customCss");
+      }
+    },
+    {
+      id: "command:close",
+      title: "Close command palette",
+      kind: "Command",
+      run: closePalette
+    }
+  ].filter((item) => !normalizedQuery || item.title.toLocaleLowerCase().includes(normalizedQuery));
+  const nodeResults = searchOutline(document, query, { zoomNodeId: view.zoomNodeId })
+    .slice(0, 8)
+    .map((result) => ({
+      id: `node:${result.nodeId}`,
+      title: result.text || "Untitled node",
+      kind: "Node",
+      run: () => jumpToNode(result.nodeId)
+    }));
+  return [...commands, ...nodeResults].slice(0, 12);
+}
+
+function scopeCustomCss(source: string): { css: string; error?: string } {
+  const trimmed = source.trim();
+  if (!trimmed) {
+    return { css: "" };
+  }
+  if (trimmed.includes("@import")) {
+    return { css: "", error: "Custom CSS cannot use @import." };
+  }
+  let index = 0;
+  const rules: string[] = [];
+  while (index < trimmed.length) {
+    const open = trimmed.indexOf("{", index);
+    if (open < 0) {
+      if (trimmed.slice(index).trim()) {
+        return { css: "", error: "Custom CSS has an incomplete rule." };
+      }
+      break;
+    }
+    const close = trimmed.indexOf("}", open + 1);
+    if (close < 0) {
+      return { css: "", error: "Custom CSS has an incomplete rule." };
+    }
+    const selector = trimmed.slice(index, open).trim();
+    const body = trimmed.slice(open + 1, close).trim();
+    if (!selector || !body) {
+      return { css: "", error: "Custom CSS has an empty rule." };
+    }
+    if (selector.startsWith("@")) {
+      return { css: "", error: "Custom CSS supports plain editor selectors only." };
+    }
+    const scopedSelector = selector
+      .split(",")
+      .map((part) => scopeSelector(part.trim()))
+      .join(", ");
+    rules.push(`${scopedSelector} { ${body} }`);
+    index = close + 1;
+  }
+  return { css: rules.join("\n") };
+}
+
+function scopeSelector(selector: string): string {
+  if (selector === ":root" || selector === "html" || selector === "body") {
+    return ".outliner-custom-css-scope";
+  }
+  return `.outliner-custom-css-scope ${selector}`;
+}
+
+function findDuplicateShortcuts(keymap: PreferenceSettings["keymap"]): Set<string> {
+  const counts = new Map<string, number>();
+  for (const value of Object.values(keymap)) {
+    const key = value.trim().toLocaleLowerCase();
+    counts.set(key, (counts.get(key) ?? 0) + 1);
+  }
+  return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([key]) => key));
 }

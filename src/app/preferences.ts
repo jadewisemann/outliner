@@ -1,4 +1,4 @@
-export type CommandId = "undo" | "redo" | "toggleSettings";
+export type CommandId = "undo" | "redo" | "toggleSettings" | "openCommandPalette";
 
 export type ThemePreference = "light" | "dark";
 export type FontPreference = "system" | "serif" | "mono";
@@ -9,6 +9,8 @@ export type PreferenceSettings = {
   spellcheck: boolean;
   showWordCount: boolean;
   autoFocus: boolean;
+  customCss: string;
+  customCssEnabled: boolean;
   keymap: Record<CommandId, string>;
 };
 
@@ -18,10 +20,13 @@ export const DEFAULT_PREFERENCES: PreferenceSettings = {
   spellcheck: true,
   showWordCount: true,
   autoFocus: true,
+  customCss: "",
+  customCssEnabled: false,
   keymap: {
     undo: "Mod+Z",
     redo: "Mod+Y",
-    toggleSettings: "Mod+,"
+    toggleSettings: "Mod+,",
+    openCommandPalette: "Mod+P"
   }
 };
 
