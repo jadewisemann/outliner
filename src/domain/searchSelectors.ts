@@ -33,6 +33,11 @@ export type Backlink = {
   broken: boolean;
 };
 
+export type CircularSourceIndexEntry = {
+  nodeId: NodeId;
+  circularReferences: number;
+};
+
 export function searchOutline(
   document: OutlineDocument,
   query: string,
@@ -154,6 +159,23 @@ export function getBrokenLinks(document: OutlineDocument): Backlink[] {
   );
 }
 
+export function getCircularSourceIndex(
+  document: OutlineDocument,
+  options: { minimumCircularReferences?: number } = {}
+): CircularSourceIndexEntry[] {
+  const minimumCircularReferences = Math.max(1, options.minimumCircularReferences ?? 1);
+  return Object.values(document.nodes)
+    .map((node) => {
+      const circularReferences = (node.links ?? []).filter(
+        (link) =>
+          document.nodes[link.targetNodeId] &&
+          (link.targetNodeId === node.id || hasLinkPath(document, link.targetNodeId, node.id, new Set([node.id])))
+      ).length;
+      return { nodeId: node.id, circularReferences };
+    })
+    .filter((entry) => entry.circularReferences >= minimumCircularReferences);
+}
+
 function collectSubtree(document: OutlineDocument, zoomNodeId: NodeId): Array<{ nodeId: NodeId; depth: number }> {
   const zoomNode = document.nodes[zoomNodeId];
   if (!zoomNode) {
@@ -176,4 +198,24 @@ function collectSubtree(document: OutlineDocument, zoomNodeId: NodeId): Array<{ 
     }
   }
   return nodes;
+}
+
+function hasLinkPath(
+  document: OutlineDocument,
+  fromNodeId: NodeId,
+  targetNodeId: NodeId,
+  visited: Set<NodeId>
+): boolean {
+  if (fromNodeId === targetNodeId) {
+    return true;
+  }
+  if (visited.has(fromNodeId)) {
+    return false;
+  }
+  visited.add(fromNodeId);
+  const node = document.nodes[fromNodeId];
+  if (!node) {
+    return false;
+  }
+  return (node.links ?? []).some((link) => hasLinkPath(document, link.targetNodeId, targetNodeId, new Set(visited)));
 }

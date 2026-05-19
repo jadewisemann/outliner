@@ -6,6 +6,7 @@ import {
   findNodesByTag,
   getBacklinks,
   getBrokenLinks,
+  getCircularSourceIndex,
   searchOutline
 } from "./searchSelectors";
 import { makeDocumentWithTexts, makeLargeDocument } from "../test/factories";
@@ -96,5 +97,45 @@ describe("tags and internal links", () => {
     expect(getBrokenLinks(linked)).toEqual([
       expect.objectContaining({ sourceNodeId: source, targetNodeId: "missing", broken: true })
     ]);
+  });
+
+  it("indexes nodes whose links participate in circular sources", () => {
+    const doc = makeDocumentWithTexts(["Alpha", "Beta", "Gamma", "Delta"]);
+    const [alpha, beta, gamma] = doc.nodes[doc.rootId].children;
+    const alphaLinked = updateNodeLinks(doc, alpha, [{ source: "[[Beta]]", targetNodeId: beta, label: "Beta" }]);
+    const betaLinked = updateNodeLinks(alphaLinked, beta, [{ source: "[[Gamma]]", targetNodeId: gamma, label: "Gamma" }]);
+    const cycle = updateNodeLinks(betaLinked, gamma, [{ source: "[[Alpha]]", targetNodeId: alpha, label: "Alpha" }]);
+
+    expect(getCircularSourceIndex(cycle)).toEqual([
+      { nodeId: alpha, circularReferences: 1 },
+      { nodeId: beta, circularReferences: 1 },
+      { nodeId: gamma, circularReferences: 1 }
+    ]);
+  });
+
+  it("filters circular source index entries by a reference threshold", () => {
+    const doc = makeDocumentWithTexts(["Alpha", "Beta", "Gamma"]);
+    const [alpha, beta, gamma] = doc.nodes[doc.rootId].children;
+    const alphaLinked = updateNodeLinks(doc, alpha, [
+      { source: "[[Beta]]", targetNodeId: beta, label: "Beta" },
+      { source: "[[Gamma]]", targetNodeId: gamma, label: "Gamma" }
+    ]);
+    const betaLinked = updateNodeLinks(alphaLinked, beta, [{ source: "[[Alpha]]", targetNodeId: alpha, label: "Alpha" }]);
+    const doubleCycle = updateNodeLinks(betaLinked, gamma, [{ source: "[[Alpha]]", targetNodeId: alpha, label: "Alpha" }]);
+
+    expect(getCircularSourceIndex(doubleCycle, { minimumCircularReferences: 2 })).toEqual([
+      { nodeId: alpha, circularReferences: 2 }
+    ]);
+  });
+
+  it("excludes acyclic and broken links from the circular source index", () => {
+    const doc = makeDocumentWithTexts(["Alpha", "Beta", "Gamma"]);
+    const [alpha, beta] = doc.nodes[doc.rootId].children;
+    const linked = updateNodeLinks(doc, alpha, [
+      { source: "[[Beta]]", targetNodeId: beta, label: "Beta" },
+      { source: "[[Missing]]", targetNodeId: "missing", label: "Missing" }
+    ]);
+
+    expect(getCircularSourceIndex(linked)).toEqual([]);
   });
 });
