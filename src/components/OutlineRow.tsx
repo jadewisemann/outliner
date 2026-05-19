@@ -16,12 +16,13 @@ import {
   KEY_BACKSPACE_COMMAND,
   KEY_DELETE_COMMAND,
   KEY_ENTER_COMMAND,
+  KEY_SPACE_COMMAND,
   KEY_TAB_COMMAND,
   PASTE_COMMAND,
   COPY_COMMAND,
   type EditorState
 } from "lexical";
-import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
 import type { OutlineNode } from "../domain/outlineTypes";
 import type { CursorTextEdit } from "../domain/multiCursor";
 import { extractTags } from "../domain/searchSelectors";
@@ -41,7 +42,9 @@ type OutlineRowProps = {
   onSelect: () => void;
   onSelectTag: (tag: string) => void;
   onTextChange: (text: string) => void;
+  onNoteChange: (note: string) => void;
   onInsertLineBreak: (offset: number) => void;
+  onApplyHeadingShortcut: (heading: 1 | 2 | 3) => void;
   onCreateAfter: (offset?: number) => void;
   onPasteText: (offset: number, text: string) => void;
   onIndent: () => void;
@@ -57,6 +60,7 @@ type OutlineRowProps = {
   onCopySelection: () => string | undefined;
   onZoom: () => void;
   onFocusNote: () => void;
+  noteInputRef?: RefObject<HTMLTextAreaElement>;
   onRender?: (nodeId: string) => void;
 };
 
@@ -96,7 +100,17 @@ function OutlineRowComponent(props: OutlineRowProps) {
       />
       <div className="row-editor" onClick={onSelect}>
         {active ? (
-          <ActiveRowEditor {...props} />
+          <>
+            <ActiveRowEditor {...props} />
+            <textarea
+              ref={props.noteInputRef}
+              className="node-note-editor"
+              aria-label="Node note"
+              value={node.note ?? ""}
+              placeholder="Note"
+              onChange={(event) => props.onNoteChange(event.target.value)}
+            />
+          </>
         ) : (
           <PlainRowText node={node} onSelectTag={onSelectTag} />
         )}
@@ -166,6 +180,7 @@ function ActiveRowEditor({
   node,
   onTextChange,
   onInsertLineBreak,
+  onApplyHeadingShortcut,
   onCreateAfter,
   onPasteText,
   onIndent,
@@ -212,6 +227,18 @@ function ActiveRowEditor({
             className="lexical-editor"
             aria-label="Outline node text"
             spellCheck={spellcheck}
+            onKeyDown={(event) => {
+              if (event.key !== " " || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
+                return;
+              }
+              const heading = parseHeadingShortcut(event.currentTarget.textContent ?? "");
+              if (!heading) {
+                return;
+              }
+              event.preventDefault();
+              event.stopPropagation();
+              onApplyHeadingShortcut(heading);
+            }}
             onCompositionStart={() => {
               composingRef.current = true;
               lastCompositionTextRef.current = "";
@@ -257,6 +284,7 @@ function ActiveRowEditor({
       <KeyboardPlugin
         nodeText={node.text}
         onInsertLineBreak={onInsertLineBreak}
+        onApplyHeadingShortcut={onApplyHeadingShortcut}
         onCreateAfter={onCreateAfter}
         onIndent={onIndent}
         onOutdent={onOutdent}
@@ -298,6 +326,7 @@ function SyncInitialTextPlugin({ text }: { text: string }) {
 function KeyboardPlugin({
   nodeText,
   onInsertLineBreak,
+  onApplyHeadingShortcut,
   onCreateAfter,
   onIndent,
   onOutdent,
@@ -316,6 +345,7 @@ function KeyboardPlugin({
 }: {
   nodeText: string;
   onInsertLineBreak: (offset: number) => void;
+  onApplyHeadingShortcut: (heading: 1 | 2 | 3) => void;
   onCreateAfter: (offset?: number) => void;
   onIndent: () => void;
   onOutdent: () => void;
@@ -344,6 +374,13 @@ function KeyboardPlugin({
         }
       });
       return offset;
+    };
+    const readEditorText = () => {
+      let text = nodeText;
+      editor.getEditorState().read(() => {
+        text = $getRoot().getTextContent();
+      });
+      return text;
     };
     const unregisterEnter = editor.registerCommand<KeyboardEvent>(
       KEY_ENTER_COMMAND,
@@ -376,6 +413,22 @@ function KeyboardPlugin({
         } else {
           onIndent();
         }
+        return true;
+      },
+      COMMAND_PRIORITY_HIGH
+    );
+    const unregisterSpace = editor.registerCommand<KeyboardEvent>(
+      KEY_SPACE_COMMAND,
+      (event) => {
+        if (isComposingEvent(event)) {
+          return false;
+        }
+        const heading = parseHeadingShortcut(readEditorText());
+        if (!heading) {
+          return false;
+        }
+        event?.preventDefault();
+        onApplyHeadingShortcut(heading);
         return true;
       },
       COMMAND_PRIORITY_HIGH
@@ -510,6 +563,15 @@ function KeyboardPlugin({
         onInsertLineBreak(readOffset());
         return;
       }
+      if (event.key === " " && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const heading = parseHeadingShortcut(readEditorText());
+        if (heading) {
+          event.preventDefault();
+          event.stopPropagation();
+          onApplyHeadingShortcut(heading);
+          return;
+        }
+      }
       if (event.key === "Escape" && (hasMultiCursor || hasBulkSelection)) {
         event.preventDefault();
         event.stopPropagation();
@@ -527,6 +589,7 @@ function KeyboardPlugin({
     return () => {
       unregisterEnter();
       unregisterTab();
+      unregisterSpace();
       unregisterBackspace();
       unregisterDelete();
       unregisterUp();
@@ -546,6 +609,7 @@ function KeyboardPlugin({
     onCopySelection,
     onCreateAfter,
     onFocusNote,
+    onApplyHeadingShortcut,
     onInsertLineBreak,
     onExtendSelection,
     onIndent,
@@ -561,6 +625,10 @@ function KeyboardPlugin({
 
 function isComposingEvent(event?: KeyboardEvent | null): boolean {
   return Boolean(event?.isComposing || event?.key === "Process" || event?.keyCode === 229);
+}
+
+function parseHeadingShortcut(text: string): 1 | 2 | 3 | undefined {
+  return text === "#" ? 1 : text === "##" ? 2 : text === "###" ? 3 : undefined;
 }
 
 function FocusPlugin() {

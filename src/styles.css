@@ -27,6 +27,12 @@
   border-color: #303944;
 }
 
+:root[data-theme="dark"] .node-note-editor {
+  background: #171c22;
+  color: #cdd6e0;
+  border-color: #3f4a57;
+}
+
 :root[data-theme="dark"] .outline-row-active,
 :root[data-theme="dark"] .outline-row-selected {
   background: #26384f;
@@ -282,8 +288,7 @@ button {
 .link-candidates button,
 .flat-result-context button,
 .backlink-panel button,
-.format-toolbar select,
-.format-toolbar textarea {
+.format-toolbar select {
   border: 1px solid #c7ced8;
   border-radius: 6px;
   background: #ffffff;
@@ -334,12 +339,6 @@ button {
   border-radius: 6px;
   padding: 2px;
   background: #ffffff;
-}
-
-.format-toolbar textarea {
-  min-width: min(320px, 100%);
-  min-height: 32px;
-  resize: vertical;
 }
 
 .breadcrumb {
@@ -468,6 +467,26 @@ button {
   font-size: 13px;
 }
 
+.node-note-editor {
+  display: block;
+  width: min(520px, 100%);
+  min-height: 42px;
+  margin-top: 4px;
+  border: 1px solid #d8dde5;
+  border-radius: 6px;
+  background: rgb(255 255 255 / 0.72);
+  color: #526173;
+  padding: 6px 8px;
+  resize: vertical;
+  font: inherit;
+  font-size: 13px;
+}
+
+.node-note-editor:focus {
+  border-color: #2f7dd1;
+  outline: 2px solid rgb(47 125 209 / 0.18);
+}
+
 .plain-row-text code {
   border: 1px solid #d8dde5;
   border-radius: 4px;
@@ -475,6 +494,13 @@ button {
   padding: 0 3px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.92em;
+}
+
+.plain-row-text mark {
+  border-radius: 3px;
+  background: #fff29a;
+  color: inherit;
+  padding: 0 2px;
 }
 
 .plain-row-text a {

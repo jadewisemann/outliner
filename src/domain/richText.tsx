@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 
 export function renderInlineMarkdown(source: string): ReactNode[] {
   const nodes: ReactNode[] = [];
-  const pattern = /(!?\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|~~([^~]+)~~|\*([^*]+)\*)/g;
+  const pattern = /(!?\[([^\]]+)\]\(([^)]+)\)|`([^`]+)`|\*\*([^*]+)\*\*|~~([^~]+)~~|==(.+?)==|\*([^*]+)\*)/g;
   let cursor = 0;
   for (const match of source.matchAll(pattern)) {
     const start = match.index ?? 0;
@@ -29,7 +29,9 @@ export function renderInlineMarkdown(source: string): ReactNode[] {
     } else if (match[6]) {
       nodes.push(<s key={start}>{match[6]}</s>);
     } else if (match[7]) {
-      nodes.push(<em key={start}>{match[7]}</em>);
+      nodes.push(<mark key={start}>{match[7]}</mark>);
+    } else if (match[8]) {
+      nodes.push(<em key={start}>{match[8]}</em>);
     }
     cursor = start + token.length;
   }

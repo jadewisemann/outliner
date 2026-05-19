@@ -97,7 +97,7 @@ describe("Outliner", () => {
   });
 
   it("keeps the active editor mounted while Korean IME composition updates text", async () => {
-    const document = makeDocumentWithTexts([""]);
+    const document = makeDocumentWithTexts(["#"]);
     const [nodeId] = document.nodes[document.rootId].children;
     let updateText: (text: string) => void = () => {};
     function Harness() {
@@ -132,7 +132,7 @@ describe("Outliner", () => {
   });
 
   it("commits the final Korean IME text from compositionend data", async () => {
-    const document = makeDocumentWithTexts([""]);
+    const document = makeDocumentWithTexts(["#"]);
     function Harness() {
       const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
       const [view, setView] = useState<ViewState>(createInitialView(document));
@@ -718,7 +718,7 @@ describe("Outliner", () => {
   });
 
   it("renders markdown-like source richly only for inactive rows", () => {
-    const document = makeDocumentWithTexts(["**Bold**", "**Source**"]);
+    const document = makeDocumentWithTexts(["**Bold** ==Bright==", "**Source**"]);
     render(
       <Outliner
         document={document}
@@ -730,7 +730,39 @@ describe("Outliner", () => {
       />
     );
     expect(screen.getByText("Bold").tagName).toBe("STRONG");
+    expect(screen.getByText("Bright").tagName).toBe("MARK");
     expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("**Source**");
+  });
+
+  it("converts markdown heading shortcuts while editing node text", async () => {
+    const document = makeDocumentWithTexts(["#"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    const { container } = render(<Harness />);
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("#");
+    });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: " ",
+      code: "Space"
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("");
+      expect(container.querySelector(".outline-row-active")).toHaveClass("outline-row-heading-1");
+    });
   });
 
   it("updates node formatting metadata and shows notes", async () => {

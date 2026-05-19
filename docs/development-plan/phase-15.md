@@ -20,8 +20,10 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
 
 - 사용자가 Custom CSS를 저장하면 outline editor 영역에 적용되고, 잘못된 CSS가 앱 전체를 깨뜨리지 않는다.
 - Rich text mark와 block format이 저장/복원/export 흐름에서 유지된다.
+- 사용자가 노드 본문에서 `# `, `## `, `### `를 입력하고 Space를 누르면 Markdown처럼 heading 1/2/3으로 변환되고 marker는 본문에서 제거된다.
+- 사용자가 `==highlight==` 또는 `== highlight ==` 형태로 입력하면 inactive row에서 형광펜 mark로 렌더링되고, 편집 중에는 원문으로 되돌아갈 수 있다.
 - `Ctrl+P` 또는 플랫폼별 동등 단축키가 command palette/global search를 열고, 명령과 노드를 키보드만으로 실행/이동할 수 있다.
-- `Shift+Enter`가 현재 노드의 note editor를 열거나 note 입력으로 포커스를 이동한다.
+- `Shift+Enter`가 현재 노드 바로 아래의 Dynalist-style note editor를 열거나 note 입력으로 포커스를 이동한다.
 - `Ctrl+Enter`가 현재 노드 본문 안에 새 줄을 삽입하며, 일반 `Enter`의 새 노드 생성 동작과 충돌하지 않는다.
 - 여러 선택/커서에서 indent, outdent, move, delete, text insert 같은 핵심 편집 명령이 일관되게 적용된다.
 - inline LaTeX와 block LaTeX가 저장/렌더링되고, 원문 편집으로 되돌아갈 수 있다.
@@ -35,7 +37,8 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
   - [x] 적용 범위를 editor root 또는 app theme layer로 제한한다.
   - [x] CSS 비활성화, 초기화, 오류 표시를 제공한다.
 - [ ] Rich text format 확장
-  - heading
+  - [x] `# `, `## `, `### ` 입력을 heading 1/2/3으로 변환한다.
+  - [x] `==text==` 형광펜 mark를 inactive row에서 렌더링하고 active row에서는 원문 편집을 유지한다.
   - strikethrough
   - text color
   - inline code
@@ -48,6 +51,7 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
 - [ ] 노드 메모
   - [x] `Shift+Enter`로 현재 노드의 note를 생성/편집한다.
   - [x] note는 본문과 분리된 보조 텍스트로 저장한다.
+  - [x] note editor는 설정/서식 툴바가 아니라 현재 노드 바로 아래에 표시한다.
   - 접기/검색/export에서 note 포함 정책을 명확히 한다.
 - [ ] 멀티라인 편집
   - [x] `Ctrl+Enter`로 노드 본문 안에 새 줄을 삽입한다.

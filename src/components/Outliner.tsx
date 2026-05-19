@@ -5,7 +5,6 @@ import {
   useRef,
   useState,
   type Dispatch,
-  type RefObject,
   type SetStateAction
 } from "react";
 import { Breadcrumb } from "./Breadcrumb";
@@ -215,7 +214,29 @@ export function Outliner({
   });
 
   const updateText = useStableCallback((nodeId: NodeId, text: string) => {
-    onDocumentChange((current) => updateNodeText(current, nodeId, text, now));
+    onDocumentChange((current) => {
+      const markdownHeading = parseMarkdownHeadingShortcut(text);
+      if (!markdownHeading) {
+        return updateNodeText(current, nodeId, text, now);
+      }
+      const node = current.nodes[nodeId];
+      if (!node || nodeId === current.rootId) {
+        return current;
+      }
+      const timestamp = now();
+      return {
+        ...current,
+        nodes: {
+          ...current.nodes,
+          [nodeId]: {
+            ...node,
+            text: markdownHeading.text,
+            heading: markdownHeading.heading,
+            updatedAt: timestamp
+          }
+        }
+      };
+    });
   });
 
   const insertLineBreak = useStableCallback((nodeId: NodeId, offset: number) => {
@@ -225,6 +246,28 @@ export function Outliner({
     }
     const safeOffset = Math.max(0, Math.min(offset, node.text.length));
     updateText(nodeId, `${node.text.slice(0, safeOffset)}\n${node.text.slice(safeOffset)}`);
+  });
+
+  const applyHeadingShortcut = useStableCallback((nodeId: NodeId, heading: 1 | 2 | 3) => {
+    onDocumentChange((current) => {
+      const node = current.nodes[nodeId];
+      if (!node || nodeId === current.rootId) {
+        return current;
+      }
+      const timestamp = now();
+      return {
+        ...current,
+        nodes: {
+          ...current.nodes,
+          [nodeId]: {
+            ...node,
+            text: "",
+            heading,
+            updatedAt: timestamp
+          }
+        }
+      };
+    });
   });
 
   const updateMetadata = useStableCallback((metadata: Partial<OutlineNodeMetadata>) => {
@@ -568,7 +611,7 @@ export function Outliner({
         </div>
       ) : null}
       <Breadcrumb document={document} zoomNodeId={view.zoomNodeId} onNavigate={navigate} />
-      {selectedNode ? <FormatToolbar node={selectedNode} noteInputRef={noteInputRef} onChange={updateMetadata} /> : null}
+      {selectedNode ? <FormatToolbar node={selectedNode} onChange={updateMetadata} /> : null}
       {searchMode === "flat" && searchResults.length > 0 ? (
         <div className="flat-result-context" aria-label="Flat search context">
           {searchResults.map((result) => (
@@ -618,7 +661,9 @@ export function Outliner({
                 onSelect={() => selectNode(item.id)}
                 onSelectTag={selectTagFilter}
                 onTextChange={(text) => updateText(item.id, text)}
+                onNoteChange={(note) => updateMetadata({ note })}
                 onInsertLineBreak={(offset) => insertLineBreak(item.id, offset)}
+                onApplyHeadingShortcut={(heading) => applyHeadingShortcut(item.id, heading)}
                 onCreateAfter={(offset) => createAfter(item.id, offset)}
                 onPasteText={(offset, text) => pasteText(item.id, offset, text)}
                 onIndent={() => indent(item.id)}
@@ -634,6 +679,7 @@ export function Outliner({
                 onCopySelection={copySelection}
                 onZoom={() => zoom(item.id)}
                 onFocusNote={focusSelectedNote}
+                noteInputRef={view.selectedNodeId === item.id ? noteInputRef : undefined}
                 onRender={onRenderRow}
               />
             ))}
@@ -674,11 +720,9 @@ export function Outliner({
 
 function FormatToolbar({
   node,
-  noteInputRef,
   onChange
 }: {
-  node: { heading?: 1 | 2 | 3; color?: string; numbered?: boolean; note?: string; noteVisible?: boolean };
-  noteInputRef: RefObject<HTMLTextAreaElement>;
+  node: { heading?: 1 | 2 | 3; color?: string; numbered?: boolean; noteVisible?: boolean };
   onChange: (metadata: Partial<OutlineNodeMetadata>) => void;
 }) {
   return (
@@ -723,13 +767,6 @@ function FormatToolbar({
           onChange={(event) => onChange({ noteVisible: event.target.checked })}
         />
       </label>
-      <textarea
-        ref={noteInputRef}
-        aria-label="Node note"
-        value={node.note ?? ""}
-        placeholder="Note"
-        onChange={(event) => onChange({ note: event.target.value })}
-      />
     </div>
   );
 }
@@ -766,4 +803,12 @@ function parseOpenLinkQuery(text: string): { start: number; end: number; query: 
     return undefined;
   }
   return { start, end: text.length, query: text.slice(start + 2) };
+}
+
+function parseMarkdownHeadingShortcut(text: string): { heading: 1 | 2 | 3; text: string } | undefined {
+  const match = /^(#{1,3})\s(.*)$/s.exec(text);
+  if (!match) {
+    return undefined;
+  }
+  return { heading: match[1].length as 1 | 2 | 3, text: match[2] };
 }
