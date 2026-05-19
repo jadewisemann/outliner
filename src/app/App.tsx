@@ -14,6 +14,8 @@ import {
 import type { OutlineDocument, ViewState } from "../domain/outlineTypes";
 import { createBrowserLocalPersistence, type LocalPersistence } from "../persistence/localPersistence";
 import type { RemoteStoreV2 } from "../sync/syncTypes";
+import { createManualBackup, serializeManualBackup } from "./backup";
+import { DEFAULT_PREFERENCES, matchesKeyBinding, normalizePreferences, type CommandId, type PreferenceSettings } from "./preferences";
 import { useOutlineWorkspace } from "./useOutlineWorkspace";
 
 const createId = () => crypto.randomUUID();
@@ -27,7 +29,7 @@ type AppProps = {
 export function App({ persistence: providedPersistence, remoteStore }: AppProps = {}) {
   const browserPersistence = useMemo(() => createBrowserLocalPersistence("workspace_root"), []);
   const persistence = providedPersistence ?? browserPersistence;
-  const { snapshot, loaded, commitSnapshot, undo, redo, syncStatus } = useOutlineWorkspace({
+  const { snapshot, loaded, commitSnapshot, snapshotHistory, restoreSnapshot, undo, redo, syncStatus } = useOutlineWorkspace({
     persistence,
     remoteStore,
     createId,
@@ -40,20 +42,26 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
   const [importFormat, setImportFormat] = useState<ImportFormat>("opml");
   const [importMode, setImportMode] = useState<ImportApplyOptions["mode"]>("mergeRoot");
   const [importError, setImportError] = useState<string>();
+  const [preferences, setPreferences] = useState<PreferenceSettings>(DEFAULT_PREFERENCES);
+  const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   latestSnapshotRef.current = snapshot;
   const { document, view } = snapshot;
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const key = event.key.toLowerCase();
-      const isMod = event.metaKey || event.ctrlKey;
-      if (!isMod || (key !== "z" && key !== "y")) {
+      if (matchesKeyBinding(event, preferences.keymap.toggleSettings)) {
+        event.preventDefault();
+        setSettingsOpen((open) => !open);
         return;
       }
-      event.preventDefault();
-      if (key === "y" || (key === "z" && event.shiftKey)) {
+      if (matchesKeyBinding(event, preferences.keymap.redo)) {
+        event.preventDefault();
         redo();
-      } else {
+        return;
+      }
+      if (matchesKeyBinding(event, preferences.keymap.undo)) {
+        event.preventDefault();
         undo();
       }
     };
@@ -61,7 +69,32 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
     return () => {
       window.removeEventListener("keydown", onKeyDown, { capture: true });
     };
-  }, [redo, undo]);
+  }, [preferences.keymap.redo, preferences.keymap.toggleSettings, preferences.keymap.undo, redo, undo]);
+
+  useEffect(() => {
+    let cancelled = false;
+    persistence.loadPreferences().then((loadedPreferences) => {
+      if (!cancelled) {
+        setPreferences(normalizePreferences(loadedPreferences));
+        setPreferencesLoaded(true);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [persistence]);
+
+  useEffect(() => {
+    if (!loaded || !preferencesLoaded) {
+      return;
+    }
+    void persistence.savePreferences(preferences);
+  }, [loaded, persistence, preferences, preferencesLoaded]);
+
+  useEffect(() => {
+    window.document.documentElement.dataset.theme = preferences.theme;
+    window.document.documentElement.dataset.font = preferences.font;
+  }, [preferences.font, preferences.theme]);
 
   const commit = (nextDocument: OutlineDocument, nextView: ViewState) => {
     const next = { document: nextDocument, view: nextView };
@@ -118,6 +151,32 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
     URL.revokeObjectURL(url);
   };
 
+  const downloadBackup = () => {
+    const backup = createManualBackup(latestSnapshotRef.current, preferences, snapshotHistory, now());
+    const url = URL.createObjectURL(new Blob([serializeManualBackup(backup)], { type: "application/json" }));
+    const anchor = window.document.createElement("a");
+    anchor.href = url;
+    anchor.download = "outliner-backup.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const updatePreference = <K extends keyof PreferenceSettings>(key: K, value: PreferenceSettings[K]) => {
+    setPreferences((current) => normalizePreferences({ ...current, [key]: value }));
+  };
+
+  const updateKeyBinding = (command: CommandId, value: string) => {
+    setPreferences((current) =>
+      normalizePreferences({
+        ...current,
+        keymap: {
+          ...current.keymap,
+          [command]: value
+        }
+      })
+    );
+  };
+
   const importOutlineFile = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -162,6 +221,9 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
           <button type="button" onClick={() => downloadExport("opml", true)}>
             Export Visible OPML
           </button>
+          <button type="button" onClick={downloadBackup}>
+            Backup
+          </button>
           <select
             aria-label="Import format"
             value={importFormat}
@@ -182,6 +244,9 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
           <button type="button" onClick={() => importInputRef.current?.click()}>
             Import
           </button>
+          <button type="button" aria-label="Settings" onClick={() => setSettingsOpen((open) => !open)}>
+            Settings
+          </button>
           <input
             ref={importInputRef}
             aria-label="Import outline file"
@@ -194,12 +259,88 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
         </div>
         {importError ? <p role="alert">Import failed: {importError}</p> : null}
       </header>
+      {settingsOpen ? (
+        <aside className="settings-panel" aria-label="Settings panel">
+          <label>
+            Theme
+            <select
+              aria-label="Theme"
+              value={preferences.theme}
+              onChange={(event) => updatePreference("theme", event.target.value as PreferenceSettings["theme"])}
+            >
+              <option value="light">Light</option>
+              <option value="dark">Dark</option>
+            </select>
+          </label>
+          <label>
+            Font
+            <select
+              aria-label="Font"
+              value={preferences.font}
+              onChange={(event) => updatePreference("font", event.target.value as PreferenceSettings["font"])}
+            >
+              <option value="system">System</option>
+              <option value="serif">Serif</option>
+              <option value="mono">Mono</option>
+            </select>
+          </label>
+          <label>
+            <input
+              aria-label="Spellcheck"
+              type="checkbox"
+              checked={preferences.spellcheck}
+              onChange={(event) => updatePreference("spellcheck", event.target.checked)}
+            />
+            Spellcheck
+          </label>
+          <label>
+            <input
+              aria-label="Word count"
+              type="checkbox"
+              checked={preferences.showWordCount}
+              onChange={(event) => updatePreference("showWordCount", event.target.checked)}
+            />
+            Word count
+          </label>
+          <label>
+            <input
+              aria-label="Auto focus"
+              type="checkbox"
+              checked={preferences.autoFocus}
+              onChange={(event) => updatePreference("autoFocus", event.target.checked)}
+            />
+            Auto focus
+          </label>
+          {(["undo", "redo", "toggleSettings"] as CommandId[]).map((command) => (
+            <label key={command}>
+              {commandLabel(command)}
+              <input
+                aria-label={`${commandLabel(command)} shortcut`}
+                value={preferences.keymap[command]}
+                onChange={(event) => updateKeyBinding(command, event.target.value)}
+              />
+            </label>
+          ))}
+        </aside>
+      ) : null}
+      {preferences.showWordCount ? <p className="word-count">{countWords(document)} words</p> : null}
+      {snapshotHistory.length > 0 ? (
+        <aside className="history-panel" aria-label="Snapshot history">
+          {snapshotHistory.slice(0, 5).map((entry) => (
+            <button key={entry.id} type="button" onClick={() => restoreSnapshot(entry.id)}>
+              {new Date(entry.createdAt).toLocaleString()} · {previewSnapshot(entry.snapshot.document)}
+            </button>
+          ))}
+        </aside>
+      ) : null}
       {loaded ? (
         <Outliner
           document={document}
           view={view}
           createId={createId}
           now={now}
+          spellcheck={preferences.spellcheck}
+          autoFocus={preferences.autoFocus}
           onDocumentChange={setDocument}
           onViewChange={setView}
         />
@@ -218,4 +359,20 @@ function readFileAsText(file: File): Promise<string> {
     reader.onerror = () => reject(reader.error ?? new Error("Could not read import file"));
     reader.readAsText(file);
   });
+}
+
+function countWords(document: OutlineDocument): number {
+  return Object.values(document.nodes)
+    .filter((node) => node.id !== document.rootId)
+    .reduce((total, node) => total + node.text.trim().split(/\s+/).filter(Boolean).length, 0);
+}
+
+function previewSnapshot(document: OutlineDocument): string {
+  const firstChildId = document.nodes[document.rootId]?.children[0];
+  const text = firstChildId ? document.nodes[firstChildId]?.text.trim() : "";
+  return text ? text.slice(0, 40) : "Untitled";
+}
+
+function commandLabel(command: CommandId): string {
+  return command === "toggleSettings" ? "Settings" : command === "undo" ? "Undo" : "Redo";
 }

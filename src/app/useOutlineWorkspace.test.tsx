@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInitialView, createNodeAfter, updateNodeText } from "../domain/outline";
 import type { OutlineSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
+import { DEFAULT_PREFERENCES, type PreferenceSettings } from "./preferences";
 import { makeDocumentWithTexts, makeLargeDocument } from "../test/factories";
 import { FakeRemoteStoreV2 } from "../sync/fakeRemoteStoreV2";
 import { createRemoteSnapshotRecord } from "../sync/remoteSyncV2";
@@ -14,8 +15,10 @@ function memoryPersistence(
   initial: OutlineSnapshot | null = null
 ): LocalPersistence & { saved: OutlineSnapshot[]; conflictBackup: OutlineSnapshot | null } {
   const saved: OutlineSnapshot[] = [];
+  const history: Awaited<ReturnType<LocalPersistence["listSnapshotHistory"]>> = [];
   let current = initial;
   let conflictBackup: OutlineSnapshot | null = null;
+  let preferences: PreferenceSettings = DEFAULT_PREFERENCES;
   return {
     saved,
     get conflictBackup() {
@@ -30,6 +33,21 @@ function memoryPersistence(
     },
     async clear() {
       current = null;
+    },
+    async listSnapshotHistory() {
+      return history;
+    },
+    async saveSnapshotHistory(entry) {
+      history.unshift(entry);
+    },
+    async clearSnapshotHistory() {
+      history.length = 0;
+    },
+    async loadPreferences() {
+      return preferences;
+    },
+    async savePreferences(next) {
+      preferences = next;
     },
     async loadConflictBackup() {
       return conflictBackup;
@@ -589,5 +607,44 @@ describe("useOutlineWorkspace", () => {
     const remoteChildId = remote.nodes[remote.rootId].children[0];
     expect(persistence.conflictBackup?.document.nodes[localChildId].text).toBe("Local");
     expect(result.current.snapshot.document.nodes[remoteChildId].text).toBe("Remote");
+  });
+
+  it("stores local history snapshots and restores one as an undoable transaction", async () => {
+    const first = makeDocumentWithTexts(["A"]);
+    const second = makeDocumentWithTexts(["B"]);
+    const third = makeDocumentWithTexts(["C"]);
+    const persistence = memoryPersistence({ document: first, view: createInitialView(first) });
+    let tick = 10;
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        createId: () => "new",
+        now: () => tick
+      })
+    );
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+
+    act(() => {
+      tick = 20;
+      result.current.commitSnapshot({ document: second, view: createInitialView(second) });
+      tick = 30;
+      result.current.commitSnapshot({ document: third, view: createInitialView(third) });
+    });
+    await waitFor(() => expect(result.current.snapshotHistory.length).toBeGreaterThanOrEqual(2));
+
+    const secondHistory = result.current.snapshotHistory.find((entry) => entry.createdAt === 20);
+    expect(secondHistory).toBeDefined();
+    act(() => {
+      result.current.restoreSnapshot(secondHistory!.id);
+    });
+
+    const secondChildId = second.nodes[second.rootId].children[0];
+    await waitFor(() => expect(result.current.snapshot.document.nodes[secondChildId].text).toBe("B"));
+
+    act(() => {
+      result.current.undo();
+    });
+    const thirdChildId = third.nodes[third.rootId].children[0];
+    await waitFor(() => expect(result.current.snapshot.document.nodes[thirdChildId].text).toBe("C"));
   });
 });

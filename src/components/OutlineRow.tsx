@@ -36,6 +36,8 @@ type OutlineRowProps = {
   hasCursor: boolean;
   hasBulkSelection: boolean;
   hasMultiCursor: boolean;
+  spellcheck: boolean;
+  autoFocus: boolean;
   onSelect: () => void;
   onSelectTag: (tag: string) => void;
   onTextChange: (text: string) => void;
@@ -110,7 +112,9 @@ export const OutlineRow = memo(OutlineRowComponent, (previous, next) => {
     previous.highlighted === next.highlighted &&
     previous.hasCursor === next.hasCursor &&
     previous.hasBulkSelection === next.hasBulkSelection &&
-    previous.hasMultiCursor === next.hasMultiCursor
+    previous.hasMultiCursor === next.hasMultiCursor &&
+    previous.spellcheck === next.spellcheck &&
+    previous.autoFocus === next.autoFocus
   );
 });
 
@@ -172,7 +176,9 @@ function ActiveRowEditor({
   onClearPowerSelection,
   onCopySelection,
   hasBulkSelection,
-  hasMultiCursor
+  hasMultiCursor,
+  spellcheck,
+  autoFocus
 }: OutlineRowProps) {
   const skipInitialChangeRef = useRef(true);
   const composingRef = useRef(false);
@@ -201,6 +207,7 @@ function ActiveRowEditor({
           <ContentEditable
             className="lexical-editor"
             aria-label="Outline node text"
+            spellCheck={spellcheck}
             onCompositionStart={() => {
               composingRef.current = true;
               lastCompositionTextRef.current = "";
@@ -260,7 +267,7 @@ function ActiveRowEditor({
         hasBulkSelection={hasBulkSelection}
         hasMultiCursor={hasMultiCursor}
       />
-      <FocusPlugin />
+      {autoFocus ? <FocusPlugin /> : null}
     </LexicalComposer>
   );
 }

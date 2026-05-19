@@ -1,9 +1,22 @@
 import type { OutlineSnapshot } from "../domain/outlineTypes";
+import { normalizePreferences, type PreferenceSettings } from "../app/preferences";
+
+export type SnapshotHistoryEntry = {
+  id: string;
+  createdAt: number;
+  reason: "autosave" | "restore" | "conflict";
+  snapshot: OutlineSnapshot;
+};
 
 export interface LocalPersistence {
   load(): Promise<OutlineSnapshot | null>;
   save(snapshot: OutlineSnapshot): Promise<void>;
   clear(): Promise<void>;
+  listSnapshotHistory(): Promise<SnapshotHistoryEntry[]>;
+  saveSnapshotHistory(entry: SnapshotHistoryEntry): Promise<void>;
+  clearSnapshotHistory(): Promise<void>;
+  loadPreferences(): Promise<PreferenceSettings>;
+  savePreferences(preferences: PreferenceSettings): Promise<void>;
   loadConflictBackup(): Promise<OutlineSnapshot | null>;
   saveConflictBackup(snapshot: OutlineSnapshot): Promise<void>;
   clearConflictBackup(): Promise<void>;
@@ -12,10 +25,12 @@ export interface LocalPersistence {
 export function createBrowserLocalPersistence(name: string): LocalPersistence {
   const key = `outliner:${name}`;
   const conflictKey = `${key}:conflict`;
+  const historyKey = `${key}:history`;
+  const preferencesKey = `${key}:preferences`;
   return {
     async load() {
       if (!hasIndexedDb()) {
-        return loadFromLocalStorage(key);
+        return loadFromLocalStorage<OutlineSnapshot>(key);
       }
       const db = await openDb();
       return new Promise((resolve, reject) => {
@@ -51,9 +66,74 @@ export function createBrowserLocalPersistence(name: string): LocalPersistence {
         tx.onerror = () => reject(tx.error);
       });
     },
+    async listSnapshotHistory() {
+      if (!hasIndexedDb()) {
+        return loadHistoryFromLocalStorage(historyKey);
+      }
+      const db = await openDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction("snapshots", "readonly");
+        const request = tx.objectStore("snapshots").get(historyKey);
+        request.onsuccess = () => resolve(normalizeHistory(request.result));
+        request.onerror = () => reject(request.error);
+      });
+    },
+    async saveSnapshotHistory(entry) {
+      const history = [entry, ...(await this.listSnapshotHistory()).filter((item) => item.id !== entry.id)].slice(0, 50);
+      if (!hasIndexedDb()) {
+        window.localStorage.setItem(historyKey, JSON.stringify(history));
+        return;
+      }
+      const db = await openDb();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("snapshots", "readwrite");
+        tx.objectStore("snapshots").put(history, historyKey);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    },
+    async clearSnapshotHistory() {
+      if (!hasIndexedDb()) {
+        window.localStorage.removeItem(historyKey);
+        return;
+      }
+      const db = await openDb();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("snapshots", "readwrite");
+        tx.objectStore("snapshots").delete(historyKey);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    },
+    async loadPreferences() {
+      if (!hasIndexedDb()) {
+        return normalizePreferences(loadFromLocalStorage<PreferenceSettings>(preferencesKey));
+      }
+      const db = await openDb();
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction("snapshots", "readonly");
+        const request = tx.objectStore("snapshots").get(preferencesKey);
+        request.onsuccess = () => resolve(normalizePreferences(request.result as PreferenceSettings | undefined));
+        request.onerror = () => reject(request.error);
+      });
+    },
+    async savePreferences(preferences) {
+      const normalized = normalizePreferences(preferences);
+      if (!hasIndexedDb()) {
+        window.localStorage.setItem(preferencesKey, JSON.stringify(normalized));
+        return;
+      }
+      const db = await openDb();
+      await new Promise<void>((resolve, reject) => {
+        const tx = db.transaction("snapshots", "readwrite");
+        tx.objectStore("snapshots").put(normalized, preferencesKey);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error);
+      });
+    },
     async loadConflictBackup() {
       if (!hasIndexedDb()) {
-        return loadFromLocalStorage(conflictKey);
+        return loadFromLocalStorage<OutlineSnapshot>(conflictKey);
       }
       const db = await openDb();
       return new Promise((resolve, reject) => {
@@ -96,12 +176,12 @@ function hasIndexedDb(): boolean {
   return typeof indexedDB !== "undefined";
 }
 
-function loadFromLocalStorage(key: string): OutlineSnapshot | null {
+function loadFromLocalStorage<T>(key: string): T | null {
   if (typeof window === "undefined") {
     return null;
   }
   const value = window.localStorage.getItem(key);
-  return value ? (JSON.parse(value) as OutlineSnapshot) : null;
+  return value ? (JSON.parse(value) as T) : null;
 }
 
 function saveToLocalStorage(key: string, snapshot: OutlineSnapshot): void {
@@ -119,4 +199,20 @@ function openDb(): Promise<IDBDatabase> {
     request.onsuccess = () => resolve(request.result);
     request.onerror = () => reject(request.error);
   });
+}
+
+function loadHistoryFromLocalStorage(key: string): SnapshotHistoryEntry[] {
+  return normalizeHistory(loadFromLocalStorage<SnapshotHistoryEntry[]>(key));
+}
+
+function normalizeHistory(value: unknown): SnapshotHistoryEntry[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return value
+    .filter((entry): entry is SnapshotHistoryEntry => {
+      const candidate = entry as Partial<SnapshotHistoryEntry>;
+      return Boolean(candidate.id && candidate.createdAt && candidate.snapshot);
+    })
+    .sort((left, right) => right.createdAt - left.createdAt);
 }

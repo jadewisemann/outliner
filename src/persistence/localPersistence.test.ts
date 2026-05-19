@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createInitialView } from "../domain/outline";
 import { makeDocumentWithTexts } from "../test/factories";
+import { DEFAULT_PREFERENCES } from "../app/preferences";
 import { createBrowserLocalPersistence } from "./localPersistence";
 
 describe("local persistence", () => {
@@ -16,6 +17,12 @@ describe("local persistence", () => {
     expect((await persistence.loadConflictBackup())?.document.rootId).toBe(document.rootId);
     await persistence.clearConflictBackup();
     expect(await persistence.loadConflictBackup()).toBeNull();
+    await persistence.saveSnapshotHistory({ id: "history-1", createdAt: 10, reason: "autosave", snapshot: { document, view } });
+    expect(await persistence.listSnapshotHistory()).toHaveLength(1);
+    await persistence.clearSnapshotHistory();
+    expect(await persistence.listSnapshotHistory()).toHaveLength(0);
+    await persistence.savePreferences({ ...DEFAULT_PREFERENCES, theme: "dark" });
+    expect((await persistence.loadPreferences()).theme).toBe("dark");
     await persistence.clear();
   });
 });

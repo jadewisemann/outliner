@@ -6,7 +6,7 @@ import {
   ROOT_ID
 } from "../domain/outline";
 import type { Clock, IdGenerator, NodeId, OutlineSnapshot } from "../domain/outlineTypes";
-import type { LocalPersistence } from "../persistence/localPersistence";
+import type { LocalPersistence, SnapshotHistoryEntry } from "../persistence/localPersistence";
 import {
   createRemoteSnapshotRecord,
   createRemoteSyncV2State,
@@ -38,6 +38,9 @@ export type OutlineWorkspaceRuntime = {
   snapshot: OutlineSnapshot;
   loaded: boolean;
   commitSnapshot: (snapshot: OutlineSnapshot) => void;
+  snapshotHistory: SnapshotHistoryEntry[];
+  restoreSnapshot: (historyId: string) => void;
+  refreshSnapshotHistory: () => Promise<void>;
   undo: () => void;
   redo: () => void;
   syncStatus: SyncStatus;
@@ -83,7 +86,9 @@ export function useOutlineWorkspace({
   const pullLatestRemoteSnapshotRef = useRef<() => Promise<void>>(async () => {});
   const loadedRef = useRef(false);
   const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const historyChainRef = useRef<Promise<void>>(Promise.resolve());
   const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [snapshotHistory, setSnapshotHistory] = useState<SnapshotHistoryEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(remoteStore ? "syncing" : "local-only");
   createIdRef.current = createId;
@@ -96,6 +101,27 @@ export function useOutlineWorkspace({
         () => persistence.save(next)
       );
       return saveChainRef.current;
+    },
+    [persistence]
+  );
+
+  const refreshSnapshotHistory = useCallback(async () => {
+    setSnapshotHistory(await persistence.listSnapshotHistory());
+  }, [persistence]);
+
+  const saveHistorySnapshot = useCallback(
+    (next: OutlineSnapshot, createdAt: number, reason: SnapshotHistoryEntry["reason"] = "autosave") => {
+      const entry: SnapshotHistoryEntry = {
+        id: `${createdAt}:${createIdRef.current()}`,
+        createdAt,
+        reason,
+        snapshot: cloneSnapshot(next)
+      };
+      historyChainRef.current = historyChainRef.current
+        .then(() => persistence.saveSnapshotHistory(entry))
+        .then(() => persistence.listSnapshotHistory())
+        .then(setSnapshotHistory, () => {});
+      return historyChainRef.current;
     },
     [persistence]
   );
@@ -260,6 +286,9 @@ export function useOutlineWorkspace({
       if (!snapshotsEqual(previous, normalized)) {
         undoStackRef.current = [...undoStackRef.current, previous];
         redoStackRef.current = [];
+        if (loadedRef.current) {
+          void saveHistorySnapshot(normalized, now());
+        }
       }
       replaceSnapshot(normalized);
       if (remoteStore && loadedRef.current) {
@@ -288,7 +317,18 @@ export function useOutlineWorkspace({
         );
       }
     },
-    [createId, now, remoteStore, replaceSnapshot, scheduleRemoteSnapshot]
+    [createId, now, remoteStore, replaceSnapshot, saveHistorySnapshot, scheduleRemoteSnapshot]
+  );
+
+  const restoreSnapshot = useCallback(
+    (historyId: string) => {
+      const entry = snapshotHistory.find((item) => item.id === historyId);
+      if (!entry) {
+        return;
+      }
+      publishSnapshot(cloneSnapshot(entry.snapshot));
+    },
+    [publishSnapshot, snapshotHistory]
   );
 
   useEffect(() => {
@@ -308,6 +348,7 @@ export function useOutlineWorkspace({
       }
       loadedRef.current = true;
       setLoaded(true);
+      void refreshSnapshotHistory();
       void saveSnapshot(snapshotRef.current);
       if (!remoteStore) {
         setSyncStatus("local-only");
@@ -338,7 +379,7 @@ export function useOutlineWorkspace({
       cancelled = true;
       unsubscribeRemote?.();
     };
-  }, [persistence, pullLatestRemoteSnapshot, remoteStore, saveSnapshot, setRemoteState]);
+  }, [persistence, pullLatestRemoteSnapshot, refreshSnapshotHistory, remoteStore, saveSnapshot, setRemoteState]);
 
   useEffect(() => {
     if (!remoteStore) {
@@ -391,6 +432,9 @@ export function useOutlineWorkspace({
     snapshot,
     loaded,
     commitSnapshot: publishSnapshot,
+    snapshotHistory,
+    restoreSnapshot,
+    refreshSnapshotHistory,
     undo,
     redo,
     syncStatus

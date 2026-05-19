@@ -56,6 +56,8 @@ type OutlinerProps = {
   view: ViewState;
   createId: IdGenerator;
   now: Clock;
+  spellcheck?: boolean;
+  autoFocus?: boolean;
   onDocumentChange: Dispatch<SetStateAction<OutlineDocument>>;
   onViewChange: (view: ViewState) => void;
   onRenderRow?: (nodeId: NodeId) => void;
@@ -78,6 +80,8 @@ export function Outliner({
   view,
   createId,
   now,
+  spellcheck = true,
+  autoFocus = true,
   onDocumentChange,
   onViewChange,
   onRenderRow
@@ -574,6 +578,8 @@ export function Outliner({
                 hasCursor={(view.cursors ?? []).some((cursor) => cursor.nodeId === item.id)}
                 hasBulkSelection={hasBulkSelection}
                 hasMultiCursor={hasMultiCursor}
+                spellcheck={spellcheck}
+                autoFocus={autoFocus}
                 onSelect={() => selectNode(item.id)}
                 onSelectTag={selectTagFilter}
                 onTextChange={(text) => updateText(item.id, text)}

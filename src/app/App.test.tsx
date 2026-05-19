@@ -6,11 +6,17 @@ import type { LocalPersistence } from "../persistence/localPersistence";
 import { makeDocumentWithTexts } from "../test/factories";
 import { FakeRemoteStoreV2 } from "../sync/fakeRemoteStoreV2";
 import { App } from "./App";
+import { DEFAULT_PREFERENCES, type PreferenceSettings } from "./preferences";
 
-function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersistence {
+function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersistence & { preferences: PreferenceSettings } {
   let current = initial;
   let conflictBackup: OutlineSnapshot | null = null;
+  const history: Awaited<ReturnType<LocalPersistence["listSnapshotHistory"]>> = [];
+  let preferences = DEFAULT_PREFERENCES;
   return {
+    get preferences() {
+      return preferences;
+    },
     async load() {
       return current;
     },
@@ -19,6 +25,21 @@ function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersist
     },
     async clear() {
       current = null;
+    },
+    async listSnapshotHistory() {
+      return history;
+    },
+    async saveSnapshotHistory(entry) {
+      history.unshift(entry);
+    },
+    async clearSnapshotHistory() {
+      history.length = 0;
+    },
+    async loadPreferences() {
+      return preferences;
+    },
+    async savePreferences(next) {
+      preferences = next;
     },
     async loadConflictBackup() {
       return conflictBackup;
@@ -101,5 +122,27 @@ describe("App", () => {
 
     expect(await screen.findByRole("alert")).toHaveTextContent("Import failed");
     expect(screen.getByText("A")).toBeInTheDocument();
+  });
+
+  it("stores settings separately from outline undo and applies them to the shell", async () => {
+    const outlineDocument = makeDocumentWithTexts(["A"]);
+    const persistence = memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) });
+    render(<App persistence={persistence} />);
+    await screen.findByText("A");
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.change(screen.getByLabelText("Theme"), { target: { value: "dark" } });
+    fireEvent.change(screen.getByLabelText("Font"), { target: { value: "mono" } });
+    fireEvent.click(screen.getByLabelText("Spellcheck"));
+    fireEvent.click(screen.getByLabelText("Word count"));
+
+    await waitFor(() => expect(persistence.preferences.theme).toBe("dark"));
+    expect(persistence.preferences.font).toBe("mono");
+    expect(persistence.preferences.spellcheck).toBe(false);
+    expect(persistence.preferences.showWordCount).toBe(false);
+
+    fireEvent.keyDown(window, { key: "z", code: "KeyZ", ctrlKey: true });
+    expect(screen.getByText("A")).toBeInTheDocument();
+    expect(window.document.documentElement.dataset.theme).toBe("dark");
   });
 });
