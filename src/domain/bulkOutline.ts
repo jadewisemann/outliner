@@ -7,6 +7,8 @@ export type PastedOutlineDraft = {
   depth: number;
 };
 
+type DraftStackItem = { id: NodeId; depth: number };
+
 export function parseIndentedText(text: string): PastedOutlineDraft[] {
   const rawDrafts = text
     .split(/\r?\n/)
@@ -65,30 +67,7 @@ export function insertNodesFromText(
     const id = createId();
     lastCreatedId = id;
     const isLast = draft === drafts[drafts.length - 1];
-    nextNodes[id] = {
-      id,
-      text: isLast ? `${draft.text}${suffix}` : draft.text,
-      children: [],
-      collapsed: false,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    };
-
-    while (stack.length > 0 && stack[stack.length - 1].depth >= draft.depth) {
-      stack.pop();
-    }
-
-    const parent = stack[stack.length - 1];
-    if (parent && draft.depth > 0) {
-      nextNodes[parent.id] = {
-        ...nextNodes[parent.id],
-        children: [...nextNodes[parent.id].children, id],
-        updatedAt: timestamp
-      };
-    } else {
-      rootsToInsert.push(id);
-    }
-    stack.push({ id, depth: draft.depth });
+    appendDraftNode(nextNodes, rootsToInsert, stack, draft, id, getPastedSuffix(isLast, suffix), timestamp);
   }
 
   if (drafts.length === 1) {
@@ -116,6 +95,51 @@ export function insertNodesFromText(
     },
     selectedNodeId: lastCreatedId
   };
+}
+
+function getPastedSuffix(isLast: boolean, suffix: string): string {
+  return isLast ? suffix : "";
+}
+
+function appendDraftNode(
+  nodes: Record<NodeId, OutlineNode>,
+  rootsToInsert: NodeId[],
+  stack: DraftStackItem[],
+  draft: PastedOutlineDraft,
+  id: NodeId,
+  suffix: string,
+  timestamp: number
+): void {
+  nodes[id] = makePastedNode(id, `${draft.text}${suffix}`, timestamp);
+  trimDraftStack(stack, draft.depth);
+  const parent = stack[stack.length - 1];
+  if (parent && draft.depth > 0) {
+    nodes[parent.id] = {
+      ...nodes[parent.id],
+      children: [...nodes[parent.id].children, id],
+      updatedAt: timestamp
+    };
+  } else {
+    rootsToInsert.push(id);
+  }
+  stack.push({ id, depth: draft.depth });
+}
+
+function makePastedNode(id: NodeId, text: string, timestamp: number): OutlineNode {
+  return {
+    id,
+    text,
+    children: [],
+    collapsed: false,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  };
+}
+
+function trimDraftStack(stack: DraftStackItem[], depth: number): void {
+  while (stack.length > 0 && stack[stack.length - 1].depth >= depth) {
+    stack.pop();
+  }
 }
 
 export function selectVisibleRange(
@@ -265,10 +289,7 @@ export function bulkDeleteNodes(
   if (selected.length === 0) {
     return { document };
   }
-  const deleting = new Set<NodeId>();
-  for (const id of selected) {
-    collectSubtreeIds(document, id, deleting);
-  }
+  const deleting = collectDeletedSubtreeIds(document, selected);
   const timestamp = now();
   const nextNodes = { ...document.nodes };
   for (const id of deleting) {
@@ -286,6 +307,14 @@ export function bulkDeleteNodes(
   const nextVisibleIds = getVisibleNodes(nextDocument).map((item) => item.id);
   const selectedNodeId = nextVisibleIds[firstDeletedIndex] ?? nextVisibleIds[firstDeletedIndex - 1];
   return { document: nextDocument, selectedNodeId };
+}
+
+function collectDeletedSubtreeIds(document: OutlineDocument, selected: NodeId[]): Set<NodeId> {
+  const deleting = new Set<NodeId>();
+  for (const id of selected) {
+    collectSubtreeIds(document, id, deleting);
+  }
+  return deleting;
 }
 
 export function bulkToggleCollapse(
@@ -401,84 +430,145 @@ function moveSelectedSiblingBlocks(
   const timestamp = now();
   let nodes = document.nodes;
   for (const group of groupByParent(document, nodeIds)) {
-    const parent = nodes[group.parentId];
-    const selected = new Set(group.ids);
-    const moving = parent.children.filter((id) => selected.has(id));
-    if (moving.length === 0) {
-      continue;
-    }
-    const firstIndex = parent.children.findIndex((id) => selected.has(id));
-    const lastIndex = findLastIndex(parent.children, (id) => selected.has(id));
-    const swapId =
-      direction === "up"
-        ? findSiblingBefore(parent.children, firstIndex, selected)
-        : findSiblingAfter(parent.children, lastIndex, selected);
-    if (swapId) {
-      const withoutMoving = parent.children.filter((id) => !selected.has(id));
-      const swapIndex = withoutMoving.indexOf(swapId);
-      const insertIndex = direction === "up" ? swapIndex : swapIndex + 1;
-      const nextChildren = [...withoutMoving];
-      nextChildren.splice(insertIndex, 0, ...moving);
-      nodes = {
-        ...nodes,
-        [group.parentId]: {
-          ...parent,
-          children: nextChildren,
-          updatedAt: timestamp
-        }
-      };
-      continue;
-    }
-
-    if (group.parentId === document.rootId) {
-      continue;
-    }
-    const grandParentId = findParentId({ ...document, nodes }, group.parentId);
-    if (!grandParentId) {
-      continue;
-    }
-    const grandParent = nodes[grandParentId];
-    const parentIndex = grandParent.children.indexOf(group.parentId);
-    const parentChildren = parent.children.filter((id) => !selected.has(id));
-    if (direction === "up" && parentIndex > 0) {
-      const previousParentSiblingId = grandParent.children[parentIndex - 1];
-      const previousParentSibling = nodes[previousParentSiblingId];
-      nodes = {
-        ...nodes,
-        [group.parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
-        [previousParentSiblingId]: {
-          ...previousParentSibling,
-          children: [...previousParentSibling.children, ...moving],
-          collapsed: false,
-          updatedAt: timestamp
-        }
-      };
-      continue;
-    }
-    if (direction === "down" && parentIndex < grandParent.children.length - 1) {
-      const nextParentSiblingId = grandParent.children[parentIndex + 1];
-      const nextParentSibling = nodes[nextParentSiblingId];
-      nodes = {
-        ...nodes,
-        [group.parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
-        [nextParentSiblingId]: {
-          ...nextParentSibling,
-          children: [...moving, ...nextParentSibling.children],
-          collapsed: false,
-          updatedAt: timestamp
-        }
-      };
-      continue;
-    }
-    const grandParentChildren = [...grandParent.children];
-    grandParentChildren.splice(direction === "up" ? parentIndex : parentIndex + 1, 0, ...moving);
-    nodes = {
-      ...nodes,
-      [group.parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
-      [grandParentId]: { ...grandParent, children: grandParentChildren, updatedAt: timestamp }
-    };
+    nodes = moveSiblingGroup({ ...document, nodes }, nodes, group, direction, timestamp);
   }
   return { ...document, nodes };
+}
+
+function moveSiblingGroup(
+  document: OutlineDocument,
+  nodes: OutlineDocument["nodes"],
+  group: { parentId: NodeId; ids: NodeId[] },
+  direction: "up" | "down",
+  timestamp: number
+): OutlineDocument["nodes"] {
+  const parent = nodes[group.parentId];
+  const selected = new Set(group.ids);
+  const moving = parent.children.filter((id) => selected.has(id));
+  if (moving.length === 0) {
+    return nodes;
+  }
+  const swapId = findSwapSibling(parent.children, selected, direction);
+  if (swapId) {
+    return moveWithinParent(nodes, group.parentId, parent, selected, moving, swapId, direction, timestamp);
+  }
+  if (group.parentId === document.rootId) {
+    return nodes;
+  }
+  const grandParentId = findParentId(document, group.parentId);
+  return grandParentId
+    ? moveAcrossParent(nodes, group.parentId, parent, selected, moving, grandParentId, direction, timestamp)
+    : nodes;
+}
+
+function findSwapSibling(
+  children: NodeId[],
+  selected: Set<NodeId>,
+  direction: "up" | "down"
+): NodeId | undefined {
+  const firstIndex = children.findIndex((id) => selected.has(id));
+  const lastIndex = findLastIndex(children, (id) => selected.has(id));
+  return direction === "up"
+    ? findSiblingBefore(children, firstIndex, selected)
+    : findSiblingAfter(children, lastIndex, selected);
+}
+
+function moveWithinParent(
+  nodes: OutlineDocument["nodes"],
+  parentId: NodeId,
+  parent: OutlineNode,
+  selected: Set<NodeId>,
+  moving: NodeId[],
+  swapId: NodeId,
+  direction: "up" | "down",
+  timestamp: number
+): OutlineDocument["nodes"] {
+  const withoutMoving = parent.children.filter((id) => !selected.has(id));
+  const swapIndex = withoutMoving.indexOf(swapId);
+  const insertIndex = direction === "up" ? swapIndex : swapIndex + 1;
+  const nextChildren = [...withoutMoving];
+  nextChildren.splice(insertIndex, 0, ...moving);
+  return {
+    ...nodes,
+    [parentId]: {
+      ...parent,
+      children: nextChildren,
+      updatedAt: timestamp
+    }
+  };
+}
+
+function moveAcrossParent(
+  nodes: OutlineDocument["nodes"],
+  parentId: NodeId,
+  parent: OutlineNode,
+  selected: Set<NodeId>,
+  moving: NodeId[],
+  grandParentId: NodeId,
+  direction: "up" | "down",
+  timestamp: number
+): OutlineDocument["nodes"] {
+  const grandParent = nodes[grandParentId];
+  const parentIndex = grandParent.children.indexOf(parentId);
+  const parentChildren = parent.children.filter((id) => !selected.has(id));
+  if (direction === "up" && parentIndex > 0) {
+    const previousParentSiblingId = grandParent.children[parentIndex - 1];
+    const previousParentSibling = nodes[previousParentSiblingId];
+    return replaceParentAndSibling(nodes, parentId, parent, parentChildren, previousParentSiblingId, {
+      ...previousParentSibling,
+      children: [...previousParentSibling.children, ...moving],
+      collapsed: false,
+      updatedAt: timestamp
+    }, timestamp);
+  }
+  if (direction === "down" && parentIndex < grandParent.children.length - 1) {
+    const nextParentSiblingId = grandParent.children[parentIndex + 1];
+    const nextParentSibling = nodes[nextParentSiblingId];
+    return replaceParentAndSibling(nodes, parentId, parent, parentChildren, nextParentSiblingId, {
+      ...nextParentSibling,
+      children: [...moving, ...nextParentSibling.children],
+      collapsed: false,
+      updatedAt: timestamp
+    }, timestamp);
+  }
+  return moveBesideParent(nodes, parentId, parent, parentChildren, grandParentId, direction, parentIndex, moving, timestamp);
+}
+
+function replaceParentAndSibling(
+  nodes: OutlineDocument["nodes"],
+  parentId: NodeId,
+  parent: OutlineNode,
+  parentChildren: NodeId[],
+  siblingId: NodeId,
+  sibling: OutlineNode,
+  timestamp: number
+): OutlineDocument["nodes"] {
+  return {
+    ...nodes,
+    [parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
+    [siblingId]: sibling
+  };
+}
+
+function moveBesideParent(
+  nodes: OutlineDocument["nodes"],
+  parentId: NodeId,
+  parent: OutlineNode,
+  parentChildren: NodeId[],
+  grandParentId: NodeId,
+  direction: "up" | "down",
+  parentIndex: number,
+  moving: NodeId[],
+  timestamp: number
+): OutlineDocument["nodes"] {
+  const grandParent = nodes[grandParentId];
+  const grandParentChildren = [...grandParent.children];
+  grandParentChildren.splice(direction === "up" ? parentIndex : parentIndex + 1, 0, ...moving);
+  return {
+    ...nodes,
+    [parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
+    [grandParentId]: { ...grandParent, children: grandParentChildren, updatedAt: timestamp }
+  };
 }
 
 function findSiblingBefore(children: NodeId[], startIndex: number, selected: Set<NodeId>): NodeId | undefined {

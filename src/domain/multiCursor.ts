@@ -54,23 +54,13 @@ export function applyTextToCursors(
       continue;
     }
     const offset = clampOffset(cursor.offset, node.text);
-    let text = node.text;
-    let nextOffset = offset;
-    if (edit.type === "insert") {
-      text = `${text.slice(0, offset)}${edit.text}${text.slice(offset)}`;
-      nextOffset = offset + edit.text.length;
-    } else if (edit.type === "backspace" && offset > 0) {
-      text = `${text.slice(0, offset - 1)}${text.slice(offset)}`;
-      nextOffset = offset - 1;
-    } else if (edit.type === "delete" && offset < text.length) {
-      text = `${text.slice(0, offset)}${text.slice(offset + 1)}`;
-    }
+    const result = applyTextEdit(node.text, offset, edit);
     nodes[cursor.nodeId] = {
       ...node,
-      text,
+      text: result.text,
       updatedAt: timestamp
     };
-    nextOffsets.set(cursorKey(cursor), nextOffset);
+    nextOffsets.set(cursorKey(cursor), result.offset);
   }
 
   return {
@@ -80,6 +70,28 @@ export function applyTextToCursors(
       offset: nextOffsets.get(cursorKey(cursor)) ?? cursor.offset
     }))
   };
+}
+
+function applyTextEdit(text: string, offset: number, edit: CursorTextEdit): { text: string; offset: number } {
+  if (edit.type === "insert") {
+    return {
+      text: `${text.slice(0, offset)}${edit.text}${text.slice(offset)}`,
+      offset: offset + edit.text.length
+    };
+  }
+  if (edit.type === "backspace" && offset > 0) {
+    return {
+      text: `${text.slice(0, offset - 1)}${text.slice(offset)}`,
+      offset: offset - 1
+    };
+  }
+  if (edit.type === "delete" && offset < text.length) {
+    return {
+      text: `${text.slice(0, offset)}${text.slice(offset + 1)}`,
+      offset
+    };
+  }
+  return { text, offset };
 }
 
 function addCursorByDirection(

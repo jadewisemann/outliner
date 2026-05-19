@@ -1,4 +1,4 @@
-import type { Database } from "firebase/database";
+import type { Database, DataSnapshot } from "firebase/database";
 import { child, get, ref, runTransaction } from "firebase/database";
 import { base64ToBytes, bytesToBase64 } from "./remoteEncoding";
 import { applyUpdate, createYjsWorkspace, encodeState, encodeStateVector, getYjsSnapshot, mergeIntoNewWorkspace, setYjsSnapshot } from "./yjsAdapter";
@@ -28,6 +28,18 @@ type FirebaseRemoteUpdateV1 = {
   seq: number;
   update: string;
   createdAt: number;
+};
+
+type LegacySnapshotState = {
+  state: string | null;
+  vector?: string;
+  updatedAt: number;
+};
+
+type LegacyUpdateState = {
+  version: number;
+  clientId: string;
+  updatedAt?: number;
 };
 
 export class FirebaseRemoteStoreV2 implements RemoteStoreV2 {
@@ -90,45 +102,18 @@ export class FirebaseRemoteStoreV2 implements RemoteStoreV2 {
     const workspaceRef = this.workspaceRef();
     const legacySnapshot = await get(child(workspaceRef, "snapshot"));
     const legacyUpdates = await get(child(workspaceRef, "updates"));
-    let state: string | null = null;
-    let vector: string | undefined;
-    let version = 0;
-    let clientId = "legacy-firebase";
-    let updatedAt = Date.now();
-
     const workspace = createYjsWorkspace();
-    if (legacySnapshot.exists()) {
-      const value = legacySnapshot.val() as { state?: string; vector?: string; updatedAt?: number };
-      state = value.state ?? null;
-      vector = value.vector;
-      updatedAt = value.updatedAt ?? updatedAt;
-      if (state) {
-        applyUpdate(workspace, base64ToBytes(state));
-      }
-    }
-    if (legacyUpdates.exists()) {
-      const updates = Object.values(legacyUpdates.val() as Record<string, FirebaseRemoteUpdateV1>).sort(
-        (left, right) => left.createdAt - right.createdAt
-      );
-      for (const update of updates) {
-        applyUpdate(workspace, base64ToBytes(update.update));
-      }
-      const latestUpdate = updates.at(-1);
-      if (latestUpdate) {
-        version = updates.length;
-        clientId = latestUpdate.clientId;
-        updatedAt = latestUpdate.createdAt;
-      }
-    }
-    if (!state && !legacyUpdates.exists()) {
+    const snapshotState = applyLegacySnapshot(workspace, legacySnapshot);
+    const updateState = applyLegacyUpdates(workspace, legacyUpdates);
+    if (!snapshotState.state && !legacyUpdates.exists()) {
       return null;
     }
     return {
-      version,
-      clientId,
-      updatedAt,
+      version: updateState.version,
+      clientId: updateState.clientId,
+      updatedAt: updateState.updatedAt ?? snapshotState.updatedAt,
       state: encodeState(workspace),
-      vector: vector ? base64ToBytes(vector) : encodeStateVector(workspace)
+      vector: snapshotState.vector ? base64ToBytes(snapshotState.vector) : encodeStateVector(workspace)
     };
   }
 
@@ -147,6 +132,39 @@ export class FirebaseRemoteStoreV2 implements RemoteStoreV2 {
   private v2Ref() {
     return child(this.workspaceRef(), "v2");
   }
+}
+
+function applyLegacySnapshot(workspace: ReturnType<typeof createYjsWorkspace>, snapshot: DataSnapshot): LegacySnapshotState {
+  const initial = { state: null, updatedAt: Date.now() };
+  if (!snapshot.exists()) {
+    return initial;
+  }
+  const value = snapshot.val() as { state?: string; vector?: string; updatedAt?: number };
+  const state = value.state ?? null;
+  if (state) {
+    applyUpdate(workspace, base64ToBytes(state));
+  }
+  return {
+    state,
+    vector: value.vector,
+    updatedAt: value.updatedAt ?? initial.updatedAt
+  };
+}
+
+function applyLegacyUpdates(workspace: ReturnType<typeof createYjsWorkspace>, updatesSnapshot: DataSnapshot): LegacyUpdateState {
+  if (!updatesSnapshot.exists()) {
+    return { version: 0, clientId: "legacy-firebase" };
+  }
+  const updates = Object.values(updatesSnapshot.val() as Record<string, FirebaseRemoteUpdateV1>).sort(
+    (left, right) => left.createdAt - right.createdAt
+  );
+  for (const update of updates) {
+    applyUpdate(workspace, base64ToBytes(update.update));
+  }
+  const latestUpdate = updates.at(-1);
+  return latestUpdate
+    ? { version: updates.length, clientId: latestUpdate.clientId, updatedAt: latestUpdate.createdAt }
+    : { version: 0, clientId: "legacy-firebase" };
 }
 
 function encodeRecord(record: RemoteSnapshotRecord): FirebaseRemoteSnapshotV2 {

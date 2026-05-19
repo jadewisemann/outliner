@@ -19,16 +19,7 @@ export function exportToMarkdown(document: OutlineDocument): string {
     if (!node) {
       return;
     }
-    const indent = "  ".repeat(depth);
-    const marker = node.numbered ? "1." : "-";
-    const headingPrefix = node.heading ? `${"#".repeat(node.heading)} ` : "";
-    const colorSuffix = node.color ? ` {color=${node.color}}` : "";
-    lines.push(`${indent}${marker} ${headingPrefix}${node.text}${colorSuffix}`);
-    if (node.note) {
-      for (const line of node.note.split("\n")) {
-        lines.push(`${indent}  > ${line}`);
-      }
-    }
+    lines.push(...formatNodeMarkdownLines(node, depth));
     for (const childId of node.children) {
       visit(childId, depth + 1);
     }
@@ -37,4 +28,17 @@ export function exportToMarkdown(document: OutlineDocument): string {
     visit(childId, 0);
   }
   return lines.join("\n");
+}
+
+function formatNodeMarkdownLines(node: OutlineDocument["nodes"][string], depth: number): string[] {
+  const indent = "  ".repeat(depth);
+  const marker = node.numbered ? "1." : "-";
+  const headingPrefix = node.heading ? `${"#".repeat(node.heading)} ` : "";
+  const colorSuffix = node.color ? ` {color=${node.color}}` : "";
+  const lines = [`${indent}${marker} ${headingPrefix}${node.text}${colorSuffix}`];
+  return node.note ? [...lines, ...formatNoteLines(node.note, indent)] : lines;
+}
+
+function formatNoteLines(note: string, indent: string): string[] {
+  return note.split("\n").map((line) => `${indent}  > ${line}`);
 }

@@ -24,10 +24,7 @@ export class FakeRemoteStoreV2 implements RemoteStoreV2 {
   }
 
   async writeLatestSnapshot(record: RemoteSnapshotRecord): Promise<"accepted" | "rejected"> {
-    if (this.writeFailures > 0) {
-      this.writeFailures -= 1;
-      throw new Error("Fake remote v2 write failed");
-    }
+    this.throwIfWriteShouldFail();
     if (!canReplaceRemoteSnapshot(record, this.snapshot)) {
       return "rejected";
     }
@@ -37,9 +34,7 @@ export class FakeRemoteStoreV2 implements RemoteStoreV2 {
     this.snapshot = cloneRecord(record);
     this.latestPatch = null;
     this.metering.storedBytes += estimateEncodedSnapshotBytes(record);
-    for (const subscriber of this.subscribers) {
-      subscriber();
-    }
+    this.notifySubscribers();
     return "accepted";
   }
 
@@ -52,10 +47,7 @@ export class FakeRemoteStoreV2 implements RemoteStoreV2 {
   }
 
   async writeSnapshotPatch(record: RemoteSnapshotPatchRecord): Promise<"accepted" | "rejected"> {
-    if (this.writeFailures > 0) {
-      this.writeFailures -= 1;
-      throw new Error("Fake remote v2 write failed");
-    }
+    this.throwIfWriteShouldFail();
     if (!this.snapshot || record.baseVersion !== this.snapshot.version) {
       return "rejected";
     }
@@ -79,10 +71,21 @@ export class FakeRemoteStoreV2 implements RemoteStoreV2 {
     };
     this.latestPatch = clonePatchRecord(record);
     this.metering.storedBytes += estimateEncodedSnapshotBytes(this.snapshot) + estimateEncodedPatchBytes(record.patch);
+    this.notifySubscribers();
+    return "accepted";
+  }
+
+  private throwIfWriteShouldFail(): void {
+    if (this.writeFailures > 0) {
+      this.writeFailures -= 1;
+      throw new Error("Fake remote v2 write failed");
+    }
+  }
+
+  private notifySubscribers(): void {
     for (const subscriber of this.subscribers) {
       subscriber();
     }
-    return "accepted";
   }
 
   subscribe(onSnapshotChanged: () => void): () => void {

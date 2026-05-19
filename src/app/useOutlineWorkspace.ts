@@ -5,7 +5,7 @@ import {
   ensureEditableNode,
   ROOT_ID
 } from "../domain/outline";
-import type { Clock, IdGenerator, OutlineSnapshot } from "../domain/outlineTypes";
+import type { Clock, IdGenerator, NodeId, OutlineSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
 import {
   createRemoteSnapshotRecord,
@@ -410,25 +410,11 @@ function makeEmptySnapshot(createId: IdGenerator, now: Clock): OutlineSnapshot {
 
 function normalizeSnapshot(snapshot: OutlineSnapshot, createId: IdGenerator, now: Clock): OutlineSnapshot {
   const ensured = ensureEditableNode(snapshot.document, createId, now);
-  const zoomNodeId = ensured.document.nodes[snapshot.view.zoomNodeId] ? snapshot.view.zoomNodeId : ROOT_ID;
-  const selectedNodeId =
-    snapshot.view.selectedNodeId && ensured.document.nodes[snapshot.view.selectedNodeId]
-      ? snapshot.view.selectedNodeId
-      : ensured.nodeId;
-  const selectionAnchorNodeId =
-    snapshot.view.selectionAnchorNodeId && ensured.document.nodes[snapshot.view.selectionAnchorNodeId]
-      ? snapshot.view.selectionAnchorNodeId
-      : undefined;
-  const selectionFocusNodeId =
-    snapshot.view.selectionFocusNodeId && ensured.document.nodes[snapshot.view.selectionFocusNodeId]
-      ? snapshot.view.selectionFocusNodeId
-      : undefined;
-  const cursors = snapshot.view.cursors
-    ?.filter((cursor) => cursor.nodeId !== ensured.document.rootId && ensured.document.nodes[cursor.nodeId])
-    .map((cursor) => ({
-      nodeId: cursor.nodeId,
-      offset: Math.max(0, Math.min(cursor.offset, ensured.document.nodes[cursor.nodeId].text.length))
-    }));
+  const zoomNodeId = resolveExistingNodeId(ensured.document, snapshot.view.zoomNodeId, ROOT_ID);
+  const selectedNodeId = resolveExistingNodeId(ensured.document, snapshot.view.selectedNodeId, ensured.nodeId);
+  const selectionAnchorNodeId = resolveOptionalNodeId(ensured.document, snapshot.view.selectionAnchorNodeId);
+  const selectionFocusNodeId = resolveOptionalNodeId(ensured.document, snapshot.view.selectionFocusNodeId);
+  const cursors = normalizeSnapshotCursors(ensured.document, snapshot.view.cursors);
   return {
     document: ensured.document,
     view: {
@@ -440,6 +426,26 @@ function normalizeSnapshot(snapshot: OutlineSnapshot, createId: IdGenerator, now
       cursors: cursors && cursors.length > 0 ? cursors : undefined
     }
   };
+}
+
+function resolveExistingNodeId(document: OutlineSnapshot["document"], nodeId: NodeId | undefined, fallback: NodeId): NodeId {
+  return nodeId && document.nodes[nodeId] ? nodeId : fallback;
+}
+
+function resolveOptionalNodeId(document: OutlineSnapshot["document"], nodeId: NodeId | undefined): NodeId | undefined {
+  return nodeId && document.nodes[nodeId] ? nodeId : undefined;
+}
+
+function normalizeSnapshotCursors(
+  document: OutlineSnapshot["document"],
+  cursors: OutlineSnapshot["view"]["cursors"]
+): OutlineSnapshot["view"]["cursors"] {
+  return cursors
+    ?.filter((cursor) => cursor.nodeId !== document.rootId && document.nodes[cursor.nodeId])
+    .map((cursor) => ({
+      nodeId: cursor.nodeId,
+      offset: Math.max(0, Math.min(cursor.offset, document.nodes[cursor.nodeId].text.length))
+    }));
 }
 
 function snapshotsEqual(left: OutlineSnapshot, right: OutlineSnapshot): boolean {

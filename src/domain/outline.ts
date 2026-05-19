@@ -268,43 +268,7 @@ export function moveNodeUp(
   }
   const timestamp = now();
   if (index === 0) {
-    if (parentId === document.rootId) {
-      return document;
-    }
-    const grandParentId = findParentId(document, parentId);
-    if (!grandParentId) {
-      return document;
-    }
-    const grandParent = document.nodes[grandParentId];
-    const parentIndex = grandParent.children.indexOf(parentId);
-    const parentChildren = parent.children.slice(1);
-    if (parentIndex > 0) {
-      const previousParentSiblingId = grandParent.children[parentIndex - 1];
-      const previousParentSibling = document.nodes[previousParentSiblingId];
-      return {
-        ...document,
-        nodes: {
-          ...document.nodes,
-          [parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
-          [previousParentSiblingId]: {
-            ...previousParentSibling,
-            children: [...previousParentSibling.children, nodeId],
-            collapsed: false,
-            updatedAt: timestamp
-          }
-        }
-      };
-    }
-    const grandParentChildren = [...grandParent.children];
-    grandParentChildren.splice(parentIndex, 0, nodeId);
-    return {
-      ...document,
-      nodes: {
-        ...document.nodes,
-        [parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
-        [grandParentId]: { ...grandParent, children: grandParentChildren, updatedAt: timestamp }
-      }
-    };
+    return moveFirstChildUp(document, nodeId, parentId, parent, timestamp);
   }
   const children = [...parent.children];
   [children[index - 1], children[index]] = [children[index], children[index - 1]];
@@ -337,43 +301,7 @@ export function moveNodeDown(
   }
   const timestamp = now();
   if (index === parent.children.length - 1) {
-    if (parentId === document.rootId) {
-      return document;
-    }
-    const grandParentId = findParentId(document, parentId);
-    if (!grandParentId) {
-      return document;
-    }
-    const grandParent = document.nodes[grandParentId];
-    const parentIndex = grandParent.children.indexOf(parentId);
-    const parentChildren = parent.children.slice(0, -1);
-    if (parentIndex < grandParent.children.length - 1) {
-      const nextParentSiblingId = grandParent.children[parentIndex + 1];
-      const nextParentSibling = document.nodes[nextParentSiblingId];
-      return {
-        ...document,
-        nodes: {
-          ...document.nodes,
-          [parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
-          [nextParentSiblingId]: {
-            ...nextParentSibling,
-            children: [nodeId, ...nextParentSibling.children],
-            collapsed: false,
-            updatedAt: timestamp
-          }
-        }
-      };
-    }
-    const grandParentChildren = [...grandParent.children];
-    grandParentChildren.splice(parentIndex + 1, 0, nodeId);
-    return {
-      ...document,
-      nodes: {
-        ...document.nodes,
-        [parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
-        [grandParentId]: { ...grandParent, children: grandParentChildren, updatedAt: timestamp }
-      }
-    };
+    return moveLastChildDown(document, nodeId, parentId, parent, timestamp);
   }
   const children = [...parent.children];
   [children[index], children[index + 1]] = [children[index + 1], children[index]];
@@ -500,6 +428,108 @@ function makeNode(id: NodeId, text: string, timestamp: number): OutlineNode {
     collapsed: false,
     createdAt: timestamp,
     updatedAt: timestamp
+  };
+}
+
+function moveFirstChildUp(
+  document: OutlineDocument,
+  nodeId: NodeId,
+  parentId: NodeId,
+  parent: OutlineNode,
+  timestamp: number
+): OutlineDocument {
+  if (parentId === document.rootId) {
+    return document;
+  }
+  const grandParentId = findParentId(document, parentId);
+  if (!grandParentId) {
+    return document;
+  }
+  const grandParent = document.nodes[grandParentId];
+  const parentIndex = grandParent.children.indexOf(parentId);
+  const parentChildren = parent.children.slice(1);
+  if (parentIndex > 0) {
+    const previousParentSiblingId = grandParent.children[parentIndex - 1];
+    const previousParentSibling = document.nodes[previousParentSiblingId];
+    return replaceParentAndSibling(document, parentId, parent, parentChildren, previousParentSiblingId, {
+      ...previousParentSibling,
+      children: [...previousParentSibling.children, nodeId],
+      collapsed: false,
+      updatedAt: timestamp
+    }, timestamp);
+  }
+  return moveChildBesideParent(document, nodeId, parentId, parent, parentChildren, grandParentId, parentIndex, timestamp);
+}
+
+function moveLastChildDown(
+  document: OutlineDocument,
+  nodeId: NodeId,
+  parentId: NodeId,
+  parent: OutlineNode,
+  timestamp: number
+): OutlineDocument {
+  if (parentId === document.rootId) {
+    return document;
+  }
+  const grandParentId = findParentId(document, parentId);
+  if (!grandParentId) {
+    return document;
+  }
+  const grandParent = document.nodes[grandParentId];
+  const parentIndex = grandParent.children.indexOf(parentId);
+  const parentChildren = parent.children.slice(0, -1);
+  if (parentIndex < grandParent.children.length - 1) {
+    const nextParentSiblingId = grandParent.children[parentIndex + 1];
+    const nextParentSibling = document.nodes[nextParentSiblingId];
+    return replaceParentAndSibling(document, parentId, parent, parentChildren, nextParentSiblingId, {
+      ...nextParentSibling,
+      children: [nodeId, ...nextParentSibling.children],
+      collapsed: false,
+      updatedAt: timestamp
+    }, timestamp);
+  }
+  return moveChildBesideParent(document, nodeId, parentId, parent, parentChildren, grandParentId, parentIndex + 1, timestamp);
+}
+
+function replaceParentAndSibling(
+  document: OutlineDocument,
+  parentId: NodeId,
+  parent: OutlineNode,
+  parentChildren: NodeId[],
+  siblingId: NodeId,
+  sibling: OutlineNode,
+  timestamp: number
+): OutlineDocument {
+  return {
+    ...document,
+    nodes: {
+      ...document.nodes,
+      [parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
+      [siblingId]: sibling
+    }
+  };
+}
+
+function moveChildBesideParent(
+  document: OutlineDocument,
+  nodeId: NodeId,
+  parentId: NodeId,
+  parent: OutlineNode,
+  parentChildren: NodeId[],
+  grandParentId: NodeId,
+  insertIndex: number,
+  timestamp: number
+): OutlineDocument {
+  const grandParent = document.nodes[grandParentId];
+  const grandParentChildren = [...grandParent.children];
+  grandParentChildren.splice(insertIndex, 0, nodeId);
+  return {
+    ...document,
+    nodes: {
+      ...document.nodes,
+      [parentId]: { ...parent, children: parentChildren, updatedAt: timestamp },
+      [grandParentId]: { ...grandParent, children: grandParentChildren, updatedAt: timestamp }
+    }
   };
 }
 
