@@ -23,11 +23,15 @@
 - [Phase 12: 원격 sync 비용 안정화 - 완료됨](./phase-12.md)
 - [Phase 13: 가져오기/내보내기 확장 - 완료됨](./phase-13.md)
 - [Phase 14: 히스토리, 백업, 설정 - 완료됨](./phase-14.md)
-- [Phase 15: 모바일 패키징 - 웹 MVP 이후](./phase-15.md)
+- [Phase 15: 웹 버전 고도화와 파워 유저 기능](./phase-15.md)
+- [Phase 16: 데스크톱 앱과 계정 기능 - 예정](./phase-16.md)
+- [Phase 17: 모바일 패키징 - 웹/데스크톱 이후](./phase-17.md)
 
 ## TODO / 현재 작업 큐
 
 - [x] Phase 12-C full snapshot write/read bandwidth 비용 해소
 - [x] Phase 13 OPML과 indentation plain text import/export
 - [x] Phase 14 히스토리, 백업, 사용자 설정
-- [ ] 웹 MVP 이후: Phase 15 모바일 패키징
+- [ ] Phase 15 웹 버전 고도화와 Dynalist 대안 기능
+- [ ] Phase 16 데스크톱 앱과 계정 기능 명세 구체화
+- [ ] Phase 17 모바일 패키징
