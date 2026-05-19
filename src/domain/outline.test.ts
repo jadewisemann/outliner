@@ -11,6 +11,7 @@ import {
   removeEmptyNodeOrPromoteChildren,
   splitNode,
   toggleCollapse,
+  updateNodeLinks,
   updateNodeMetadata,
   updateNodeText,
   zoomInto,
@@ -165,6 +166,33 @@ describe("outline commands", () => {
     expect(result.document.nodes[parent]).toBeUndefined();
     expect(result.selectedNodeId).toBe(child);
   });
+
+  it("does not mutate the input document when updating node content", () => {
+    const doc = makeDocumentWithTexts(["A", "B"]);
+    const [a, b] = doc.nodes[doc.rootId].children;
+    const before = cloneDocument(doc);
+
+    updateNodeText(doc, a, "Renamed", () => 10);
+    updateNodeLinks(doc, a, [{ source: "[[B]]", targetNodeId: b, label: "B" }], () => 11);
+    updateNodeMetadata(doc, a, { heading: 2, color: "red", numbered: true }, () => 12);
+
+    expect(doc).toEqual(before);
+  });
+
+  it("does not mutate the input document when changing hierarchy", () => {
+    const doc = makeDocumentWithTexts(["A", "B", "C"]);
+    const [a, b, c] = doc.nodes[doc.rootId].children;
+    const nested = indentNode(indentNode(doc, b, () => 10), c, () => 11);
+    const before = cloneDocument(nested);
+
+    indentNode(nested, c, () => 12);
+    outdentNode(nested, c, () => 13);
+    moveNodeUp(nested, c, nested.rootId, () => 14);
+    moveNodeDown(nested, b, nested.rootId, () => 15);
+    removeEmptyNodeOrPromoteChildren(updateNodeText(nested, a, "", () => 16), a, () => 17);
+
+    expect(nested).toEqual(before);
+  });
 });
 
 describe("outline selectors", () => {
@@ -260,3 +288,7 @@ describe("exporters", () => {
     expect(exportToMarkdown(formatted)).toBe("1. ## Title {color=#336699}\n  > More context");
   });
 });
+
+function cloneDocument<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
