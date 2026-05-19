@@ -131,7 +131,7 @@ describe("Outliner", () => {
     expect(screen.getByRole("textbox", { name: "Outline node text" })).toBe(textbox);
   });
 
-  it("commits Korean text from IME composition end", async () => {
+  it("commits the final Korean IME text from compositionend data", async () => {
     const document = makeDocumentWithTexts([""]);
     function Harness() {
       const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
@@ -151,12 +151,17 @@ describe("Outliner", () => {
     const textbox = screen.getByRole("textbox", { name: "Outline node text" });
 
     fireEvent.compositionStart(textbox);
+    fireEvent.compositionUpdate(textbox, { data: "하" });
+    Object.defineProperty(textbox, "textContent", {
+      configurable: true,
+      get: () => "하"
+    });
     fireEvent.compositionEnd(textbox, { data: "한" });
+    delete (textbox as { textContent?: string }).textContent;
 
     await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("한");
+      expect(screen.getByText("한").closest(".outline-row")).toHaveAttribute("data-node-text", "한");
     });
-    expect(screen.getByText("한").closest(".outline-row")).toHaveAttribute("data-node-text", "한");
   });
 
   it("does not treat composing Enter or Backspace as outline commands", async () => {

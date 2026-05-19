@@ -26,10 +26,10 @@ MVP 이후 Dynalist와의 기능 차이는 아래 순서로 줄인다. 단, 제�
    - 개인 다기기 동기화가 목표이므로 realtime subscription을 필수 요구사항으로 두지 않는다.
    - 큰 문서에서 작은 편집이 발생할 때 전체 snapshot을 반복 전송하지 않도록 `RemoteStoreV2` optional patch capability를 추가했다. - 완료됨
 5. 가져오기/내보내기 확장
-   - 현재 JSON/Markdown export에 더해 OPML export/import를 지원한다.
-   - indentation plain text import/export를 명시적 메뉴로 제공한다.
-   - visible items only export 옵션을 추가한다.
-   - import는 기존 workspace에 붙여넣기, 새 root 하위로 병합, 전체 교체를 구분한다.
+   - 현재 JSON/Markdown export에 더해 OPML export/import를 지원한다. - 완료됨
+   - indentation plain text import/export를 명시적 메뉴로 제공한다. - 완료됨
+   - visible items only export 옵션을 추가한다. - 완료됨
+   - import는 기존 workspace에 붙여넣기, 새 root 하위로 병합, 전체 교체를 구분한다. - 완료됨
 6. 히스토리와 백업
    - 로컬 snapshot history를 저장해 특정 시점으로 복원할 수 있게 한다.
    - 수동 백업 파일 다운로드와 자동 백업 정책을 제공한다.

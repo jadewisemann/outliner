@@ -175,6 +175,8 @@ function ActiveRowEditor({
   hasMultiCursor
 }: OutlineRowProps) {
   const skipInitialChangeRef = useRef(true);
+  const composingRef = useRef(false);
+  const lastCompositionTextRef = useRef("");
   const initialConfig = {
     namespace: `outline-row-${node.id}`,
     onError(error: Error) {
@@ -199,9 +201,23 @@ function ActiveRowEditor({
           <ContentEditable
             className="lexical-editor"
             aria-label="Outline node text"
+            onCompositionStart={() => {
+              composingRef.current = true;
+              lastCompositionTextRef.current = "";
+            }}
+            onCompositionUpdate={(event) => {
+              lastCompositionTextRef.current = (event.nativeEvent as CompositionEvent).data;
+            }}
             onCompositionEnd={(event) => {
-              const compositionText = (event.nativeEvent as CompositionEvent).data;
-              const text = event.currentTarget.textContent || compositionText || "";
+              composingRef.current = false;
+              const finalCompositionText = (event.nativeEvent as CompositionEvent).data;
+              const previousCompositionText = lastCompositionTextRef.current;
+              const currentText = event.currentTarget.textContent || "";
+              const text =
+                finalCompositionText && previousCompositionText && currentText.endsWith(previousCompositionText)
+                  ? `${currentText.slice(0, -previousCompositionText.length)}${finalCompositionText}`
+                  : currentText || finalCompositionText || "";
+              lastCompositionTextRef.current = "";
               if (text !== node.text) {
                 onTextChange(text);
               }
@@ -218,6 +234,9 @@ function ActiveRowEditor({
             const text = $getRoot().getTextContent();
             if (skipInitialChangeRef.current) {
               skipInitialChangeRef.current = false;
+              return;
+            }
+            if (composingRef.current) {
               return;
             }
             onTextChange(text);

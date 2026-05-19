@@ -17,7 +17,17 @@ import {
   zoomInto,
   zoomToAncestor
 } from "./outline";
-import { exportToJson, exportToMarkdown, importFromJson } from "./exporters";
+import {
+  applyImportedOutline,
+  exportToJson,
+  exportToMarkdown,
+  exportToOpml,
+  exportToPlainText,
+  importFromJson,
+  importFromOpml,
+  importFromPlainText,
+  previewImport
+} from "./exporters";
 import {
   getBreadcrumbPath,
   getNextVisibleNode,
@@ -286,6 +296,84 @@ describe("exporters", () => {
       () => 10
     );
     expect(exportToMarkdown(formatted)).toBe("1. ## Title {color=#336699}\n  > More context");
+  });
+
+  it("exports opml using outline hierarchy and supported metadata", () => {
+    const doc = makeDocumentWithTexts(["Title & plan", "Child"]);
+    const [title, child] = doc.nodes[doc.rootId].children;
+    const nested = indentNode(doc, child, () => 10);
+    const formatted = toggleCollapse(updateNodeMetadata(
+      nested,
+      title,
+      { note: "More <context>", heading: 2, color: "#336699", numbered: true },
+      () => 11
+    ), title, () => 12);
+
+    expect(exportToOpml(formatted)).toContain(
+      '<outline text="Title &amp; plan" _note="More &lt;context&gt;" _collapsed="true" _heading="2" _color="#336699" _numbered="true">'
+    );
+    expect(exportToOpml(formatted)).toContain('<outline text="Child"/>');
+  });
+
+  it("imports opml hierarchy and supported metadata", () => {
+    const imported = importFromOpml(
+      `<?xml version="1.0"?><opml version="2.0"><body><outline text="A" _note="Note" _collapsed="true" _heading="3" _color="#123456" _numbered="true"><outline text="B"/></outline></body></opml>`,
+      makeIdGenerator("imported"),
+      () => 10
+    );
+    const [a] = imported.document.nodes[imported.document.rootId].children;
+    const [b] = imported.document.nodes[a].children;
+
+    expect(imported.document.nodes[a]).toMatchObject({
+      text: "A",
+      note: "Note",
+      collapsed: true,
+      heading: 3,
+      color: "#123456",
+      numbered: true
+    });
+    expect(imported.document.nodes[b].text).toBe("B");
+    expect(imported.view.selectedNodeId).toBe(a);
+  });
+
+  it("round-trips indentation plain text hierarchy", () => {
+    const imported = importFromPlainText("A\n  B\n    C\nD", makeIdGenerator("plain"), () => 10);
+    expect(exportToPlainText(imported.document)).toBe("A\n  B\n    C\nD");
+  });
+
+  it("exports visible items only when requested", () => {
+    const doc = makeDocumentWithTexts(["A", "B", "C"]);
+    const [a, b] = doc.nodes[doc.rootId].children;
+    const nested = toggleCollapse(indentNode(doc, b, () => 10), a, () => 11);
+
+    expect(exportToPlainText(nested, { visibleOnly: true })).toBe("A\nC");
+    expect(exportToMarkdown(nested, { visibleOnly: true })).toBe("- A\n- C");
+    expect(exportToOpml(nested, { visibleOnly: true })).not.toContain('text="B"');
+  });
+
+  it("returns import errors without mutating the current workspace", () => {
+    const doc = makeDocumentWithTexts(["A"]);
+    const view = createInitialView(doc);
+    const result = previewImport("<opml><body><outline></body></opml>", "opml", makeIdGenerator("bad"), () => 10);
+
+    expect(result.ok).toBe(false);
+    expect(applyImportedOutline({ document: doc, view }, result, { mode: "replace" })).toEqual({ document: doc, view });
+  });
+
+  it("applies imported outlines by replacing, merging, or inserting under a node", () => {
+    const doc = makeDocumentWithTexts(["A"]);
+    const [a] = doc.nodes[doc.rootId].children;
+    const view = createInitialView(doc);
+    const imported = previewImport("B\n  C", "plainText", makeIdGenerator("added"), () => 20);
+
+    const replaced = applyImportedOutline({ document: doc, view }, imported, { mode: "replace" });
+    expect(replaced.document.nodes[replaced.document.rootId].children).toEqual(["added-1"]);
+
+    const merged = applyImportedOutline({ document: doc, view }, imported, { mode: "mergeRoot" });
+    expect(merged.document.nodes[merged.document.rootId].children).toEqual([a, "added-1"]);
+
+    const inserted = applyImportedOutline({ document: doc, view }, imported, { mode: "insertUnder", targetNodeId: a });
+    expect(inserted.document.nodes[a].children).toEqual(["added-1"]);
   });
 });
 

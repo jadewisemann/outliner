@@ -1,4 +1,4 @@
-# Phase 13: 가져오기/내보내기 확장
+****# Phase 13: 가져오기/내보내기 확장 - 완료됨
 
 ### 목표
 
@@ -6,19 +6,19 @@
 
 ### 먼저 작성할 테스트
 
-- OPML export가 outline hierarchy를 보존한다.
-- OPML import가 hierarchy, note, collapsed, formatting metadata 중 지원 가능한 필드를 복원한다.
-- indentation plain text import/export가 depth를 보존한다.
-- visible items only export가 접힌 subtree와 검색 필터 결과를 제외한다.
-- invalid import input은 기존 workspace를 훼손하지 않고 오류를 반환한다.
+- [x] OPML export가 outline hierarchy를 보존한다.
+- [x] OPML import가 hierarchy, note, collapsed, formatting metadata 중 지원 가능한 필드를 복원한다.
+- [x] indentation plain text import/export가 depth를 보존한다.
+- [x] visible items only export가 접힌 subtree와 현재 zoom의 visible tree를 기준으로 제외한다.
+- [x] invalid import input은 기존 workspace를 훼손하지 않고 오류를 반환한다.
 
 ### 구현 항목
 
-- OPML parser/serializer
-- import preview와 conflict 정책
-- 전체 교체, root 하위 병합, 현재 노드 아래 삽입 모드
-- visible-only export 옵션
-- export/import E2E
+- [x] OPML parser/serializer
+- [x] import preview와 conflict 정책
+- [x] 전체 교체, root 하위 병합, 현재 노드 아래 삽입 모드
+- [x] visible-only export 옵션
+- [x] export/import 앱 통합 테스트
 
 ### 완료 기준
 

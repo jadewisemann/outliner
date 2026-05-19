@@ -76,4 +76,30 @@ describe("App", () => {
 
     expect(await screen.findByText("Synced")).toBeInTheDocument();
   });
+
+  it("imports plain text into the current workspace without replacing existing nodes", async () => {
+    const document = makeDocumentWithTexts(["A"]);
+    render(<App persistence={memoryPersistence({ document, view: createInitialView(document) })} />);
+    await screen.findByText("A");
+
+    fireEvent.change(screen.getByLabelText("Import format"), { target: { value: "plainText" } });
+    const file = new File(["B\n  C"], "outline.txt", { type: "text/plain" });
+    fireEvent.change(screen.getByLabelText("Import outline file"), { target: { files: [file] } });
+
+    expect(await screen.findByText("B")).toBeInTheDocument();
+    expect(screen.getByText("C")).toBeInTheDocument();
+    expect(screen.getByText("A")).toBeInTheDocument();
+  });
+
+  it("keeps the workspace intact when import parsing fails", async () => {
+    const document = makeDocumentWithTexts(["A"]);
+    render(<App persistence={memoryPersistence({ document, view: createInitialView(document) })} />);
+    await screen.findByText("A");
+
+    const file = new File(["<opml><body><outline></body></opml>"], "broken.opml", { type: "text/x-opml" });
+    fireEvent.change(screen.getByLabelText("Import outline file"), { target: { files: [file] } });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Import failed");
+    expect(screen.getByText("A")).toBeInTheDocument();
+  });
 });
