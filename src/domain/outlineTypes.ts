@@ -15,7 +15,7 @@ export type OutlineNode = {
   updatedAt: number;
 };
 
-export type OutlineNodeMetadata = Pick<OutlineNode, "note" | "noteVisible" | "heading" | "color" | "numbered">;
+export type OutlineNodeMetadata = Pick<OutlineNode, "note" | "noteVisible" | "heading" | "color">;
 
 export type OutlineLink = {
   source: string;

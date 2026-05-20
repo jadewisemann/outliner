@@ -21,6 +21,7 @@ import {
 } from "../domain/exporters";
 import type { OutlineDocument, ViewState } from "../domain/outlineTypes";
 import { revealNode } from "../domain/outline";
+import { getVisibleNodes } from "../domain/outlineSelectors";
 import { searchOutline } from "../domain/searchSelectors";
 import { createBrowserLocalPersistence, type LocalPersistence } from "../persistence/localPersistence";
 import type { RemoteStoreV2 } from "../sync/syncTypes";
@@ -95,7 +96,14 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
       }
       if (matchesKeyBinding(event, preferences.keymap.openCommandPalette)) {
         event.preventDefault();
-        setCommandPaletteOpen((open) => !open);
+        setCommandPaletteOpen(true);
+        setCommandPaletteQuery(">");
+        setCommandPaletteIndex(0);
+        return;
+      }
+      if (matchesKeyBinding(event, preferences.keymap.openNodePalette)) {
+        event.preventDefault();
+        setCommandPaletteOpen(true);
         setCommandPaletteQuery("");
         setCommandPaletteIndex(0);
         return;
@@ -116,6 +124,7 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
     };
   }, [
     preferences.keymap.openCommandPalette,
+    preferences.keymap.openNodePalette,
     preferences.keymap.redo,
     preferences.keymap.toggleSettings,
     preferences.keymap.undo,
@@ -349,14 +358,17 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
         {importError ? <p role="alert">Import failed: {importError}</p> : null}
       </header>
       {settingsOpen ? (
-        <SettingsPanel
-          preferences={preferences}
-          section={settingsSection}
-          customCssError={customCssError}
-          onSectionChange={setSettingsSection}
-          onPreferenceChange={updatePreference}
-          onKeyBindingChange={updateKeyBinding}
-        />
+        <div className="settings-modal-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
+          <SettingsPanel
+            preferences={preferences}
+            section={settingsSection}
+            customCssError={customCssError}
+            onSectionChange={setSettingsSection}
+            onPreferenceChange={updatePreference}
+            onKeyBindingChange={updateKeyBinding}
+            onClose={() => setSettingsOpen(false)}
+          />
+        </div>
       ) : null}
       {preferences.showWordCount ? <p className="word-count">{countWords(document)} words</p> : null}
       {snapshotHistory.length > 0 ? (
@@ -377,6 +389,8 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
             now={now}
             spellcheck={preferences.spellcheck}
             autoFocus={preferences.autoFocus}
+            showNotes={preferences.showNotes}
+            keymap={preferences.keymap}
             onDocumentChange={setDocument}
             onViewChange={setView}
           />
@@ -395,7 +409,7 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
               type="search"
               aria-label="Command palette search"
               value={commandPaletteQuery}
-              placeholder="Search commands and nodes"
+              placeholder={commandPaletteQuery.startsWith(">") ? "Type a command" : "Search nodes, or type > for commands"}
               onChange={(event) => {
                 setCommandPaletteQuery(event.target.value);
                 setCommandPaletteIndex(0);
@@ -440,7 +454,8 @@ function SettingsPanel({
   customCssError,
   onSectionChange,
   onPreferenceChange,
-  onKeyBindingChange
+  onKeyBindingChange,
+  onClose
 }: {
   preferences: PreferenceSettings;
   section: SettingsSection;
@@ -448,11 +463,26 @@ function SettingsPanel({
   onSectionChange: (section: SettingsSection) => void;
   onPreferenceChange: <K extends keyof PreferenceSettings>(key: K, value: PreferenceSettings[K]) => void;
   onKeyBindingChange: (command: CommandId, value: string) => void;
+  onClose: () => void;
 }) {
-  const keyCommands: CommandId[] = ["undo", "redo", "toggleSettings", "openCommandPalette"];
+  const keyCommands: CommandId[] = [
+    "undo",
+    "redo",
+    "toggleSettings",
+    "openNodePalette",
+    "openCommandPalette",
+    "focusNodeNote",
+    "createSiblingNode"
+  ];
   const duplicateShortcuts = findDuplicateShortcuts(preferences.keymap);
   return (
-    <aside className="settings-panel" aria-label="Settings panel">
+    <aside className="settings-panel" role="dialog" aria-modal="true" aria-label="Settings" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="settings-header">
+        <strong>Settings</strong>
+        <button type="button" aria-label="Close settings" onClick={onClose}>
+          Close
+        </button>
+      </div>
       <nav className="settings-tabs" aria-label="Settings sections">
         {SETTINGS_SECTIONS.map((item) => (
           <button
@@ -487,6 +517,15 @@ function SettingsPanel({
                 onChange={(event) => onPreferenceChange("showWordCount", event.target.checked)}
               />
               Word count
+            </label>
+            <label>
+              <input
+                aria-label="Show notes"
+                type="checkbox"
+                checked={preferences.showNotes}
+                onChange={(event) => onPreferenceChange("showNotes", event.target.checked)}
+              />
+              Show notes
             </label>
           </>
         ) : null}
@@ -600,8 +639,14 @@ function previewSnapshot(document: OutlineDocument): string {
 function commandLabel(command: CommandId): string {
   return command === "toggleSettings"
     ? "Settings"
+    : command === "openNodePalette"
+      ? "Node palette"
     : command === "openCommandPalette"
       ? "Command palette"
+      : command === "focusNodeNote"
+        ? "Edit note"
+        : command === "createSiblingNode"
+          ? "Create sibling node"
       : command === "undo"
         ? "Undo"
         : "Redo";
@@ -631,7 +676,8 @@ function buildCommandPaletteItems({
   closePalette: () => void;
   jumpToNode: (nodeId: string) => void;
 }): CommandPaletteItem[] {
-  const normalizedQuery = query.trim().toLocaleLowerCase();
+  const commandMode = query.trimStart().startsWith(">");
+  const normalizedQuery = (commandMode ? query.trimStart().slice(1) : query).trim().toLocaleLowerCase();
   const commands: CommandPaletteItem[] = [
     {
       id: "command:settings",
@@ -664,15 +710,29 @@ function buildCommandPaletteItems({
       run: closePalette
     }
   ].filter((item) => !normalizedQuery || item.title.toLocaleLowerCase().includes(normalizedQuery));
-  const nodeResults = searchOutline(document, query, { zoomNodeId: view.zoomNodeId })
-    .slice(0, 8)
+  if (commandMode) {
+    return commands.slice(0, 12);
+  }
+  const nodeResults = (normalizedQuery
+    ? searchOutline(document, query, { zoomNodeId: view.zoomNodeId })
+    : getVisibleNodes(document, view.zoomNodeId).map((item) => ({
+        nodeId: item.id,
+        text: item.node.text,
+        depth: item.depth,
+        breadcrumbIds: [],
+        matchStart: 0,
+        matchEnd: 0,
+        matchText: ""
+      }))
+  )
+    .slice(0, 12)
     .map((result) => ({
       id: `node:${result.nodeId}`,
       title: result.text || "Untitled node",
       kind: "Node",
       run: () => jumpToNode(result.nodeId)
     }));
-  return [...commands, ...nodeResults].slice(0, 12);
+  return nodeResults;
 }
 
 function scopeCustomCss(source: string): { css: string; error?: string } {

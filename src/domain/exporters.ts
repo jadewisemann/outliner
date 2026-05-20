@@ -177,10 +177,9 @@ export function applyImportedOutline(
 
 function formatNodeMarkdownLines(node: OutlineDocument["nodes"][string], depth: number): string[] {
   const indent = "  ".repeat(depth);
-  const marker = node.numbered ? "1." : "-";
   const headingPrefix = node.heading ? `${"#".repeat(node.heading)} ` : "";
   const colorSuffix = node.color ? ` {color=${node.color}}` : "";
-  const lines = [`${indent}${marker} ${headingPrefix}${node.text}${colorSuffix}`];
+  const lines = [`${indent}- ${headingPrefix}${node.text}${colorSuffix}`];
   return node.note ? [...lines, ...formatNoteLines(node.note, indent)] : lines;
 }
 
@@ -204,8 +203,7 @@ function formatOpmlAttributes(node: OutlineNode): string {
     ...booleanAttribute("_collapsed", node.collapsed),
     ...booleanAttribute("_noteVisible", !!node.noteVisible),
     ...optionalAttribute("_heading", node.heading ? String(node.heading) : undefined),
-    ...optionalAttribute("_color", node.color),
-    ...booleanAttribute("_numbered", !!node.numbered)
+    ...optionalAttribute("_color", node.color)
   ];
   return attributes.map(([key, value]) => `${key}="${escapeXml(value)}"`).join(" ");
 }
@@ -248,8 +246,7 @@ function applyImportedNodeMetadata(
     ...optionalObject("note", note || undefined),
     ...optionalObject("noteVisible", parseBooleanAttribute(element.getAttribute("_noteVisible")) || undefined),
     ...optionalObject("heading", heading),
-    ...optionalObject("color", color || undefined),
-    ...optionalObject("numbered", parseBooleanAttribute(element.getAttribute("_numbered")) || undefined)
+    ...optionalObject("color", color || undefined)
   });
 }
 

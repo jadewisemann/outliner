@@ -41,6 +41,35 @@ export function renderInlineMarkdown(source: string): ReactNode[] {
   return nodes.length > 0 ? nodes : [source || "\u00a0"];
 }
 
+export function renderMarkdownLikeText(source: string): ReactNode[] {
+  if (!source.includes("```")) {
+    return renderInlineMarkdown(source);
+  }
+  const nodes: ReactNode[] = [];
+  const pattern = /```([A-Za-z0-9_-]+)?\n?([\s\S]*?)```/g;
+  let cursor = 0;
+  for (const match of source.matchAll(pattern)) {
+    const start = match.index ?? 0;
+    if (start > cursor) {
+      nodes.push(<span key={`text-${cursor}`}>{renderInlineMarkdown(source.slice(cursor, start))}</span>);
+    }
+    nodes.push(
+      <pre key={start} className="rich-code-block" data-language={match[1] ?? ""}>
+        <code>{trimCodeBlock(match[2] ?? "")}</code>
+      </pre>
+    );
+    cursor = start + match[0].length;
+  }
+  if (cursor < source.length) {
+    nodes.push(<span key={`text-${cursor}`}>{renderInlineMarkdown(source.slice(cursor))}</span>);
+  }
+  return nodes.length > 0 ? nodes : [source || "\u00a0"];
+}
+
+function trimCodeBlock(source: string): string {
+  return source.replace(/^\n/, "").replace(/\n$/, "");
+}
+
 function safeHref(href: string): string {
   if (/^(https?:|mailto:)/i.test(href)) {
     return href;

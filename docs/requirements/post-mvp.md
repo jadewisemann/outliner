@@ -14,7 +14,7 @@ MVP 이후 Dynalist와의 기능 차이는 아래 순서로 줄인다. 단, 제�
    - 링크된 노드의 참조 목록을 볼 수 있게 한다.
 3. 리치 포맷과 노트
    - Markdown-like source를 유지하되 inactive row에서는 bold, italic, inline code, strikethrough, link, image link preview, LaTeX 표시를 단계적으로 지원한다.
-   - heading, color label, numbered list는 노드 속성으로 분리해 구조 편집과 충돌하지 않게 한다.
+   - heading, color label은 노드 속성으로 분리해 구조 편집과 충돌하지 않게 한다. numbered list는 현재 제품 범위에서 제외한다.
    - 본문 `text`와 별도 `note` 필드를 추가해 아이템 설명을 접거나 보일 수 있게 한다.
    - TODO/checkbox와 date 계열은 리치 포맷 단계에서도 제외한다.
 4. 원격 sync 비용 안정화

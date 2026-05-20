@@ -49,7 +49,7 @@ type OutlineNode = {
   metadata?: {
     heading?: 1 | 2 | 3;
     color?: string;
-    numbered?: boolean;
+    numbered?: boolean; // legacy field: 현재 제품 표면에서는 사용하지 않는다.
     links?: NodeId[];
   };
   createdAt: number;
@@ -71,7 +71,7 @@ type UserPreferences = {
 - 검색, 태그, 백링크는 우선 selector로 계산하고 병목이 확인될 때 별도 인덱스를 도입한다.
 - `#tag`, `@tag`, `[[link]]`는 사용자가 입력한 source text를 보존한다. 파생된 tag/link index는 언제든 재계산 가능해야 한다.
 - internal link는 표시 텍스트가 아니라 node id를 기준으로 저장한다.
-- 리치 포맷은 구조 편집 command와 분리한다. heading, color, numbered, note처럼 노드 속성인 것은 metadata에 저장하고, inline bold/code/link처럼 텍스트 안에 남는 것은 source text를 기준으로 렌더링한다.
+- 리치 포맷은 구조 편집 command와 분리한다. heading, color, note처럼 노드 속성인 것은 metadata에 저장하고, inline bold/code/link처럼 텍스트 안에 남는 것은 source text를 기준으로 렌더링한다. `numbered`는 과거 metadata 실험 필드로 남아 있을 수 있지만 현재 제품 표면, export/import, 편집 UI에서는 제외한다.
 - TODO/checkbox, date, recurring date, calendar sync는 metadata 확장 대상이 아니다.
 - 사용자 설정은 outline document와 분리된 preference store에 저장한다. 설정 변경은 outline Undo/Redo stack에 들어가지 않는다.
 - import/export adapter는 domain model 바깥에 두고, 가져오기 결과는 검증된 `OutlineSnapshot` 또는 삽입 가능한 node draft로 변환한 뒤 command를 통해 적용한다.

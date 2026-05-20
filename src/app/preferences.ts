@@ -1,4 +1,11 @@
-export type CommandId = "undo" | "redo" | "toggleSettings" | "openCommandPalette";
+export type CommandId =
+  | "undo"
+  | "redo"
+  | "toggleSettings"
+  | "openNodePalette"
+  | "openCommandPalette"
+  | "focusNodeNote"
+  | "createSiblingNode";
 
 export type ThemePreference = "light" | "dark";
 export type FontPreference = "system" | "serif" | "mono";
@@ -8,6 +15,7 @@ export type PreferenceSettings = {
   font: FontPreference;
   spellcheck: boolean;
   showWordCount: boolean;
+  showNotes: boolean;
   autoFocus: boolean;
   customCss: string;
   customCssEnabled: boolean;
@@ -19,6 +27,7 @@ export const DEFAULT_PREFERENCES: PreferenceSettings = {
   font: "system",
   spellcheck: true,
   showWordCount: true,
+  showNotes: true,
   autoFocus: true,
   customCss: "",
   customCssEnabled: false,
@@ -26,7 +35,10 @@ export const DEFAULT_PREFERENCES: PreferenceSettings = {
     undo: "Mod+Z",
     redo: "Mod+Y",
     toggleSettings: "Mod+,",
-    openCommandPalette: "Mod+P"
+    openNodePalette: "Mod+P",
+    openCommandPalette: "Mod+Shift+P",
+    focusNodeNote: "Shift+Enter",
+    createSiblingNode: "Mod+Enter"
   }
 };
 
@@ -48,11 +60,19 @@ export function matchesKeyBinding(event: KeyboardEvent, binding: string): boolea
     return false;
   }
   const wantsMod = parts.includes("Mod");
+  const wantsCtrl = parts.includes("Ctrl") || parts.includes("Control");
+  const wantsMeta = parts.includes("Meta") || parts.includes("Cmd");
   const wantsShift = parts.includes("Shift");
   const wantsAlt = parts.includes("Alt");
+  const modMatches = wantsMod ? event.metaKey || event.ctrlKey : true;
+  const ctrlMatches = wantsCtrl ? event.ctrlKey : !event.ctrlKey || wantsMod;
+  const metaMatches = wantsMeta ? event.metaKey : !event.metaKey || wantsMod;
   return (
     event.key.toLowerCase() === key.toLowerCase() &&
-    (event.metaKey || event.ctrlKey) === wantsMod &&
+    modMatches &&
+    ctrlMatches &&
+    metaMatches &&
+    (wantsMod || wantsCtrl || wantsMeta || (!event.metaKey && !event.ctrlKey)) &&
     event.shiftKey === wantsShift &&
     event.altKey === wantsAlt
   );

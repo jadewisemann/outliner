@@ -9,24 +9,26 @@ import {
   $createTextNode,
   $getRoot,
   $getSelection,
+  $isElementNode,
   $isRangeSelection,
+  $isTextNode,
   COMMAND_PRIORITY_HIGH,
   KEY_ARROW_DOWN_COMMAND,
   KEY_ARROW_UP_COMMAND,
   KEY_BACKSPACE_COMMAND,
   KEY_DELETE_COMMAND,
   KEY_ENTER_COMMAND,
-  KEY_SPACE_COMMAND,
   KEY_TAB_COMMAND,
   PASTE_COMMAND,
   COPY_COMMAND,
   type EditorState
 } from "lexical";
-import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode, type RefObject } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
 import type { OutlineNode } from "../domain/outlineTypes";
 import type { CursorTextEdit } from "../domain/multiCursor";
 import { extractTags } from "../domain/searchSelectors";
-import { renderInlineMarkdown } from "../domain/richText";
+import { renderInlineMarkdown, renderMarkdownLikeText } from "../domain/richText";
+import { matchesKeyBinding, type PreferenceSettings } from "../app/preferences";
 
 type OutlineRowProps = {
   node: OutlineNode;
@@ -39,19 +41,23 @@ type OutlineRowProps = {
   hasMultiCursor: boolean;
   spellcheck: boolean;
   autoFocus: boolean;
+  showNotes: boolean;
   noteEditing: boolean;
+  focusOffset?: number;
+  focusRequestKey?: number;
+  keymap: PreferenceSettings["keymap"];
   onSelect: () => void;
   onSelectTag: (tag: string) => void;
   onTextChange: (text: string) => void;
   onNoteChange: (note: string) => void;
-  onInsertLineBreak: (offset: number) => void;
-  onApplyHeadingShortcut: (heading: 1 | 2 | 3) => void;
   onCreateAfter: (offset?: number) => void;
+  onCreateSibling: () => void;
   onPasteText: (offset: number, text: string) => void;
   onIndent: () => void;
   onOutdent: () => void;
   onRemoveEmpty: () => void;
-  onMoveSelection: (direction: "previous" | "next") => void;
+  onMoveSelectionWithOffset: (direction: "previous" | "next", offset: number) => void;
+  onCursorHorizontalChange: (offset: number) => void;
   onMoveNode: (direction: "previous" | "next") => void;
   onExtendSelection: (direction: "previous" | "next") => void;
   onAddCursor: (direction: "previous" | "next", offset: number) => void;
@@ -62,7 +68,6 @@ type OutlineRowProps = {
   onZoom: () => void;
   onFocusNote: () => void;
   onFocusText: () => void;
-  noteInputRef?: RefObject<HTMLTextAreaElement>;
   onRender?: (nodeId: string) => void;
 };
 
@@ -76,7 +81,6 @@ function OutlineRowComponent(props: OutlineRowProps) {
     hasCursor,
     noteEditing,
     onSelect,
-    onSelectTag,
     onToggleCollapse,
     onZoom
   } = props;
@@ -117,26 +121,29 @@ function OutlineRowComponent(props: OutlineRowProps) {
           <>
             <ActiveRowEditor {...props} />
             {noteEditing ? (
-              <textarea
-                ref={props.noteInputRef}
-                className="node-note-editor"
-                aria-label="Node note"
-                value={node.note ?? ""}
-                placeholder="Note"
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter" && event.shiftKey) {
-                    event.preventDefault();
-                    event.stopPropagation();
-                    props.onFocusText();
-                  }
-                }}
-                onChange={(event) => props.onNoteChange(event.target.value)}
-              />
+              <div className="node-note-row">
+                <SharedTextEditor
+                  editorKey={`note-${node.id}`}
+                  text={node.note ?? ""}
+                  className="node-note-editor"
+                  aria-label="Node note"
+                  spellCheck={props.spellcheck}
+                  placeholder="Note"
+                  autoFocus
+                  onTextChange={props.onNoteChange}
+                >
+                  <NoteKeyboardPlugin
+                    keymap={props.keymap}
+                    onFocusText={props.onFocusText}
+                    onMoveSelectionWithOffset={props.onMoveSelectionWithOffset}
+                  />
+                </SharedTextEditor>
+              </div>
             ) : null}
+            {!noteEditing && props.showNotes && node.note ? <NotePreview note={node.note} /> : null}
           </>
         ) : (
-          <PlainRowText node={node} onSelectTag={onSelectTag} />
+          <PlainRowText node={node} showNotes={props.showNotes} onSelectTag={props.onSelectTag} />
         )}
       </div>
     </div>
@@ -155,15 +162,24 @@ export const OutlineRow = memo(OutlineRowComponent, (previous, next) => {
     previous.hasMultiCursor === next.hasMultiCursor &&
     previous.spellcheck === next.spellcheck &&
     previous.autoFocus === next.autoFocus &&
+    previous.showNotes === next.showNotes &&
     previous.noteEditing === next.noteEditing
   );
 });
 
-function PlainRowText({ node, onSelectTag }: { node: OutlineNode; onSelectTag: (tag: string) => void }) {
+function PlainRowText({
+  node,
+  showNotes,
+  onSelectTag
+}: {
+  node: OutlineNode;
+  showNotes: boolean;
+  onSelectTag: (tag: string) => void;
+}) {
   const { text } = node;
   const tags = extractTags(text);
   if (tags.length === 0) {
-    return <RichRowText node={node} content={renderInlineMarkdown(text)} />;
+    return <RichRowText node={node} content={renderMarkdownLikeText(text)} showNotes={showNotes} />;
   }
   const parts: JSX.Element[] = [];
   let cursor = 0;
@@ -189,14 +205,22 @@ function PlainRowText({ node, onSelectTag }: { node: OutlineNode; onSelectTag: (
   if (cursor < text.length) {
     parts.push(<span key={`text-${cursor}`}>{renderInlineMarkdown(text.slice(cursor))}</span>);
   }
-  return <RichRowText node={node} content={parts.length > 0 ? parts : "\u00a0"} />;
+  return <RichRowText node={node} content={parts.length > 0 ? parts : "\u00a0"} showNotes={showNotes} />;
 }
 
-function RichRowText({ node, content }: { node: OutlineNode; content: ReactNode }) {
+function RichRowText({ node, content, showNotes }: { node: OutlineNode; content: ReactNode; showNotes: boolean }) {
   return (
-    <span className={`plain-row-text ${node.numbered ? "plain-row-numbered" : ""}`}>
+    <span className="plain-row-text">
       <span>{content}</span>
-      {node.note && node.noteVisible !== false ? <span className="node-note">{renderInlineMarkdown(node.note)}</span> : null}
+      {showNotes && node.note ? <NotePreview note={node.note} /> : null}
+    </span>
+  );
+}
+
+function NotePreview({ note }: { note: string }) {
+  return (
+    <span className="node-note-row node-note-preview">
+      <span className="node-note">{renderMarkdownLikeText(note)}</span>
     </span>
   );
 }
@@ -204,14 +228,14 @@ function RichRowText({ node, content }: { node: OutlineNode; content: ReactNode 
 function ActiveRowEditor({
   node,
   onTextChange,
-  onInsertLineBreak,
-  onApplyHeadingShortcut,
   onCreateAfter,
+  onCreateSibling,
   onPasteText,
   onIndent,
   onOutdent,
   onRemoveEmpty,
-  onMoveSelection,
+  onMoveSelectionWithOffset,
+  onCursorHorizontalChange,
   onMoveNode,
   onExtendSelection,
   onAddCursor,
@@ -219,16 +243,84 @@ function ActiveRowEditor({
   onClearPowerSelection,
   onCopySelection,
   onFocusNote,
+  keymap,
   hasBulkSelection,
   hasMultiCursor,
   spellcheck,
-  autoFocus
+  autoFocus,
+  noteEditing,
+  focusOffset,
+  focusRequestKey
 }: OutlineRowProps) {
+  return (
+    <SharedTextEditor
+      editorKey={`row-${node.id}`}
+      text={toEditorText(node)}
+      className="lexical-editor"
+      aria-label="Outline node text"
+      spellCheck={spellcheck}
+      placeholder="Type"
+      autoFocus={autoFocus && !noteEditing}
+      focusOffset={focusOffset}
+      focusRequestKey={focusRequestKey}
+      onTextChange={onTextChange}
+    >
+      <KeyboardPlugin
+        nodeText={node.text}
+        editorText={toEditorText(node)}
+        onCreateAfter={onCreateAfter}
+        onCreateSibling={onCreateSibling}
+        onIndent={onIndent}
+        onOutdent={onOutdent}
+        onRemoveEmpty={onRemoveEmpty}
+        onMoveSelectionWithOffset={onMoveSelectionWithOffset}
+        onCursorHorizontalChange={onCursorHorizontalChange}
+        onMoveNode={onMoveNode}
+        onExtendSelection={onExtendSelection}
+        onAddCursor={onAddCursor}
+        onApplyTextToCursors={onApplyTextToCursors}
+        onClearPowerSelection={onClearPowerSelection}
+        onPasteText={onPasteText}
+        onCopySelection={onCopySelection}
+        onFocusNote={onFocusNote}
+        keymap={keymap}
+        hasBulkSelection={hasBulkSelection}
+        hasMultiCursor={hasMultiCursor}
+      />
+    </SharedTextEditor>
+  );
+}
+
+function SharedTextEditor({
+  editorKey,
+  text,
+  className,
+  "aria-label": ariaLabel,
+  spellCheck,
+  placeholder,
+  autoFocus,
+  focusOffset,
+  focusRequestKey,
+  onTextChange,
+  children
+}: {
+  editorKey: string;
+  text: string;
+  className: string;
+  "aria-label": string;
+  spellCheck: boolean;
+  placeholder: string;
+  autoFocus?: boolean;
+  focusOffset?: number;
+  focusRequestKey?: number;
+  onTextChange: (text: string) => void;
+  children?: ReactNode;
+}) {
   const skipInitialChangeRef = useRef(true);
   const composingRef = useRef(false);
   const lastCompositionTextRef = useRef("");
   const initialConfig = {
-    namespace: `outline-row-${node.id}`,
+    namespace: `outline-${editorKey}`,
     onError(error: Error) {
       throw error;
     },
@@ -236,7 +328,7 @@ function ActiveRowEditor({
       const root = $getRoot();
       root.clear();
       const paragraph = $createParagraphNode();
-      paragraph.append($createTextNode(node.text));
+      paragraph.append($createTextNode(text));
       root.append(paragraph);
     },
     theme: {
@@ -245,25 +337,15 @@ function ActiveRowEditor({
   };
 
   return (
-    <LexicalComposer key={node.id} initialConfig={initialConfig}>
+    <LexicalComposer key={editorKey} initialConfig={initialConfig}>
       <PlainTextPlugin
         contentEditable={
           <ContentEditable
-            className="lexical-editor"
-            aria-label="Outline node text"
-            spellCheck={spellcheck}
-            onKeyDown={(event) => {
-              if (event.key !== " " || event.shiftKey || event.metaKey || event.ctrlKey || event.altKey) {
-                return;
-              }
-              const heading = parseHeadingShortcut(event.currentTarget.textContent ?? "");
-              if (!heading) {
-                return;
-              }
-              event.preventDefault();
-              event.stopPropagation();
-              onApplyHeadingShortcut(heading);
-            }}
+            className={className}
+            aria-label={ariaLabel}
+            spellCheck={spellCheck}
+            tabIndex={0}
+            onClick={(event) => event.stopPropagation()}
             onCompositionStart={() => {
               composingRef.current = true;
               lastCompositionTextRef.current = "";
@@ -276,25 +358,25 @@ function ActiveRowEditor({
               const finalCompositionText = (event.nativeEvent as CompositionEvent).data;
               const previousCompositionText = lastCompositionTextRef.current;
               const currentText = event.currentTarget.textContent || "";
-              const text =
+              const nextText =
                 finalCompositionText && previousCompositionText && currentText.endsWith(previousCompositionText)
                   ? `${currentText.slice(0, -previousCompositionText.length)}${finalCompositionText}`
                   : currentText || finalCompositionText || "";
               lastCompositionTextRef.current = "";
-              if (text !== node.text) {
-                onTextChange(text);
+              if (nextText !== text) {
+                onTextChange(nextText);
               }
             }}
           />
         }
-        placeholder={<span className="editor-placeholder">Type</span>}
+        placeholder={<span className="editor-placeholder">{placeholder}</span>}
         ErrorBoundary={LexicalErrorBoundary}
       />
-      <SyncInitialTextPlugin text={node.text} />
+      <SyncInitialTextPlugin text={text} />
       <OnChangePlugin
         onChange={(editorState: EditorState) => {
           editorState.read(() => {
-            const text = $getRoot().getTextContent();
+            const nextText = $getRoot().getTextContent();
             if (skipInitialChangeRef.current) {
               skipInitialChangeRef.current = false;
               return;
@@ -302,31 +384,12 @@ function ActiveRowEditor({
             if (composingRef.current) {
               return;
             }
-            onTextChange(text);
+            onTextChange(nextText);
           });
         }}
       />
-      <KeyboardPlugin
-        nodeText={node.text}
-        onInsertLineBreak={onInsertLineBreak}
-        onApplyHeadingShortcut={onApplyHeadingShortcut}
-        onCreateAfter={onCreateAfter}
-        onIndent={onIndent}
-        onOutdent={onOutdent}
-        onRemoveEmpty={onRemoveEmpty}
-        onMoveSelection={onMoveSelection}
-        onMoveNode={onMoveNode}
-        onExtendSelection={onExtendSelection}
-        onAddCursor={onAddCursor}
-        onApplyTextToCursors={onApplyTextToCursors}
-        onClearPowerSelection={onClearPowerSelection}
-        onPasteText={onPasteText}
-        onCopySelection={onCopySelection}
-        onFocusNote={onFocusNote}
-        hasBulkSelection={hasBulkSelection}
-        hasMultiCursor={hasMultiCursor}
-      />
-      {autoFocus ? <FocusPlugin /> : null}
+      {children}
+      {autoFocus ? <FocusPlugin offset={focusOffset} requestKey={focusRequestKey} /> : null}
     </LexicalComposer>
   );
 }
@@ -350,13 +413,14 @@ function SyncInitialTextPlugin({ text }: { text: string }) {
 
 function KeyboardPlugin({
   nodeText,
-  onInsertLineBreak,
-  onApplyHeadingShortcut,
+  editorText,
   onCreateAfter,
+  onCreateSibling,
   onIndent,
   onOutdent,
   onRemoveEmpty,
-  onMoveSelection,
+  onMoveSelectionWithOffset,
+  onCursorHorizontalChange,
   onMoveNode,
   onExtendSelection,
   onAddCursor,
@@ -365,17 +429,19 @@ function KeyboardPlugin({
   onPasteText,
   onCopySelection,
   onFocusNote,
+  keymap,
   hasBulkSelection,
   hasMultiCursor
 }: {
   nodeText: string;
-  onInsertLineBreak: (offset: number) => void;
-  onApplyHeadingShortcut: (heading: 1 | 2 | 3) => void;
+  editorText: string;
   onCreateAfter: (offset?: number) => void;
+  onCreateSibling: () => void;
   onIndent: () => void;
   onOutdent: () => void;
   onRemoveEmpty: () => void;
-  onMoveSelection: (direction: "previous" | "next") => void;
+  onMoveSelectionWithOffset: (direction: "previous" | "next", offset: number) => void;
+  onCursorHorizontalChange: (offset: number) => void;
   onMoveNode: (direction: "previous" | "next") => void;
   onExtendSelection: (direction: "previous" | "next") => void;
   onAddCursor: (direction: "previous" | "next", offset: number) => void;
@@ -384,6 +450,7 @@ function KeyboardPlugin({
   onPasteText: (offset: number, text: string) => void;
   onCopySelection: () => string | undefined;
   onFocusNote: () => void;
+  keymap: PreferenceSettings["keymap"];
   hasBulkSelection: boolean;
   hasMultiCursor: boolean;
 }) {
@@ -391,7 +458,7 @@ function KeyboardPlugin({
 
   useEffect(() => {
     const readOffset = () => {
-      let offset = nodeText.length;
+      let offset = editorText.length;
       editor.getEditorState().read(() => {
         const selection = $getSelection();
         if ($isRangeSelection(selection)) {
@@ -400,27 +467,20 @@ function KeyboardPlugin({
       });
       return offset;
     };
-    const readEditorText = () => {
-      let text = nodeText;
-      editor.getEditorState().read(() => {
-        text = $getRoot().getTextContent();
-      });
-      return text;
-    };
     const unregisterEnter = editor.registerCommand<KeyboardEvent>(
       KEY_ENTER_COMMAND,
       (event) => {
         if (isComposingEvent(event)) {
           return false;
         }
-        if (event?.shiftKey) {
+        if (event && matchesKeyBinding(event, keymap.focusNodeNote)) {
           event.preventDefault();
           onFocusNote();
           return true;
         }
-        if (event?.ctrlKey || event?.metaKey) {
+        if (event && matchesKeyBinding(event, keymap.createSiblingNode)) {
           event.preventDefault();
-          onInsertLineBreak(readOffset());
+          onCreateSibling();
           return true;
         }
         event?.preventDefault();
@@ -438,22 +498,6 @@ function KeyboardPlugin({
         } else {
           onIndent();
         }
-        return true;
-      },
-      COMMAND_PRIORITY_HIGH
-    );
-    const unregisterSpace = editor.registerCommand<KeyboardEvent>(
-      KEY_SPACE_COMMAND,
-      (event) => {
-        if (isComposingEvent(event)) {
-          return false;
-        }
-        const heading = parseHeadingShortcut(readEditorText());
-        if (!heading) {
-          return false;
-        }
-        event?.preventDefault();
-        onApplyHeadingShortcut(heading);
         return true;
       },
       COMMAND_PRIORITY_HIGH
@@ -504,8 +548,9 @@ function KeyboardPlugin({
           onExtendSelection("previous");
           return true;
         }
-        onMoveSelection("previous");
-        return false;
+        event?.preventDefault();
+        onMoveSelectionWithOffset("previous", readOffset());
+        return true;
       },
       COMMAND_PRIORITY_HIGH
     );
@@ -517,8 +562,9 @@ function KeyboardPlugin({
           onExtendSelection("next");
           return true;
         }
-        onMoveSelection("next");
-        return false;
+        event?.preventDefault();
+        onMoveSelectionWithOffset("next", readOffset());
+        return true;
       },
       COMMAND_PRIORITY_HIGH
     );
@@ -582,20 +628,11 @@ function KeyboardPlugin({
         }
         return;
       }
-      if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      if (matchesKeyBinding(event, keymap.createSiblingNode)) {
         event.preventDefault();
         event.stopPropagation();
-        onInsertLineBreak(readOffset());
+        onCreateSibling();
         return;
-      }
-      if (event.key === " " && !event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey) {
-        const heading = parseHeadingShortcut(readEditorText());
-        if (heading) {
-          event.preventDefault();
-          event.stopPropagation();
-          onApplyHeadingShortcut(heading);
-          return;
-        }
       }
       if (event.key === "Escape" && (hasMultiCursor || hasBulkSelection)) {
         event.preventDefault();
@@ -609,12 +646,26 @@ function KeyboardPlugin({
         onApplyTextToCursors({ type: "insert", text: event.key });
       }
     };
+    const handleRootKeyUp = (event: KeyboardEvent) => {
+      if (isComposingEvent(event)) {
+        return;
+      }
+      const textEditKey = event.key.length === 1 && !event.metaKey && !event.ctrlKey && !event.altKey;
+      if (["ArrowLeft", "ArrowRight", "Home", "End", "Backspace", "Delete"].includes(event.key) || textEditKey) {
+        onCursorHorizontalChange(readOffset());
+      }
+    };
+    const handlePointerUp = () => {
+      onCursorHorizontalChange(readOffset());
+    };
     const rootElement = editor.getRootElement();
     rootElement?.addEventListener("keydown", handleRootKeyDown, { capture: true });
+    rootElement?.addEventListener("keyup", handleRootKeyUp);
+    rootElement?.addEventListener("pointerup", handlePointerUp);
+    rootElement?.addEventListener("mouseup", handlePointerUp);
     return () => {
       unregisterEnter();
       unregisterTab();
-      unregisterSpace();
       unregisterBackspace();
       unregisterDelete();
       unregisterUp();
@@ -622,24 +673,29 @@ function KeyboardPlugin({
       unregisterPaste();
       unregisterCopy();
       rootElement?.removeEventListener("keydown", handleRootKeyDown, { capture: true });
+      rootElement?.removeEventListener("keyup", handleRootKeyUp);
+      rootElement?.removeEventListener("pointerup", handlePointerUp);
+      rootElement?.removeEventListener("mouseup", handlePointerUp);
     };
   }, [
     editor,
     hasBulkSelection,
     hasMultiCursor,
     nodeText,
+    editorText,
     onAddCursor,
     onApplyTextToCursors,
     onClearPowerSelection,
     onCopySelection,
     onCreateAfter,
+    onCreateSibling,
+    onCursorHorizontalChange,
     onFocusNote,
-    onApplyHeadingShortcut,
-    onInsertLineBreak,
+    keymap,
     onExtendSelection,
     onIndent,
     onMoveNode,
-    onMoveSelection,
+    onMoveSelectionWithOffset,
     onOutdent,
     onPasteText,
     onRemoveEmpty
@@ -652,19 +708,96 @@ function isComposingEvent(event?: KeyboardEvent | null): boolean {
   return Boolean(event?.isComposing || event?.key === "Process" || event?.keyCode === 229);
 }
 
-function parseHeadingShortcut(text: string): 1 | 2 | 3 | undefined {
-  return text === "#" ? 1 : text === "##" ? 2 : text === "###" ? 3 : undefined;
+function toEditorText(node: OutlineNode): string {
+  return node.heading ? `${"#".repeat(node.heading)} ${node.text}` : node.text;
 }
 
-function FocusPlugin() {
+function NoteKeyboardPlugin({
+  keymap,
+  onFocusText,
+  onMoveSelectionWithOffset
+}: {
+  keymap: PreferenceSettings["keymap"];
+  onFocusText: () => void;
+  onMoveSelectionWithOffset: (direction: "previous" | "next", offset: number) => void;
+}) {
+  const [editor] = useLexicalComposerContext();
+
+  useEffect(() => {
+    const readOffset = () => {
+      let offset = 0;
+      editor.getEditorState().read(() => {
+        offset = $getRoot().getTextContent().length;
+        const selection = $getSelection();
+        if ($isRangeSelection(selection)) {
+          offset = selection.anchor.offset;
+        }
+      });
+      return offset;
+    };
+    const handleRootKeyDown = (event: KeyboardEvent) => {
+      if (isComposingEvent(event)) {
+        return;
+      }
+      if (matchesKeyBinding(event, keymap.focusNodeNote)) {
+        event.preventDefault();
+        event.stopPropagation();
+        onFocusText();
+        return;
+      }
+      if (event.key === "ArrowUp") {
+        event.preventDefault();
+        event.stopPropagation();
+        onMoveSelectionWithOffset("previous", readOffset());
+        return;
+      }
+      if (event.key === "ArrowDown") {
+        event.preventDefault();
+        event.stopPropagation();
+        onMoveSelectionWithOffset("next", readOffset());
+      }
+    };
+    const rootElement = editor.getRootElement();
+    rootElement?.addEventListener("keydown", handleRootKeyDown, { capture: true });
+    return () => {
+      rootElement?.removeEventListener("keydown", handleRootKeyDown, { capture: true });
+    };
+  }, [editor, keymap, onFocusText, onMoveSelectionWithOffset]);
+
+  return null;
+}
+
+function FocusPlugin({ offset, requestKey }: { offset?: number; requestKey?: number }) {
   const [editor] = useLexicalComposerContext();
   useEffect(() => {
-    const handle = window.setTimeout(() => {
+    let attempts = 0;
+    let handle = 0;
+    const focus = () => {
+      let selected = false;
       editor.focus();
-    }, 0);
+      if (typeof offset === "number") {
+        editor.update(() => {
+          const root = $getRoot();
+          const paragraph = root.getFirstChild();
+          const textNode = $isElementNode(paragraph) ? paragraph.getFirstChild() : undefined;
+          if (textNode && $isTextNode(textNode)) {
+            const safeOffset = Math.max(0, Math.min(offset, textNode.getTextContentSize()));
+            textNode.select(safeOffset, safeOffset);
+            selected = true;
+          }
+        });
+      } else {
+        selected = true;
+      }
+      attempts += 1;
+      if (!selected && attempts < 8) {
+        handle = window.setTimeout(focus, 16);
+      }
+    };
+    handle = window.setTimeout(focus, 0);
     return () => {
       window.clearTimeout(handle);
     };
-  }, [editor]);
+  }, [editor, offset, requestKey]);
   return null;
 }

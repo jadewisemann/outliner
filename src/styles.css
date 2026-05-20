@@ -12,6 +12,7 @@
 
 :root[data-theme="dark"] .top-bar,
 :root[data-theme="dark"] .settings-panel,
+:root[data-theme="dark"] .settings-tabs,
 :root[data-theme="dark"] .history-panel,
 :root[data-theme="dark"] .command-palette,
 :root[data-theme="dark"] button,
@@ -27,15 +28,24 @@
   border-color: #303944;
 }
 
-:root[data-theme="dark"] .node-note-editor {
-  background: #171c22;
-  color: #cdd6e0;
+:root[data-theme="dark"] .settings-header {
+  color: #eef2f6;
   border-color: #3f4a57;
+}
+
+:root[data-theme="dark"] .node-note-editor {
+  color: #cdd6e0;
 }
 
 :root[data-theme="dark"] .outline-row-active,
 :root[data-theme="dark"] .outline-row-selected {
   background: #26384f;
+}
+
+:root[data-theme="dark"] .plain-row-text .rich-code-block {
+  background: #171c22;
+  color: #eef2f6;
+  border-color: #3f4a57;
 }
 
 :root[data-theme="dark"] .settings-tab-active,
@@ -106,7 +116,6 @@ button {
   cursor: pointer;
 }
 
-.settings-panel,
 .history-panel {
   display: flex;
   flex-wrap: wrap;
@@ -119,16 +128,64 @@ button {
   font-size: 13px;
 }
 
+.settings-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgb(20 24 29 / 0.32);
+}
+
+.settings-panel {
+  width: min(760px, 100%);
+  max-height: min(720px, calc(100vh - 48px));
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+  border: 1px solid #c7ced8;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #526173;
+  box-shadow: 0 18px 50px rgb(23 32 42 / 0.24);
+  font-size: 13px;
+}
+
+.settings-header {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #d8dde5;
+  color: #17202a;
+}
+
 .settings-tabs,
 .settings-section {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
   gap: 10px;
 }
 
 .settings-tabs {
-  flex: 0 0 100%;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 12px;
+  border-right: 1px solid #d8dde5;
+  background: #f6f7f9;
+}
+
+.settings-section {
+  min-height: 320px;
+  align-content: start;
+  align-items: start;
+  flex-wrap: wrap;
+  overflow: auto;
+  padding: 16px;
 }
 
 .settings-tabs button,
@@ -162,7 +219,7 @@ button {
 }
 
 .settings-panel textarea {
-  min-width: min(520px, 100%);
+  min-width: 100%;
   min-height: 96px;
   border: 1px solid #c7ced8;
   border-radius: 6px;
@@ -470,36 +527,44 @@ button {
   color: var(--node-color);
 }
 
-.plain-row-numbered::before {
-  content: "1. ";
-  color: #526173;
+.node-note,
+.node-note-editor {
+  display: block;
+  color: #617080;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .node-note {
+  min-height: 26px;
+  border-left: 2px solid transparent;
+  padding: 2px 0 2px 8px;
+}
+
+.node-note-row {
   display: block;
-  margin-top: 2px;
+  margin-top: 3px;
+}
+
+.node-note-preview {
   color: #617080;
-  font-size: 13px;
 }
 
 .node-note-editor {
-  display: block;
-  width: min(520px, 100%);
-  min-height: 42px;
-  margin-top: 4px;
-  border: 1px solid #d8dde5;
-  border-radius: 6px;
-  background: rgb(255 255 255 / 0.72);
-  color: #526173;
-  padding: 6px 8px;
-  resize: vertical;
-  font: inherit;
-  font-size: 13px;
+  width: 100%;
+  min-height: 26px;
+  border: 0;
+  border-left: 2px solid #d8dde5;
+  background: transparent;
+  padding: 2px 0 2px 8px;
+  font-family: inherit;
+  outline: none;
+  white-space: pre-wrap;
 }
 
 .node-note-editor:focus {
-  border-color: #2f7dd1;
-  outline: 2px solid rgb(47 125 209 / 0.18);
+  border-left-color: #2f7dd1;
+  outline: none;
 }
 
 .plain-row-text code {
@@ -509,6 +574,23 @@ button {
   padding: 0 3px;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 0.92em;
+}
+
+.plain-row-text .rich-code-block {
+  margin: 6px 0;
+  border: 1px solid #d8dde5;
+  border-radius: 6px;
+  background: #f6f7f9;
+  padding: 8px 10px;
+  overflow-x: auto;
+  color: #17202a;
+}
+
+.plain-row-text .rich-code-block code {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  white-space: pre;
 }
 
 .plain-row-text mark {

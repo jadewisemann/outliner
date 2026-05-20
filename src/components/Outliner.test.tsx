@@ -215,7 +215,7 @@ describe("Outliner", () => {
     });
   });
 
-  it("inserts a line break into the current node with mod enter", async () => {
+  it("creates a same-level sibling below the current node with mod enter", async () => {
     const document = makeDocumentWithTexts(["Line"]);
     function Harness() {
       const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
@@ -240,13 +240,129 @@ describe("Outliner", () => {
     });
 
     await waitFor(() => {
-      expect(screen.getByText("Line").closest(".outline-row")).toHaveAttribute("data-node-text", "Line\n");
+      expect(screen.getByText("Line").closest(".outline-row")).toHaveAttribute("data-node-text", "Line");
+      expect(screen.getByRole("tree", { name: "Outline" })).toHaveAttribute("data-visible-count", "2");
     });
     expect(screen.getAllByRole("textbox", { name: "Outline node text" })).toHaveLength(1);
   });
 
+  it("commits Korean IME text in a markdown heading source without losing the marker", async () => {
+    const document = makeDocumentWithTexts([""]);
+    document.nodes["n-1"] = { ...document.nodes["n-1"], heading: 1 };
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    const { container } = render(<Harness />);
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+
+    fireEvent.compositionStart(textbox);
+    fireEvent.compositionUpdate(textbox, { data: "하" });
+    Object.defineProperty(textbox, "textContent", {
+      configurable: true,
+      get: () => "# 하"
+    });
+    fireEvent.compositionEnd(textbox, { data: "한" });
+    delete (textbox as { textContent?: string }).textContent;
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("# 한");
+      expect(container.querySelector(".outline-row-active")).toHaveClass("outline-row-heading-1");
+      expect(container.querySelector(".outline-row-active")).toHaveAttribute("data-node-text", "한");
+    });
+  });
+
+  it("clears heading metadata when a Korean heading source marker is removed", async () => {
+    const document = makeDocumentWithTexts(["한국어"]);
+    document.nodes["n-1"] = { ...document.nodes["n-1"], heading: 2 };
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    const { container } = render(<Harness />);
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+
+    Object.defineProperty(textbox, "textContent", {
+      configurable: true,
+      get: () => "한국어"
+    });
+    fireEvent.compositionEnd(textbox, { data: "" });
+    delete (textbox as { textContent?: string }).textContent;
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("한국어");
+      expect(container.querySelector(".outline-row-active")).not.toHaveClass("outline-row-heading-2");
+      expect(container.querySelector(".outline-row-active")).toHaveAttribute("data-node-text", "한국어");
+    });
+  });
+
   it("focuses the selected node note editor with shift enter", async () => {
     const document = makeDocumentWithTexts(["With note"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    const { container } = render(<Harness />);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Enter",
+      code: "Enter",
+      shiftKey: true
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Node note" })).toHaveFocus();
+    });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Node note" }), {
+      key: "Enter",
+      code: "Enter",
+      shiftKey: true
+    });
+    await waitFor(() => {
+      expect(screen.queryByRole("textbox", { name: "Node note" })).not.toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveFocus();
+    });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Enter",
+      code: "Enter"
+    });
+    await waitFor(() => {
+      expect(container.querySelector('[data-node-id="n-1"]')).toHaveAttribute("data-node-text", "With note");
+      expect(screen.getByRole("tree", { name: "Outline" })).toHaveAttribute("data-visible-count", "2");
+    });
+  });
+
+  it("moves between sibling nodes with arrow keys while editing a node note", async () => {
+    const document = makeDocumentWithTexts(["First", "Second"]);
     function Harness() {
       const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
       const [view, setView] = useState<ViewState>(createInitialView(document));
@@ -267,18 +383,79 @@ describe("Outliner", () => {
       code: "Enter",
       shiftKey: true
     });
+    const firstNoteEditor = await screen.findByRole("textbox", { name: "Node note" });
+
+    fireEvent.keyDown(firstNoteEditor, { key: "ArrowDown", code: "ArrowDown" });
 
     await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "Node note" })).toHaveFocus();
+      const nodeEditor = screen.getByRole("textbox", { name: "Outline node text" });
+      expect(nodeEditor).toHaveTextContent("Second");
+      expect(nodeEditor).toHaveFocus();
+      expect(screen.queryByRole("textbox", { name: "Node note" })).not.toBeInTheDocument();
     });
-    fireEvent.keyDown(screen.getByRole("textbox", { name: "Node note" }), {
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
       key: "Enter",
       code: "Enter",
       shiftKey: true
     });
+    const secondNoteEditor = await screen.findByRole("textbox", { name: "Node note" });
+
+    fireEvent.keyDown(secondNoteEditor, { key: "ArrowUp", code: "ArrowUp" });
+
     await waitFor(() => {
+      const nodeEditor = screen.getByRole("textbox", { name: "Outline node text" });
+      expect(nodeEditor).toHaveTextContent("First");
+      expect(nodeEditor).toHaveFocus();
       expect(screen.queryByRole("textbox", { name: "Node note" })).not.toBeInTheDocument();
-      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveFocus();
+    });
+  });
+
+  it("preserves horizontal cursor intent while moving through shorter nodes", async () => {
+    const document = makeDocumentWithTexts(["abcd", "xy", "0123456789"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    const editor = screen.getByRole("textbox", { name: "Outline node text" });
+    expect(editor).toHaveTextContent("abcd");
+
+    fireEvent.keyDown(editor, { key: "ArrowDown", code: "ArrowDown" });
+    await waitFor(() => {
+      const activeEditor = screen.getByRole("textbox", { name: "Outline node text" });
+      expect(activeEditor).toHaveTextContent("xy");
+      expect(activeEditor).toHaveFocus();
+    });
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "ArrowDown",
+      code: "ArrowDown"
+    });
+    await waitFor(() => {
+      const activeEditor = screen.getByRole("textbox", { name: "Outline node text" });
+      expect(activeEditor).toHaveTextContent("0123456789");
+      expect(activeEditor).toHaveFocus();
+    });
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Enter",
+      code: "Enter"
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("0123").closest(".outline-row")).toHaveAttribute("data-node-text", "0123");
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("456789");
     });
   });
 
@@ -643,9 +820,8 @@ describe("Outliner", () => {
     });
   });
 
-  it("focuses search with mod f and navigates to the next result", async () => {
+  it("does not render a persistent search box in the outliner surface", async () => {
     const document = makeDocumentWithTexts(["Alpha", "Beta target"]);
-    const onViewChange = vi.fn();
     render(
       <Outliner
         document={document}
@@ -653,34 +829,132 @@ describe("Outliner", () => {
         createId={() => "new"}
         now={() => 1}
         onDocumentChange={vi.fn()}
-        onViewChange={onViewChange}
-      />
-    );
-    fireEvent.keyDown(window, { key: "f", code: "KeyF", metaKey: true });
-    expect(screen.getByRole("searchbox", { name: "Search outline" })).toHaveFocus();
-    await userEvent.type(screen.getByRole("searchbox", { name: "Search outline" }), "target");
-    await userEvent.click(screen.getByRole("button", { name: "Next search result" }));
-    expect(onViewChange).toHaveBeenCalledWith(expect.objectContaining({ selectedNodeId: "n-2" }));
-  });
-
-  it("renders flat search results without changing the document structure", async () => {
-    const document = makeDocumentWithTexts(["Alpha", "Beta target", "Gamma"]);
-    const onDocumentChange = vi.fn();
-    render(
-      <Outliner
-        document={document}
-        view={createInitialView(document)}
-        createId={() => "new"}
-        now={() => 1}
-        onDocumentChange={onDocumentChange}
         onViewChange={vi.fn()}
       />
     );
-    await userEvent.type(screen.getByRole("searchbox", { name: "Search outline" }), "target");
-    await userEvent.click(screen.getByRole("button", { name: "Flat" }));
-    expect(screen.queryByText("Alpha")).not.toBeInTheDocument();
-    expect(screen.getByText("Beta target")).toBeInTheDocument();
-    expect(onDocumentChange).not.toHaveBeenCalled();
+    expect(screen.queryByRole("searchbox", { name: "Search outline" })).not.toBeInTheDocument();
+  });
+
+  it("commits final Korean IME text while editing a node note", async () => {
+    const document = makeDocumentWithTexts(["With note"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Enter",
+      code: "Enter",
+      shiftKey: true
+    });
+    const noteEditor = await screen.findByRole("textbox", { name: "Node note" });
+
+    fireEvent.compositionStart(noteEditor);
+    fireEvent.compositionUpdate(noteEditor, { data: "메" });
+    Object.defineProperty(noteEditor, "textContent", {
+      configurable: true,
+      get: () => "메"
+    });
+    fireEvent.compositionEnd(noteEditor, { data: "메모" });
+    delete (noteEditor as { textContent?: string }).textContent;
+    fireEvent.keyDown(noteEditor, { key: "Enter", code: "Enter", shiftKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByText("메모")).toHaveClass("node-note");
+      expect(screen.queryByRole("textbox", { name: "Node note" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("keeps Korean composition text visible while editing a node note", async () => {
+    const document = makeDocumentWithTexts(["With note"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Enter",
+      code: "Enter",
+      shiftKey: true
+    });
+    const noteEditor = await screen.findByRole("textbox", { name: "Node note" });
+
+    fireEvent.compositionStart(noteEditor);
+    fireEvent.compositionUpdate(noteEditor, { data: "하" });
+    Object.defineProperty(noteEditor, "textContent", {
+      configurable: true,
+      get: () => "하"
+    });
+
+    expect(noteEditor).toHaveTextContent("하");
+    delete (noteEditor as { textContent?: string }).textContent;
+  });
+
+  it("accumulates multiple Korean IME syllables while editing a node note", async () => {
+    const document = makeDocumentWithTexts(["With note"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Enter",
+      code: "Enter",
+      shiftKey: true
+    });
+    const noteEditor = await screen.findByRole("textbox", { name: "Node note" });
+
+    fireEvent.compositionStart(noteEditor);
+    fireEvent.compositionUpdate(noteEditor, { data: "하" });
+    Object.defineProperty(noteEditor, "textContent", {
+      configurable: true,
+      get: () => "하"
+    });
+    fireEvent.compositionEnd(noteEditor, { data: "한" });
+    delete (noteEditor as { textContent?: string }).textContent;
+    fireEvent.compositionStart(noteEditor);
+    fireEvent.compositionUpdate(noteEditor, { data: "그" });
+    Object.defineProperty(noteEditor, "textContent", {
+      configurable: true,
+      get: () => "한그"
+    });
+    fireEvent.compositionEnd(noteEditor, { data: "글" });
+    delete (noteEditor as { textContent?: string }).textContent;
+    fireEvent.keyDown(noteEditor, { key: "Enter", code: "Enter", shiftKey: true });
+
+    await waitFor(() => {
+      expect(screen.getByText("한글")).toHaveClass("node-note");
+    });
   });
 
   it("applies and clears a tag filter", async () => {
@@ -696,10 +970,9 @@ describe("Outliner", () => {
       />
     );
     await userEvent.click(screen.getByLabelText("Tags").querySelector("button")!);
-    expect(screen.getByRole("searchbox", { name: "Search outline" })).toHaveValue("#phase9");
-    expect(screen.getByRole("searchbox", { name: "Search outline" })).toHaveValue("#phase9");
-    await userEvent.click(screen.getByRole("button", { name: "Clear" }));
-    expect(screen.getByRole("searchbox", { name: "Search outline" })).toHaveValue("");
+    expect(screen.getAllByRole("button", { name: "#phase9" })[0]).toHaveClass("toolbar-button-active");
+    await userEvent.click(screen.getAllByRole("button", { name: "#phase9" })[0]);
+    expect(screen.getAllByRole("button", { name: "#phase9" })[0]).not.toHaveClass("toolbar-button-active");
   });
 
   it("stores metadata when choosing an internal link candidate", async () => {
@@ -744,8 +1017,9 @@ describe("Outliner", () => {
     expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("**Source**");
   });
 
-  it("converts markdown heading shortcuts while editing node text", async () => {
-    const document = makeDocumentWithTexts(["#"]);
+  it("shows markdown heading markers while editing heading nodes", async () => {
+    const document = makeDocumentWithTexts(["Title"]);
+    document.nodes["n-1"] = { ...document.nodes["n-1"], heading: 1 };
     function Harness() {
       const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
       const [view, setView] = useState<ViewState>(createInitialView(document));
@@ -762,17 +1036,42 @@ describe("Outliner", () => {
     }
     const { container } = render(<Harness />);
     await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("#");
-    });
-    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
-      key: " ",
-      code: "Space"
-    });
-
-    await waitFor(() => {
-      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("");
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("# Title");
       expect(container.querySelector(".outline-row-active")).toHaveClass("outline-row-heading-1");
     });
+  });
+
+  it("uses the global note visibility setting for note previews", async () => {
+    const document = makeDocumentWithTexts(["With note"]);
+    document.nodes["n-1"] = { ...document.nodes["n-1"], note: "A note" };
+    const { rerender } = render(
+      <Outliner
+        document={document}
+        view={{ ...createInitialView(document), selectedNodeId: undefined }}
+        createId={() => "new"}
+        now={() => 1}
+        showNotes={false}
+        onDocumentChange={vi.fn()}
+        onViewChange={vi.fn()}
+      />
+    );
+
+    expect(screen.queryByText("A note")).not.toBeInTheDocument();
+
+    rerender(
+      <Outliner
+        document={document}
+        view={{ ...createInitialView(document), selectedNodeId: undefined }}
+        createId={() => "new"}
+        now={() => 1}
+        showNotes={true}
+        onDocumentChange={vi.fn()}
+        onViewChange={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText("A note")).toHaveClass("node-note");
+    expect(screen.queryByRole("textbox", { name: "Node note" })).not.toBeInTheDocument();
   });
 
   it("updates node formatting metadata and shows notes", async () => {
@@ -793,17 +1092,19 @@ describe("Outliner", () => {
     }
     render(<Harness />);
     await userEvent.selectOptions(screen.getByRole("combobox", { name: "Heading" }), "2");
-    await userEvent.click(screen.getByRole("checkbox", { name: "Numbered node" }));
+    expect(screen.queryByRole("checkbox", { name: "Numbered node" })).not.toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
       key: "Enter",
       code: "Enter",
       shiftKey: true
     });
     const noteEditor = screen.getByRole("textbox", { name: "Node note" });
-    await userEvent.type(noteEditor, "A note");
-    await waitFor(() => {
-      expect(noteEditor).toHaveValue("A note");
+    Object.defineProperty(noteEditor, "textContent", {
+      configurable: true,
+      get: () => "A note"
     });
+    fireEvent.compositionEnd(noteEditor, { data: "" });
+    delete (noteEditor as { textContent?: string }).textContent;
     await userEvent.click(screen.getByText("Other"));
     expect(screen.getByText("Formatted").closest(".outline-row")).toHaveClass("outline-row-heading-2");
     await waitFor(() => {

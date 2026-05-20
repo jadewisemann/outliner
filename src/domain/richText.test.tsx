@@ -1,6 +1,6 @@
 import { render } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
-import { renderInlineMarkdown } from "./richText";
+import { renderInlineMarkdown, renderMarkdownLikeText } from "./richText";
 
 describe("rich text renderer", () => {
   it("renders markdown-like inline formatting for inactive rows", () => {
@@ -13,5 +13,16 @@ describe("rich text renderer", () => {
     expect(container.querySelector("s")).toHaveTextContent("gone");
     expect(container.querySelector("mark")).toHaveTextContent("bright");
     expect(container.querySelector("a")).toHaveAttribute("href", "https://example.com");
+  });
+
+  it("renders fenced code blocks while preserving inline formatting around them", () => {
+    const { container } = render(
+      <div>{renderMarkdownLikeText("Before **bold**\n```ts\nconst value = 1;\n```\nAfter `code`")}</div>
+    );
+
+    expect(container.querySelector("strong")).toHaveTextContent("bold");
+    expect(container.querySelector("pre code")).toHaveTextContent("const value = 1;");
+    expect(container.querySelector("pre")).toHaveAttribute("data-language", "ts");
+    expect(container.querySelectorAll("code")).toHaveLength(2);
   });
 });

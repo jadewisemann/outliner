@@ -184,4 +184,49 @@ describe("App", () => {
 
     await waitFor(() => expect(screen.getByText("Beta").closest(".outline-row")).toHaveClass("outline-row-active"));
   });
+
+  it("searches Korean node text from the node palette", async () => {
+    const outlineDocument = makeDocumentWithTexts(["알파", "베타 메모"]);
+    render(<App persistence={memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) })} />);
+    await screen.findByText("알파");
+
+    fireEvent.keyDown(window, { key: "p", code: "KeyP", ctrlKey: true });
+    const paletteSearch = await screen.findByRole("searchbox", { name: "Command palette search" });
+    fireEvent.change(paletteSearch, { target: { value: "베타" } });
+    fireEvent.keyDown(paletteSearch, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => expect(screen.getByText("베타 메모").closest(".outline-row")).toHaveClass("outline-row-active"));
+  });
+
+  it("opens command mode directly with the command palette shortcut", async () => {
+    const outlineDocument = makeDocumentWithTexts(["Alpha", "Beta"]);
+    render(<App persistence={memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) })} />);
+    await screen.findByText("Alpha");
+
+    fireEvent.keyDown(window, { key: "p", code: "KeyP", ctrlKey: true, shiftKey: true });
+    const paletteSearch = await screen.findByRole("searchbox", { name: "Command palette search" });
+
+    expect(paletteSearch).toHaveValue(">");
+    expect(screen.getByRole("option", { name: /Open settings/i })).toBeInTheDocument();
+  });
+
+  it("applies edited shortcut settings to editor commands", async () => {
+    const outlineDocument = makeDocumentWithTexts(["A"]);
+    render(<App persistence={memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) })} />);
+    await screen.findByText("A");
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
+    fireEvent.change(screen.getByLabelText("Create sibling node shortcut"), { target: { value: "Ctrl+Alt+Enter" } });
+    fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Enter",
+      code: "Enter",
+      ctrlKey: true,
+      altKey: true
+    });
+
+    await waitFor(() => expect(screen.getByRole("tree", { name: "Outline" })).toHaveAttribute("data-visible-count", "2"));
+  });
 });

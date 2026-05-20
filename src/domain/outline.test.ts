@@ -184,7 +184,7 @@ describe("outline commands", () => {
 
     updateNodeText(doc, a, "Renamed", () => 10);
     updateNodeLinks(doc, a, [{ source: "[[B]]", targetNodeId: b, label: "B" }], () => 11);
-    updateNodeMetadata(doc, a, { heading: 2, color: "red", numbered: true }, () => 12);
+    updateNodeMetadata(doc, a, { heading: 2, color: "red" }, () => 12);
 
     expect(doc).toEqual(before);
   });
@@ -286,32 +286,47 @@ describe("exporters", () => {
     expect(exportToMarkdown(nested)).toBe("- A\n  - B");
   });
 
-  it("exports heading, numbered, color, and note metadata", () => {
+  it("exports heading, color, and note metadata without numbered output", () => {
     const doc = makeDocumentWithTexts(["Title"]);
     const [title] = doc.nodes[doc.rootId].children;
-    const formatted = updateNodeMetadata(
-      doc,
-      title,
-      { heading: 2, numbered: true, color: "#336699", note: "More context" },
-      () => 10
-    );
-    expect(exportToMarkdown(formatted)).toBe("1. ## Title {color=#336699}\n  > More context");
+    const withMetadata = updateNodeMetadata(doc, title, { heading: 2, color: "#336699", note: "More context" }, () => 10);
+    const formatted = {
+      ...withMetadata,
+      nodes: {
+        ...withMetadata.nodes,
+        [title]: {
+          ...withMetadata.nodes[title],
+          numbered: true
+        }
+      }
+    };
+    expect(exportToMarkdown(formatted)).toBe("- ## Title {color=#336699}\n  > More context");
   });
 
   it("exports opml using outline hierarchy and supported metadata", () => {
     const doc = makeDocumentWithTexts(["Title & plan", "Child"]);
     const [title, child] = doc.nodes[doc.rootId].children;
     const nested = indentNode(doc, child, () => 10);
-    const formatted = toggleCollapse(updateNodeMetadata(
-      nested,
+    const withMetadata = updateNodeMetadata(nested, title, { note: "More <context>", heading: 2, color: "#336699" }, () => 11);
+    const formatted = toggleCollapse(
+      {
+        ...withMetadata,
+        nodes: {
+          ...withMetadata.nodes,
+          [title]: {
+            ...withMetadata.nodes[title],
+            numbered: true
+          }
+        }
+      },
       title,
-      { note: "More <context>", heading: 2, color: "#336699", numbered: true },
-      () => 11
-    ), title, () => 12);
+      () => 12
+    );
 
     expect(exportToOpml(formatted)).toContain(
-      '<outline text="Title &amp; plan" _note="More &lt;context&gt;" _collapsed="true" _heading="2" _color="#336699" _numbered="true">'
+      '<outline text="Title &amp; plan" _note="More &lt;context&gt;" _collapsed="true" _heading="2" _color="#336699">'
     );
+    expect(exportToOpml(formatted)).not.toContain("_numbered");
     expect(exportToOpml(formatted)).toContain('<outline text="Child"/>');
   });
 
@@ -329,9 +344,9 @@ describe("exporters", () => {
       note: "Note",
       collapsed: true,
       heading: 3,
-      color: "#123456",
-      numbered: true
+      color: "#123456"
     });
+    expect(imported.document.nodes[a].numbered).toBeUndefined();
     expect(imported.document.nodes[b].text).toBe("B");
     expect(imported.view.selectedNodeId).toBe(a);
   });

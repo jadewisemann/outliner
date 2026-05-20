@@ -58,6 +58,7 @@ import {
   type SearchResult
 } from "../domain/searchSelectors";
 import type { Clock, IdGenerator, NodeId, OutlineDocument, OutlineNodeMetadata, ViewState } from "../domain/outlineTypes";
+import { DEFAULT_PREFERENCES, matchesKeyBinding, type PreferenceSettings } from "../app/preferences";
 
 type OutlinerProps = {
   document: OutlineDocument;
@@ -66,12 +67,15 @@ type OutlinerProps = {
   now: Clock;
   spellcheck?: boolean;
   autoFocus?: boolean;
+  showNotes?: boolean;
+  keymap?: PreferenceSettings["keymap"];
   onDocumentChange: Dispatch<SetStateAction<OutlineDocument>>;
   onViewChange: (view: ViewState) => void;
   onRenderRow?: (nodeId: NodeId) => void;
 };
 
 const ROW_HEIGHT = 32;
+const INDENT_SIZE = 24;
 const VIRTUALIZATION_THRESHOLD = 300;
 const VIRTUAL_OVERSCAN = 12;
 const FALLBACK_VIEWPORT_HEIGHT = 640;
@@ -90,19 +94,21 @@ export function Outliner({
   now,
   spellcheck = true,
   autoFocus = true,
+  showNotes = true,
+  keymap = DEFAULT_PREFERENCES.keymap,
   onDocumentChange,
   onViewChange,
   onRenderRow
 }: OutlinerProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const noteInputRef = useRef<HTMLTextAreaElement | null>(null);
+  const cursorHorizontalRef = useRef<number | undefined>();
   const [viewport, setViewport] = useState({ scrollTop: 0, height: FALLBACK_VIEWPORT_HEIGHT });
   const [query, setQuery] = useState("");
   const [tagFilter, setTagFilter] = useState<string | undefined>();
   const [searchMode, setSearchMode] = useState<SearchMode>("context");
   const [activeResultIndex, setActiveResultIndex] = useState(-1);
   const [noteEditingNodeId, setNoteEditingNodeId] = useState<NodeId>();
+  const [focusRequest, setFocusRequest] = useState<{ nodeId: NodeId; offset: number; key: number }>();
   const visibleNodes = useMemo(() => getVisibleNodes(document, view.zoomNodeId), [document, view.zoomNodeId]);
   const searchResults = useMemo(() => {
     if (tagFilter) {
@@ -173,6 +179,7 @@ export function Outliner({
   );
 
   const selectNode = useStableCallback((nodeId: NodeId) => {
+    cursorHorizontalRef.current = undefined;
     setNoteEditingNodeId(undefined);
     onViewChange({
       ...view,
@@ -217,13 +224,23 @@ export function Outliner({
 
   const updateText = useStableCallback((nodeId: NodeId, text: string) => {
     onDocumentChange((current) => {
-      const markdownHeading = parseMarkdownHeadingShortcut(text);
-      if (!markdownHeading) {
-        return updateNodeText(current, nodeId, text, now);
-      }
       const node = current.nodes[nodeId];
       if (!node || nodeId === current.rootId) {
         return current;
+      }
+      const markdownHeading = parseMarkdownHeadingSource(text);
+      if (!markdownHeading) {
+        const next = updateNodeText(current, nodeId, text, now);
+        const updated = next.nodes[nodeId];
+        return updated?.heading
+          ? {
+              ...next,
+              nodes: {
+                ...next.nodes,
+                [nodeId]: { ...updated, heading: undefined }
+              }
+            }
+          : next;
       }
       const timestamp = now();
       return {
@@ -234,37 +251,6 @@ export function Outliner({
             ...node,
             text: markdownHeading.text,
             heading: markdownHeading.heading,
-            updatedAt: timestamp
-          }
-        }
-      };
-    });
-  });
-
-  const insertLineBreak = useStableCallback((nodeId: NodeId, offset: number) => {
-    const node = document.nodes[nodeId];
-    if (!node) {
-      return;
-    }
-    const safeOffset = Math.max(0, Math.min(offset, node.text.length));
-    updateText(nodeId, `${node.text.slice(0, safeOffset)}\n${node.text.slice(safeOffset)}`);
-  });
-
-  const applyHeadingShortcut = useStableCallback((nodeId: NodeId, heading: 1 | 2 | 3) => {
-    onDocumentChange((current) => {
-      const node = current.nodes[nodeId];
-      if (!node || nodeId === current.rootId) {
-        return current;
-      }
-      const timestamp = now();
-      return {
-        ...current,
-        nodes: {
-          ...current.nodes,
-          [nodeId]: {
-            ...node,
-            text: "",
-            heading,
             updatedAt: timestamp
           }
         }
@@ -289,21 +275,38 @@ export function Outliner({
     }
     setNoteEditingNodeId(view.selectedNodeId);
     updateMetadata({ note: selectedNode?.note ?? "", noteVisible: true });
-    window.setTimeout(() => {
-      noteInputRef.current?.focus();
-    }, 0);
   });
 
   const focusSelectedText = useStableCallback(() => {
     const selectedNodeId = view.selectedNodeId;
     setNoteEditingNodeId(undefined);
-    window.setTimeout(() => {
-      if (!selectedNodeId) {
+    const node = selectedNodeId ? document.nodes[selectedNodeId] : undefined;
+    focusNodeText(selectedNodeId, node ? getEditableNodeText(node).length : undefined);
+  });
+
+  const focusNodeText = useStableCallback((nodeId: NodeId | undefined, offset?: number) => {
+    if (nodeId && typeof offset === "number") {
+      setFocusRequest((current) => ({ nodeId, offset, key: (current?.key ?? 0) + 1 }));
+      return;
+    }
+    let attempts = 0;
+    const focusWhenReady = () => {
+      if (!nodeId) {
         return;
       }
-      const editor = listRef.current?.querySelector<HTMLElement>(`[data-node-id="${selectedNodeId}"] [role="textbox"]`);
-      editor?.focus();
-    }, 0);
+      const editor = listRef.current?.querySelector<HTMLElement>(
+        `[data-node-id="${nodeId}"] [aria-label="Outline node text"]`
+      );
+      if (editor) {
+        editor.focus();
+        return;
+      }
+      attempts += 1;
+      if (attempts < 8) {
+        window.setTimeout(focusWhenReady, 16);
+      }
+    };
+    window.setTimeout(focusWhenReady, 0);
   });
 
   const goToResult = useStableCallback((result: SearchResult, index: number) => {
@@ -401,14 +404,37 @@ export function Outliner({
     });
   });
 
-  const moveSelection = useStableCallback((direction: "previous" | "next", nodeId: NodeId) => {
+  const moveSelectionAtOffset = useStableCallback((direction: "previous" | "next", nodeId: NodeId, offset?: number) => {
     const nextId =
       direction === "previous"
         ? getPreviousVisibleNode(document, view.zoomNodeId, nodeId)
         : getNextVisibleNode(document, view.zoomNodeId, nodeId);
     if (nextId) {
-      selectNode(nextId);
+      const sourceDepth = findVisibleDepth(displayedNodes, nodeId);
+      if (cursorHorizontalRef.current === undefined && typeof offset === "number") {
+        cursorHorizontalRef.current = sourceDepth * INDENT_SIZE + offset;
+      }
+      const targetNode = document.nodes[nextId];
+      const targetDepth = findVisibleDepth(displayedNodes, nextId);
+      const targetOffset = calculateOffsetFromHorizontal(
+        cursorHorizontalRef.current,
+        targetDepth,
+        targetNode ? getEditableNodeText(targetNode) : ""
+      );
+      setNoteEditingNodeId(undefined);
+      onViewChange({
+        ...view,
+        selectedNodeId: nextId,
+        selectionAnchorNodeId: undefined,
+        selectionFocusNodeId: undefined,
+        cursors: undefined
+      });
+      focusNodeText(nextId, targetOffset);
     }
+  });
+
+  const updateCursorHorizontal = useStableCallback((nodeId: NodeId, offset: number) => {
+    cursorHorizontalRef.current = findVisibleDepth(displayedNodes, nodeId) * INDENT_SIZE + offset;
   });
 
   const moveNode = useStableCallback((direction: "previous" | "next", nodeId: NodeId) => {
@@ -495,11 +521,6 @@ export function Outliner({
     const handleKeyDown = (event: KeyboardEvent) => {
       const activeElement = window.document.activeElement as HTMLElement | null;
       if (activeElement?.getAttribute("role") !== "textbox") {
-        if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
-          event.preventDefault();
-          searchInputRef.current?.focus();
-          return;
-        }
         if (event.key === "Escape" && (hasBulkSelection || hasMultiCursor)) {
           event.preventDefault();
           event.stopPropagation();
@@ -507,18 +528,16 @@ export function Outliner({
         }
         return;
       }
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "f") {
-        event.preventDefault();
-        searchInputRef.current?.focus();
-        return;
-      }
-      if (activeElement?.getAttribute("aria-label") === "Node note" && event.shiftKey && event.key === "Enter") {
+      if (
+        activeElement?.getAttribute("aria-label") === "Node note" &&
+        matchesKeyBinding(event, keymap.focusNodeNote)
+      ) {
         event.preventDefault();
         event.stopPropagation();
         focusSelectedText();
         return;
       }
-      if (event.shiftKey && event.key === "Enter" && view.selectedNodeId) {
+      if (matchesKeyBinding(event, keymap.focusNodeNote) && view.selectedNodeId) {
         event.preventDefault();
         event.stopPropagation();
         focusSelectedNote();
@@ -577,48 +596,13 @@ export function Outliner({
 
   return (
     <section className="outliner-panel">
-      <div className="search-toolbar" role="search">
-        <input
-          ref={searchInputRef}
-          type="search"
-          aria-label="Search outline"
-          value={tagFilter ? tagFilter : query}
-          placeholder="Search"
-          onChange={(event) => {
-            setTagFilter(undefined);
-            setQuery(event.target.value);
-    setActiveResultIndex(-1);
-          }}
-        />
-        <button type="button" aria-label="Previous search result" onClick={() => stepResult(-1)}>
-          ^
-        </button>
-        <button type="button" aria-label="Next search result" onClick={() => stepResult(1)}>
-          v
-        </button>
-        <span className="search-count" aria-label="Search result count">
-          {searchResults.length}
-        </span>
-        <button
-          type="button"
-          className={searchMode === "context" ? "toolbar-button-active" : ""}
-          onClick={() => setSearchMode("context")}
-        >
-          Context
-        </button>
-        <button
-          type="button"
-          className={searchMode === "flat" ? "toolbar-button-active" : ""}
-          onClick={() => setSearchMode("flat")}
-        >
-          Flat
-        </button>
-        <button type="button" onClick={clearSearch}>
-          Clear
-        </button>
-      </div>
       {tagTokens.length > 0 ? (
         <div className="tag-strip" aria-label="Tags">
+          {tagFilter ? (
+            <button type="button" className="toolbar-button-active" onClick={clearSearch}>
+              {tagFilter}
+            </button>
+          ) : null}
           {tagTokens.map((tag) => (
             <button key={tag} type="button" onClick={() => selectTagFilter(tag)}>
               {tag}
@@ -683,19 +667,23 @@ export function Outliner({
                 hasMultiCursor={hasMultiCursor}
                 spellcheck={spellcheck}
                 autoFocus={autoFocus}
+                showNotes={showNotes}
                 noteEditing={noteEditingNodeId === item.id}
+                focusOffset={focusRequest?.nodeId === item.id ? focusRequest.offset : undefined}
+                focusRequestKey={focusRequest?.nodeId === item.id ? focusRequest.key : undefined}
                 onSelect={() => selectNode(item.id)}
                 onSelectTag={selectTagFilter}
                 onTextChange={(text) => updateText(item.id, text)}
                 onNoteChange={(note) => updateNote(item.id, note)}
-                onInsertLineBreak={(offset) => insertLineBreak(item.id, offset)}
-                onApplyHeadingShortcut={(heading) => applyHeadingShortcut(item.id, heading)}
+                keymap={keymap}
                 onCreateAfter={(offset) => createAfter(item.id, offset)}
+                onCreateSibling={() => createAfter(item.id)}
                 onPasteText={(offset, text) => pasteText(item.id, offset, text)}
                 onIndent={() => indent(item.id)}
                 onOutdent={() => outdent(item.id)}
                 onRemoveEmpty={() => removeEmpty(item.id)}
-                onMoveSelection={(direction) => moveSelection(direction, item.id)}
+                onMoveSelectionWithOffset={(direction, offset) => moveSelectionAtOffset(direction, item.id, offset)}
+                onCursorHorizontalChange={(offset) => updateCursorHorizontal(item.id, offset)}
                 onMoveNode={(direction) => moveNode(direction, item.id)}
                 onExtendSelection={(direction) => extendSelection(direction, item.id)}
                 onAddCursor={(direction, offset) => addCursor(direction, item.id, offset)}
@@ -706,7 +694,6 @@ export function Outliner({
                 onZoom={() => zoom(item.id)}
                 onFocusNote={focusSelectedNote}
                 onFocusText={focusSelectedText}
-                noteInputRef={view.selectedNodeId === item.id ? noteInputRef : undefined}
                 onRender={onRenderRow}
               />
             ))}
@@ -749,7 +736,7 @@ function FormatToolbar({
   node,
   onChange
 }: {
-  node: { heading?: 1 | 2 | 3; color?: string; numbered?: boolean; noteVisible?: boolean };
+  node: { heading?: 1 | 2 | 3; color?: string; noteVisible?: boolean };
   onChange: (metadata: Partial<OutlineNodeMetadata>) => void;
 }) {
   return (
@@ -776,26 +763,27 @@ function FormatToolbar({
           onChange={(event) => onChange({ color: event.target.value })}
         />
       </label>
-      <label>
-        Numbered
-        <input
-          aria-label="Numbered node"
-          type="checkbox"
-          checked={node.numbered ?? false}
-          onChange={(event) => onChange({ numbered: event.target.checked })}
-        />
-      </label>
-      <label>
-        Note visible
-        <input
-          aria-label="Note visible"
-          type="checkbox"
-          checked={node.noteVisible !== false}
-          onChange={(event) => onChange({ noteVisible: event.target.checked })}
-        />
-      </label>
     </div>
   );
+}
+
+function findVisibleDepth(nodes: Array<{ id: NodeId; depth: number }>, nodeId: NodeId): number {
+  return nodes.find((item) => item.id === nodeId)?.depth ?? 0;
+}
+
+function calculateOffsetFromHorizontal(horizontal: number | undefined, depth: number, text: string): number | undefined {
+  if (horizontal === undefined) {
+    return undefined;
+  }
+  const relativeOffset = horizontal - depth * INDENT_SIZE;
+  if (relativeOffset <= 0) {
+    return 0;
+  }
+  return Math.min(relativeOffset, text.length);
+}
+
+function getEditableNodeText(node: { text: string; heading?: 1 | 2 | 3 }): string {
+  return node.heading ? `${"#".repeat(node.heading)} ${node.text}` : node.text;
 }
 
 function collectTags(document: OutlineDocument, zoomNodeId: NodeId): string[] {
@@ -832,7 +820,7 @@ function parseOpenLinkQuery(text: string): { start: number; end: number; query: 
   return { start, end: text.length, query: text.slice(start + 2) };
 }
 
-function parseMarkdownHeadingShortcut(text: string): { heading: 1 | 2 | 3; text: string } | undefined {
+function parseMarkdownHeadingSource(text: string): { heading: 1 | 2 | 3; text: string } | undefined {
   const match = /^(#{1,3})\s(.*)$/s.exec(text);
   if (!match) {
     return undefined;
