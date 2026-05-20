@@ -30,6 +30,13 @@ if (typeof globalThis.Range !== "undefined") {
   rangePrototype.getClientRects ??= (() => [] as unknown as DOMRectList);
 }
 
+if (typeof globalThis.Selection !== "undefined") {
+  const selectionPrototype = globalThis.Selection.prototype as unknown as {
+    modify?: () => void;
+  };
+  selectionPrototype.modify ??= () => {};
+}
+
 afterEach(() => {
   cleanup();
 });

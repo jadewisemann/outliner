@@ -23,7 +23,7 @@ import {
   COPY_COMMAND,
   type EditorState
 } from "lexical";
-import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties, type ReactNode } from "react";
+import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties, type MutableRefObject, type ReactNode } from "react";
 import type { OutlineNode } from "../domain/outlineTypes";
 import type { CursorTextEdit } from "../domain/multiCursor";
 import { extractTags } from "../domain/searchSelectors";
@@ -162,6 +162,8 @@ export const OutlineRow = memo(OutlineRowComponent, (previous, next) => {
     previous.hasMultiCursor === next.hasMultiCursor &&
     previous.spellcheck === next.spellcheck &&
     previous.autoFocus === next.autoFocus &&
+    previous.focusOffset === next.focusOffset &&
+    previous.focusRequestKey === next.focusRequestKey &&
     previous.showNotes === next.showNotes &&
     previous.noteEditing === next.noteEditing
   );
@@ -252,6 +254,7 @@ function ActiveRowEditor({
   focusOffset,
   focusRequestKey
 }: OutlineRowProps) {
+  const suppressNextTextChangeRef = useRef(false);
   return (
     <SharedTextEditor
       editorKey={`row-${node.id}`}
@@ -263,6 +266,7 @@ function ActiveRowEditor({
       autoFocus={autoFocus && !noteEditing}
       focusOffset={focusOffset}
       focusRequestKey={focusRequestKey}
+      suppressNextChangeRef={suppressNextTextChangeRef}
       onTextChange={onTextChange}
     >
       <KeyboardPlugin
@@ -281,6 +285,7 @@ function ActiveRowEditor({
         onApplyTextToCursors={onApplyTextToCursors}
         onClearPowerSelection={onClearPowerSelection}
         onPasteText={onPasteText}
+        suppressNextChangeRef={suppressNextTextChangeRef}
         onCopySelection={onCopySelection}
         onFocusNote={onFocusNote}
         keymap={keymap}
@@ -301,6 +306,7 @@ function SharedTextEditor({
   autoFocus,
   focusOffset,
   focusRequestKey,
+  suppressNextChangeRef,
   onTextChange,
   children
 }: {
@@ -313,6 +319,7 @@ function SharedTextEditor({
   autoFocus?: boolean;
   focusOffset?: number;
   focusRequestKey?: number;
+  suppressNextChangeRef?: MutableRefObject<boolean>;
   onTextChange: (text: string) => void;
   children?: ReactNode;
 }) {
@@ -330,6 +337,7 @@ function SharedTextEditor({
       const paragraph = $createParagraphNode();
       paragraph.append($createTextNode(text));
       root.append(paragraph);
+      paragraph.selectEnd();
     },
     theme: {
       paragraph: "lexical-paragraph"
@@ -384,6 +392,10 @@ function SharedTextEditor({
             if (composingRef.current) {
               return;
             }
+            if (suppressNextChangeRef?.current) {
+              suppressNextChangeRef.current = false;
+              return;
+            }
             onTextChange(nextText);
           });
         }}
@@ -427,6 +439,7 @@ function KeyboardPlugin({
   onApplyTextToCursors,
   onClearPowerSelection,
   onPasteText,
+  suppressNextChangeRef,
   onCopySelection,
   onFocusNote,
   keymap,
@@ -448,6 +461,7 @@ function KeyboardPlugin({
   onApplyTextToCursors: (edit: CursorTextEdit) => void;
   onClearPowerSelection: () => void;
   onPasteText: (offset: number, text: string) => void;
+  suppressNextChangeRef?: MutableRefObject<boolean>;
   onCopySelection: () => string | undefined;
   onFocusNote: () => void;
   keymap: PreferenceSettings["keymap"];
@@ -576,7 +590,21 @@ function KeyboardPlugin({
           return false;
         }
         event.preventDefault();
+        if (suppressNextChangeRef) {
+          suppressNextChangeRef.current = true;
+        }
         onPasteText(readOffset(), text);
+        editor.update(
+          () => {
+            const root = $getRoot();
+            root.clear();
+            const paragraph = $createParagraphNode();
+            paragraph.append($createTextNode(editorText));
+            root.append(paragraph);
+            paragraph.selectEnd();
+          },
+          { tag: "paste" }
+        );
         return true;
       },
       COMMAND_PRIORITY_HIGH
@@ -769,9 +797,31 @@ function NoteKeyboardPlugin({
 
 function FocusPlugin({ offset, requestKey }: { offset?: number; requestKey?: number }) {
   const [editor] = useLexicalComposerContext();
-  useEffect(() => {
+  useLayoutEffect(() => {
     let attempts = 0;
     let handle = 0;
+    const selectOffset = () => {
+      let selected = false;
+      editor.update(
+        () => {
+          const root = $getRoot();
+          const paragraph = root.getFirstChild();
+          const textNode = $isElementNode(paragraph) ? paragraph.getFirstChild() : undefined;
+          if (textNode && $isTextNode(textNode)) {
+            const safeOffset = Math.max(0, Math.min(offset ?? 0, textNode.getTextContentSize()));
+            textNode.select(safeOffset, safeOffset);
+            selected = true;
+            return;
+          }
+          if ($isElementNode(paragraph)) {
+            paragraph.select(0, 0);
+            selected = true;
+          }
+        },
+        { tag: "focus" }
+      );
+      return selected;
+    };
     const focus = () => {
       const rootElement = editor.getRootElement();
       if (!rootElement) {
@@ -781,27 +831,24 @@ function FocusPlugin({ offset, requestKey }: { offset?: number; requestKey?: num
         }
         return;
       }
-      let selected = false;
-      rootElement.focus();
+      let selected = true;
+      editor.focus(
+        () => {
+          const activeElement = document.activeElement;
+          if (!(activeElement instanceof Node) || !rootElement.contains(activeElement)) {
+            rootElement.focus({ preventScroll: true });
+          }
+          if (typeof offset === "number") {
+            selectOffset();
+          }
+        },
+        { defaultSelection: typeof offset === "number" && offset === 0 ? "rootStart" : "rootEnd" }
+      );
       if (typeof offset === "number") {
-        editor.update(() => {
-          const root = $getRoot();
-          const paragraph = root.getFirstChild();
-          const textNode = $isElementNode(paragraph) ? paragraph.getFirstChild() : undefined;
-          if (textNode && $isTextNode(textNode)) {
-            const safeOffset = Math.max(0, Math.min(offset, textNode.getTextContentSize()));
-            textNode.select(safeOffset, safeOffset);
-            selected = true;
-            return;
-          }
-          if ($isElementNode(paragraph)) {
-            paragraph.select(0, 0);
-            selected = true;
-          }
-        });
-      } else {
-        editor.focus();
-        selected = true;
+        handle = window.setTimeout(() => {
+          rootElement.focus({ preventScroll: true });
+          selectOffset();
+        }, 0);
       }
       attempts += 1;
       if (!selected && attempts < 8) {

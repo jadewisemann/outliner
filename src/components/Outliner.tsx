@@ -228,6 +228,9 @@ export function Outliner({
       }
       const markdownHeading = parseMarkdownHeadingSource(text);
       if (!markdownHeading) {
+        if (node.text === text && !node.heading) {
+          return current;
+        }
         const next = updateNodeText(current, nodeId, text, now);
         const updated = next.nodes[nodeId];
         return updated?.heading
@@ -285,7 +288,6 @@ export function Outliner({
   const focusNodeText = useStableCallback((nodeId: NodeId | undefined, offset?: number) => {
     if (nodeId && typeof offset === "number") {
       setFocusRequest((current) => ({ nodeId, offset, key: (current?.key ?? 0) + 1 }));
-      return;
     }
     let attempts = 0;
     const focusWhenReady = () => {
@@ -296,7 +298,10 @@ export function Outliner({
         `[data-node-id="${nodeId}"] [aria-label="Outline node text"]`
       );
       if (editor) {
-        editor.focus();
+        editor.focus({ preventScroll: true });
+        if (typeof offset === "number") {
+          placeCaretInElement(editor, offset);
+        }
         return;
       }
       attempts += 1;
@@ -782,6 +787,33 @@ function calculateOffsetFromHorizontal(horizontal: number | undefined, depth: nu
 
 function getEditableNodeText(node: { text: string; heading?: 1 | 2 | 3 }): string {
   return node.heading ? `${"#".repeat(node.heading)} ${node.text}` : node.text;
+}
+
+function placeCaretInElement(element: HTMLElement, offset: number) {
+  const selection = window.getSelection();
+  if (!selection) {
+    return;
+  }
+  const range = document.createRange();
+  const walker = document.createTreeWalker(element, NodeFilter.SHOW_TEXT);
+  let remaining = Math.max(0, offset);
+  let textNode = walker.nextNode();
+  while (textNode) {
+    const textLength = textNode.textContent?.length ?? 0;
+    if (remaining <= textLength) {
+      range.setStart(textNode, remaining);
+      range.collapse(true);
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return;
+    }
+    remaining -= textLength;
+    textNode = walker.nextNode();
+  }
+  range.selectNodeContents(element);
+  range.collapse(false);
+  selection.removeAllRanges();
+  selection.addRange(range);
 }
 
 function collectTags(document: OutlineDocument, zoomNodeId: NodeId): string[] {
