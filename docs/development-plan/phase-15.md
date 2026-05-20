@@ -78,8 +78,9 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
   - [x] `Ctrl+P`는 노드 검색을 기본으로 하고, `>` prefix가 있을 때 command mode로 전환한다.
   - [x] `Ctrl+Shift+P`는 command mode로 바로 연다.
   - [x] 상시 노출 검색창을 제거하고 palette 중심 검색/명령 실행으로 통합한다.
-  - [ ] 명령 실행, 노드 검색, 최근 문서/최근 노드 이동을 같은 palette에서 처리한다.
-  - [ ] 검색 결과는 키보드 이동, preview, 현재 노드로 점프를 지원한다.
+  - [x] 명령 실행, 노드 검색, 최근 노드 이동을 같은 palette에서 처리한다.
+  - [x] 검색 결과는 키보드 이동, preview, 현재 노드로 점프를 지원한다.
+  - [ ] 최근 문서 이동은 다중 문서/workspace 모델이 생기는 Phase 16에서 연결한다.
 - [ ] 노드 메모
   - [x] `Shift+Enter`로 현재 노드의 note를 생성/편집한다.
   - [x] note editor는 필요할 때만 열고, note 입력의 `Shift+Enter`로 닫은 뒤 노드 본문 편집으로 돌아간다.

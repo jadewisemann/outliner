@@ -290,7 +290,8 @@ button {
 }
 
 .command-palette-results button {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
@@ -300,6 +301,24 @@ button {
   padding: 10px 16px;
   text-align: left;
   cursor: pointer;
+}
+
+.command-palette-result-main {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.command-palette-result-main > span:first-child,
+.command-palette-preview {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.command-palette-preview {
+  color: #617080;
+  font-size: 12px;
 }
 
 .command-palette-results small {

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { createInitialView } from "../domain/outline";
 import type { OutlineSnapshot } from "../domain/outlineTypes";
@@ -208,6 +208,42 @@ describe("App", () => {
 
     expect(paletteSearch).toHaveValue(">");
     expect(screen.getByRole("option", { name: /Open settings/i })).toBeInTheDocument();
+  });
+
+  it("shows search result preview and moves the active result with arrow keys", async () => {
+    const outlineDocument = makeDocumentWithTexts(["Alpha parent", "Beta preview", "Gamma preview"]);
+    render(<App persistence={memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) })} />);
+    await screen.findByText("Alpha parent");
+
+    fireEvent.keyDown(window, { key: "p", code: "KeyP", ctrlKey: true });
+    const paletteSearch = await screen.findByRole("searchbox", { name: "Command palette search" });
+    fireEvent.change(paletteSearch, { target: { value: "preview" } });
+
+    expect(screen.getByText("Beta preview / Match: Beta preview", { selector: ".command-palette-preview" })).toBeInTheDocument();
+
+    fireEvent.keyDown(paletteSearch, { key: "ArrowDown", code: "ArrowDown" });
+    fireEvent.keyDown(paletteSearch, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => expect(screen.getByText("Gamma preview").closest(".outline-row")).toHaveClass("outline-row-active"));
+  });
+
+  it("keeps recently visited nodes in the same palette", async () => {
+    const outlineDocument = makeDocumentWithTexts(["Alpha", "Beta"]);
+    render(<App persistence={memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) })} />);
+    await screen.findByText("Alpha");
+
+    fireEvent.keyDown(window, { key: "p", code: "KeyP", ctrlKey: true });
+    const firstSearch = await screen.findByRole("searchbox", { name: "Command palette search" });
+    fireEvent.change(firstSearch, { target: { value: "Beta" } });
+    fireEvent.keyDown(firstSearch, { key: "Enter", code: "Enter" });
+    await waitFor(() => expect(screen.getByText("Beta").closest(".outline-row")).toHaveClass("outline-row-active"));
+
+    fireEvent.keyDown(window, { key: "p", code: "KeyP", ctrlKey: true });
+
+    const results = within(screen.getByRole("listbox", { name: "Command palette results" }));
+    const firstResult = (await results.findAllByRole("option"))[0];
+    expect(firstResult).toHaveTextContent("Beta");
+    expect(firstResult).toHaveTextContent("Recent node");
   });
 
   it("applies edited shortcut settings to editor commands", async () => {

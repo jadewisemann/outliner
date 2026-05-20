@@ -19,7 +19,7 @@ import {
   type ImportApplyOptions,
   type ImportFormat
 } from "../domain/exporters";
-import type { OutlineDocument, ViewState } from "../domain/outlineTypes";
+import type { NodeId, OutlineDocument, ViewState } from "../domain/outlineTypes";
 import { revealNode } from "../domain/outline";
 import { getVisibleNodes } from "../domain/outlineSelectors";
 import { searchOutline } from "../domain/searchSelectors";
@@ -60,6 +60,7 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
   const [commandPaletteQuery, setCommandPaletteQuery] = useState("");
   const [commandPaletteIndex, setCommandPaletteIndex] = useState(0);
+  const [recentNodeIds, setRecentNodeIds] = useState<NodeId[]>([]);
   const [customCssError, setCustomCssError] = useState<string>();
   latestSnapshotRef.current = snapshot;
   const { document, view } = snapshot;
@@ -73,6 +74,7 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
         document,
         view,
         query: commandPaletteQuery,
+        recentNodeIds,
         openSettings: (section) => {
           setSettingsSection(section);
           setSettingsOpen(true);
@@ -84,8 +86,15 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
           commit(nextDocument, { ...current.view, selectedNodeId: nodeId });
         }
       }),
-    [commandPaletteQuery, document, view]
+    [commandPaletteQuery, document, recentNodeIds, view]
   );
+
+  useEffect(() => {
+    if (!view.selectedNodeId || view.selectedNodeId === document.rootId || !document.nodes[view.selectedNodeId]) {
+      return;
+    }
+    setRecentNodeIds((current) => [view.selectedNodeId!, ...current.filter((nodeId) => nodeId !== view.selectedNodeId)].slice(0, 6));
+  }, [document.nodes, document.rootId, view.selectedNodeId]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -427,7 +436,10 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
                   onMouseEnter={() => setCommandPaletteIndex(index)}
                   onClick={() => runCommandPaletteItem(item)}
                 >
-                  <span>{item.title}</span>
+                  <span className="command-palette-result-main">
+                    <span>{item.title}</span>
+                    {item.preview ? <span className="command-palette-preview">{item.preview}</span> : null}
+                  </span>
                   <small>{item.kind}</small>
                 </button>
               ))}
@@ -445,6 +457,7 @@ type CommandPaletteItem = {
   id: string;
   title: string;
   kind: string;
+  preview?: string;
   run: () => void;
 };
 
@@ -665,6 +678,7 @@ function buildCommandPaletteItems({
   document,
   view,
   query,
+  recentNodeIds,
   openSettings,
   closePalette,
   jumpToNode
@@ -672,6 +686,7 @@ function buildCommandPaletteItems({
   document: OutlineDocument;
   view: ViewState;
   query: string;
+  recentNodeIds: NodeId[];
   openSettings: (section: SettingsSection) => void;
   closePalette: () => void;
   jumpToNode: (nodeId: string) => void;
@@ -713,26 +728,82 @@ function buildCommandPaletteItems({
   if (commandMode) {
     return commands.slice(0, 12);
   }
-  const nodeResults = (normalizedQuery
-    ? searchOutline(document, query, { zoomNodeId: view.zoomNodeId })
-    : getVisibleNodes(document, view.zoomNodeId).map((item) => ({
-        nodeId: item.id,
-        text: item.node.text,
-        depth: item.depth,
-        breadcrumbIds: [],
-        matchStart: 0,
-        matchEnd: 0,
-        matchText: ""
-      }))
-  )
+
+  if (!normalizedQuery) {
+    const recentIds = recentNodeIds.filter((nodeId) => nodeId !== document.rootId && Boolean(document.nodes[nodeId]));
+    const visibleNodes = getVisibleNodes(document, view.zoomNodeId).filter((item) => !recentIds.includes(item.id));
+    return [
+      ...recentIds.map((nodeId) => nodeToPaletteItem(document, nodeId, "Recent node", jumpToNode)),
+      ...visibleNodes.map((item) => nodeToPaletteItem(document, item.id, "Node", jumpToNode))
+    ].slice(0, 12);
+  }
+
+  const nodeResults = searchOutline(document, query, { zoomNodeId: view.zoomNodeId })
     .slice(0, 12)
     .map((result) => ({
       id: `node:${result.nodeId}`,
       title: result.text || "Untitled node",
       kind: "Node",
+      preview: searchResultPreview(document, result.breadcrumbIds, result.text),
       run: () => jumpToNode(result.nodeId)
     }));
   return nodeResults;
+}
+
+function nodeToPaletteItem(
+  document: OutlineDocument,
+  nodeId: NodeId,
+  kind: "Node" | "Recent node",
+  jumpToNode: (nodeId: string) => void
+): CommandPaletteItem {
+  const node = document.nodes[nodeId];
+  return {
+    id: `${kind === "Recent node" ? "recent" : "node"}:${nodeId}`,
+    title: node.text || "Untitled node",
+    kind,
+    preview: nodePreview(document, nodeId),
+    run: () => jumpToNode(nodeId)
+  };
+}
+
+function searchResultPreview(document: OutlineDocument, breadcrumbIds: NodeId[], text: string): string {
+  const context = breadcrumbIds
+    .map((nodeId) => document.nodes[nodeId]?.text.trim())
+    .filter(Boolean)
+    .join(" / ");
+  return context ? `${context} / Match: ${text}` : `Match: ${text}`;
+}
+
+function nodePreview(document: OutlineDocument, nodeId: NodeId): string {
+  const path = getNodePath(document, nodeId)
+    .slice(0, -1)
+    .map((id) => document.nodes[id]?.text.trim())
+    .filter(Boolean)
+    .join(" / ");
+  return path || "Top level";
+}
+
+function getNodePath(document: OutlineDocument, targetNodeId: NodeId): NodeId[] {
+  const path: NodeId[] = [];
+  const visit = (nodeId: NodeId): boolean => {
+    if (nodeId === targetNodeId) {
+      path.push(nodeId);
+      return true;
+    }
+    const node = document.nodes[nodeId];
+    if (!node) {
+      return false;
+    }
+    for (const childId of node.children) {
+      if (visit(childId)) {
+        path.unshift(nodeId);
+        return true;
+      }
+    }
+    return false;
+  };
+  visit(document.rootId);
+  return path.filter((nodeId) => nodeId !== document.rootId);
 }
 
 function scopeCustomCss(source: string): { css: string; error?: string } {
