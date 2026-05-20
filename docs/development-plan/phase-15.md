@@ -26,7 +26,9 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
 - `Ctrl+P` 또는 플랫폼별 동등 단축키가 command palette/global search를 열고, 명령과 노드를 키보드만으로 실행/이동할 수 있다.
 - `Shift+Enter`가 현재 노드 바로 아래의 Dynalist-style note editor를 열고 note 입력으로 포커스를 이동하며, note 입력에서 다시 `Shift+Enter`를 누르면 note editor를 닫고 노드 본문 편집으로 돌아간다.
 - `Ctrl+Enter`가 현재 노드 본문 안에 새 줄을 삽입하며, 일반 `Enter`의 새 노드 생성 동작과 충돌하지 않는다.
+- 노드 본문에서 `Enter`로 새 노드를 만들면 새 노드가 active row가 되고, 브라우저의 실제 caret과 selection anchor가 새 노드 editor 안에 있어야 한다.
 - 여러 선택/커서에서 indent, outdent, move, delete, text insert 같은 핵심 편집 명령이 일관되게 적용된다.
+- 멀티라인 paste는 하나의 outline structure transaction으로 처리되며, 중간 Lexical DOM 변화가 문서 Undo/Redo stack에 별도 텍스트 transaction으로 들어가지 않는다.
 - inline LaTeX와 block LaTeX가 저장/렌더링되고, 원문 편집으로 되돌아갈 수 있다.
 - 사용자가 단축키를 변경하면 command registry가 새 keymap을 사용하고, 충돌하는 단축키를 감지한다.
 - 설정 창에서 편집, 표시, 단축키, Custom CSS, 계정/동기화 준비 항목을 탐색할 수 있다.
@@ -51,6 +53,13 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
   - [x] 위/아래 이동을 반복하는 동안에는 최초 수평 위치를 계속 유지한다. 사용자가 좌우 방향키, 마우스 클릭, Home/End, 텍스트 입력처럼 수평 위치를 변경하는 이벤트를 만들 때에만 기억된 수평 위치를 갱신한다.
   - [x] 대상 노드의 `depth * indent size + text length`가 기억된 수평 위치보다 작으면 대상 노드의 맨 뒤에 커서를 둔다. 기억된 수평 위치가 대상 노드 시작보다 왼쪽이면 offset 0으로 둔다.
   - [x] 노드 이동 후 새 active editor가 렌더되는 동안 포커스와 selection을 짧게 재시도해 커서가 깜빡이거나 body로 떨어지지 않게 한다.
+- [x] 2026-05-20 새 노드 caret 안정화
+  - [x] 본문에서 `Enter`로 split/create된 새 노드는 생성 직후 active row가 되고, contenteditable DOM focus와 native selection/caret이 새 노드 editor 안으로 들어간다.
+  - [x] `Ctrl+Enter`/`Cmd+Enter`로 만든 같은 레벨 형제 노드도 생성 직후 새 노드 editor에 focus된다.
+  - [x] note editor에서 본문으로 돌아올 때는 기존 노드 본문 끝으로 caret이 복귀한다.
+  - [x] Lexical focus request는 React memo 비교에 포함해 같은 active row 안에서 offset만 바뀌는 경우에도 재실행된다.
+  - [x] 브라우저 검증 기준은 `document.activeElement`가 `Outline node text` editor이고, `window.getSelection().anchorNode`가 같은 새 노드 row 안에 있는 상태다.
+  - [x] 멀티라인 paste 처리 중 Lexical의 중간 DOM 변경은 suppress해 Undo/Redo가 paste 전체를 하나의 구조 편집 action으로 되돌린다.
 - [x] Custom CSS
   - [x] CSS 입력/저장 UI를 설정 창에 추가한다.
   - [x] 적용 범위를 editor root 또는 app theme layer로 제한한다.
