@@ -773,8 +773,16 @@ function FocusPlugin({ offset, requestKey }: { offset?: number; requestKey?: num
     let attempts = 0;
     let handle = 0;
     const focus = () => {
+      const rootElement = editor.getRootElement();
+      if (!rootElement) {
+        attempts += 1;
+        if (attempts < 8) {
+          handle = window.setTimeout(focus, 16);
+        }
+        return;
+      }
       let selected = false;
-      editor.focus();
+      rootElement.focus();
       if (typeof offset === "number") {
         editor.update(() => {
           const root = $getRoot();
@@ -784,9 +792,15 @@ function FocusPlugin({ offset, requestKey }: { offset?: number; requestKey?: num
             const safeOffset = Math.max(0, Math.min(offset, textNode.getTextContentSize()));
             textNode.select(safeOffset, safeOffset);
             selected = true;
+            return;
+          }
+          if ($isElementNode(paragraph)) {
+            paragraph.select(0, 0);
+            selected = true;
           }
         });
       } else {
+        editor.focus();
         selected = true;
       }
       attempts += 1;

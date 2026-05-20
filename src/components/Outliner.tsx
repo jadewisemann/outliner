@@ -206,15 +206,13 @@ export function Outliner({
   };
 
   const createAfter = useStableCallback((nodeId: NodeId, offset?: number) => {
-    const node = document.nodes[nodeId];
     const result =
       typeof offset === "number"
         ? splitNode(document, nodeId, offset, createId, now)
         : createNodeAfter(document, nodeId, createId, now);
     commitDocument(result.document, result.nodeId);
-    if (!node || typeof offset !== "number") {
-      return;
-    }
+    cursorHorizontalRef.current = undefined;
+    focusNodeText(result.nodeId, 0);
   });
 
   const pasteText = useStableCallback((nodeId: NodeId, offset: number, text: string) => {

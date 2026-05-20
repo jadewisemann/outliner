@@ -242,6 +242,7 @@ describe("Outliner", () => {
     await waitFor(() => {
       expect(screen.getByText("Line").closest(".outline-row")).toHaveAttribute("data-node-text", "Line");
       expect(screen.getByRole("tree", { name: "Outline" })).toHaveAttribute("data-visible-count", "2");
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveFocus();
     });
     expect(screen.getAllByRole("textbox", { name: "Outline node text" })).toHaveLength(1);
   });
