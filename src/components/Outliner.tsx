@@ -71,13 +71,14 @@ type OutlinerProps = {
   keymap?: PreferenceSettings["keymap"];
   typewriterScrollEnabled?: boolean;
   typewriterScrollOffsetPx?: number;
+  indentSizePx?: number;
+  rowHeightPx?: number;
   onDocumentChange: Dispatch<SetStateAction<OutlineDocument>>;
   onViewChange: (view: ViewState) => void;
   onRenderRow?: (nodeId: NodeId) => void;
 };
 
 const ROW_HEIGHT = 32;
-const INDENT_SIZE = 24;
 const VIRTUALIZATION_THRESHOLD = 300;
 const VIRTUAL_OVERSCAN = 12;
 const FALLBACK_VIEWPORT_HEIGHT = 640;
@@ -101,6 +102,8 @@ export function Outliner({
   keymap = DEFAULT_PREFERENCES.keymap,
   typewriterScrollEnabled = DEFAULT_PREFERENCES.typewriterScrollEnabled,
   typewriterScrollOffsetPx = DEFAULT_PREFERENCES.typewriterScrollOffsetPx,
+  indentSizePx = DEFAULT_PREFERENCES.indentSizePx,
+  rowHeightPx = ROW_HEIGHT,
   onDocumentChange,
   onViewChange,
   onRenderRow
@@ -149,15 +152,15 @@ export function Outliner({
         start: 0,
         beforeHeight: 0,
         afterHeight: 0,
-        totalHeight: displayedNodes.length * ROW_HEIGHT,
+        totalHeight: displayedNodes.length * rowHeightPx,
         virtualized: false
       };
     }
     const selectedIndex = view.selectedNodeId
       ? displayedNodes.findIndex((item) => item.id === view.selectedNodeId)
       : -1;
-    const scrollStart = Math.max(0, Math.floor(viewport.scrollTop / ROW_HEIGHT) - VIRTUAL_OVERSCAN);
-    const viewportRows = Math.ceil(viewport.height / ROW_HEIGHT) + VIRTUAL_OVERSCAN * 2;
+    const scrollStart = Math.max(0, Math.floor(viewport.scrollTop / rowHeightPx) - VIRTUAL_OVERSCAN);
+    const viewportRows = Math.ceil(viewport.height / rowHeightPx) + VIRTUAL_OVERSCAN * 2;
     const selectedStart =
       selectedIndex >= 0 ? Math.max(0, selectedIndex - Math.floor(viewportRows / 2)) : scrollStart;
     const start = viewport.scrollTop === 0 && selectedIndex >= viewportRows ? selectedStart : scrollStart;
@@ -165,12 +168,12 @@ export function Outliner({
     return {
       nodes: displayedNodes.slice(start, end),
       start,
-      beforeHeight: start * ROW_HEIGHT,
-      afterHeight: (displayedNodes.length - end) * ROW_HEIGHT,
-      totalHeight: displayedNodes.length * ROW_HEIGHT,
+      beforeHeight: start * rowHeightPx,
+      afterHeight: (displayedNodes.length - end) * rowHeightPx,
+      totalHeight: displayedNodes.length * rowHeightPx,
       virtualized: true
     };
-  }, [view.selectedNodeId, viewport.height, viewport.scrollTop, displayedNodes]);
+  }, [rowHeightPx, view.selectedNodeId, viewport.height, viewport.scrollTop, displayedNodes]);
   const selectedBacklinks = useMemo(
     () => (view.selectedNodeId ? getBacklinks(document, view.selectedNodeId) : []),
     [document, view.selectedNodeId]
@@ -420,12 +423,13 @@ export function Outliner({
     if (nextId) {
       const sourceDepth = findVisibleDepth(displayedNodes, nodeId);
       if (cursorHorizontalRef.current === undefined && typeof offset === "number") {
-        cursorHorizontalRef.current = sourceDepth * INDENT_SIZE + offset;
+        cursorHorizontalRef.current = sourceDepth * indentSizePx + offset;
       }
       const targetNode = document.nodes[nextId];
       const targetDepth = findVisibleDepth(displayedNodes, nextId);
       const targetOffset = calculateOffsetFromHorizontal(
         cursorHorizontalRef.current,
+        indentSizePx,
         targetDepth,
         targetNode ? getEditableNodeText(targetNode) : ""
       );
@@ -442,7 +446,7 @@ export function Outliner({
   });
 
   const updateCursorHorizontal = useStableCallback((nodeId: NodeId, offset: number) => {
-    cursorHorizontalRef.current = findVisibleDepth(displayedNodes, nodeId) * INDENT_SIZE + offset;
+    cursorHorizontalRef.current = findVisibleDepth(displayedNodes, nodeId) * indentSizePx + offset;
   });
 
   const moveNode = useStableCallback((direction: "previous" | "next", nodeId: NodeId) => {
@@ -605,7 +609,7 @@ export function Outliner({
     } else {
       const selectedIndex = displayedNodes.findIndex((item) => item.id === selectedNodeId);
       if (selectedIndex >= 0) {
-        nextScrollTop = selectedIndex * ROW_HEIGHT + ROW_HEIGHT / 2 - targetViewportCenter;
+        nextScrollTop = selectedIndex * rowHeightPx + rowHeightPx / 2 - targetViewportCenter;
       }
     }
     if (nextScrollTop === undefined) {
@@ -622,6 +626,7 @@ export function Outliner({
     });
   }, [
     displayedNodes,
+    rowHeightPx,
     typewriterScrollEnabled,
     typewriterScrollOffsetPx,
     view.selectedNodeId,
@@ -825,11 +830,16 @@ function findVisibleDepth(nodes: Array<{ id: NodeId; depth: number }>, nodeId: N
   return nodes.find((item) => item.id === nodeId)?.depth ?? 0;
 }
 
-function calculateOffsetFromHorizontal(horizontal: number | undefined, depth: number, text: string): number | undefined {
+function calculateOffsetFromHorizontal(
+  horizontal: number | undefined,
+  indentSizePx: number,
+  depth: number,
+  text: string
+): number | undefined {
   if (horizontal === undefined) {
     return undefined;
   }
-  const relativeOffset = horizontal - depth * INDENT_SIZE;
+  const relativeOffset = horizontal - depth * indentSizePx;
   if (relativeOffset <= 0) {
     return 0;
   }

@@ -25,13 +25,20 @@ export type CommandId =
 
 export type ThemePreference = "light" | "dark";
 export type FontPreference = "system" | "serif" | "mono";
+export type OutlineDensityPreference = "compact" | "comfortable" | "spacious";
+export type ContentWidthPreference = "narrow" | "standard" | "wide" | "full";
+export type BulletStylePreference = "circle" | "diamond" | "dash";
 
 export type PreferenceSettings = {
   theme: ThemePreference;
   font: FontPreference;
+  outlineDensity: OutlineDensityPreference;
+  contentWidth: ContentWidthPreference;
+  bulletStyle: BulletStylePreference;
+  indentSizePx: number;
+  editorFontSizePx: number;
   spellcheck: boolean;
   showWordCount: boolean;
-  showSyncStatus: boolean;
   showNotes: boolean;
   autoFocus: boolean;
   typewriterScrollEnabled: boolean;
@@ -82,9 +89,13 @@ export const DEFAULT_KEYMAP: Record<CommandId, string> = Object.fromEntries(
 export const DEFAULT_PREFERENCES: PreferenceSettings = {
   theme: "light",
   font: "system",
+  outlineDensity: "comfortable",
+  contentWidth: "standard",
+  bulletStyle: "circle",
+  indentSizePx: 24,
+  editorFontSizePx: 14,
   spellcheck: true,
   showWordCount: true,
-  showSyncStatus: true,
   showNotes: true,
   autoFocus: true,
   typewriterScrollEnabled: false,
@@ -96,6 +107,10 @@ export const DEFAULT_PREFERENCES: PreferenceSettings = {
 
 export const TYPEWRITER_SCROLL_OFFSET_MIN = -240;
 export const TYPEWRITER_SCROLL_OFFSET_MAX = 240;
+export const INDENT_SIZE_MIN = 12;
+export const INDENT_SIZE_MAX = 48;
+export const EDITOR_FONT_SIZE_MIN = 12;
+export const EDITOR_FONT_SIZE_MAX = 22;
 
 export function normalizeTypewriterScrollOffset(value: unknown): number {
   const numberValue = typeof value === "number" ? value : Number(value);
@@ -103,6 +118,18 @@ export function normalizeTypewriterScrollOffset(value: unknown): number {
     return DEFAULT_PREFERENCES.typewriterScrollOffsetPx;
   }
   return Math.min(TYPEWRITER_SCROLL_OFFSET_MAX, Math.max(TYPEWRITER_SCROLL_OFFSET_MIN, Math.round(numberValue)));
+}
+
+export function normalizeIndentSize(value: unknown): number {
+  return normalizeBoundedInteger(value, DEFAULT_PREFERENCES.indentSizePx, INDENT_SIZE_MIN, INDENT_SIZE_MAX);
+}
+
+export function normalizeEditorFontSize(value: unknown): number {
+  return normalizeBoundedInteger(value, DEFAULT_PREFERENCES.editorFontSizePx, EDITOR_FONT_SIZE_MIN, EDITOR_FONT_SIZE_MAX);
+}
+
+export function rowHeightForDensity(density: OutlineDensityPreference): number {
+  return density === "compact" ? 28 : density === "spacious" ? 40 : 32;
 }
 
 export function normalizePreferences(value: Partial<PreferenceSettings> | null | undefined): PreferenceSettings {
@@ -115,11 +142,75 @@ export function normalizePreferences(value: Partial<PreferenceSettings> | null |
     }
   }
   return {
-    ...DEFAULT_PREFERENCES,
-    ...value,
+    theme: normalizeTheme(value?.theme),
+    font: normalizeFont(value?.font),
+    outlineDensity: normalizeOutlineDensity(value?.outlineDensity),
+    contentWidth: normalizeContentWidth(value?.contentWidth),
+    bulletStyle: normalizeBulletStyle(value?.bulletStyle),
+    indentSizePx: normalizeIndentSize(value?.indentSizePx),
+    editorFontSizePx: normalizeEditorFontSize(value?.editorFontSizePx),
+    spellcheck: normalizeBoolean(value?.spellcheck, DEFAULT_PREFERENCES.spellcheck),
+    showWordCount: normalizeBoolean(value?.showWordCount, DEFAULT_PREFERENCES.showWordCount),
+    showNotes: normalizeBoolean(value?.showNotes, DEFAULT_PREFERENCES.showNotes),
+    autoFocus: normalizeBoolean(value?.autoFocus, DEFAULT_PREFERENCES.autoFocus),
+    typewriterScrollEnabled: normalizeBoolean(value?.typewriterScrollEnabled, DEFAULT_PREFERENCES.typewriterScrollEnabled),
     typewriterScrollOffsetPx: normalizeTypewriterScrollOffset(value?.typewriterScrollOffsetPx),
+    customCss: typeof value?.customCss === "string" ? value.customCss : DEFAULT_PREFERENCES.customCss,
+    customCssEnabled: normalizeBoolean(value?.customCssEnabled, DEFAULT_PREFERENCES.customCssEnabled),
     keymap: normalizedKeymap
   };
+}
+
+function normalizeTheme(value: unknown): ThemePreference {
+  return isThemePreference(value) ? value : DEFAULT_PREFERENCES.theme;
+}
+
+function normalizeFont(value: unknown): FontPreference {
+  return isFontPreference(value) ? value : DEFAULT_PREFERENCES.font;
+}
+
+function normalizeOutlineDensity(value: unknown): OutlineDensityPreference {
+  return isOutlineDensityPreference(value) ? value : DEFAULT_PREFERENCES.outlineDensity;
+}
+
+function normalizeContentWidth(value: unknown): ContentWidthPreference {
+  return isContentWidthPreference(value) ? value : DEFAULT_PREFERENCES.contentWidth;
+}
+
+function normalizeBulletStyle(value: unknown): BulletStylePreference {
+  return isBulletStylePreference(value) ? value : DEFAULT_PREFERENCES.bulletStyle;
+}
+
+function normalizeBoundedInteger(value: unknown, fallback: number, min: number, max: number): number {
+  const numberValue = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numberValue)) {
+    return fallback;
+  }
+  return Math.min(max, Math.max(min, Math.round(numberValue)));
+}
+
+function normalizeBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === "boolean" ? value : fallback;
+}
+
+function isThemePreference(value: unknown): value is ThemePreference {
+  return value === "light" || value === "dark";
+}
+
+function isFontPreference(value: unknown): value is FontPreference {
+  return value === "system" || value === "serif" || value === "mono";
+}
+
+function isOutlineDensityPreference(value: unknown): value is OutlineDensityPreference {
+  return value === "compact" || value === "comfortable" || value === "spacious";
+}
+
+function isContentWidthPreference(value: unknown): value is ContentWidthPreference {
+  return value === "narrow" || value === "standard" || value === "wide" || value === "full";
+}
+
+function isBulletStylePreference(value: unknown): value is BulletStylePreference {
+  return value === "circle" || value === "diamond" || value === "dash";
 }
 
 export function matchesKeyBinding(event: KeyboardEvent, binding: string): boolean {

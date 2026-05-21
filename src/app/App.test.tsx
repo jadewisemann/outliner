@@ -58,7 +58,7 @@ describe("App", () => {
     render(<App />);
     expect(screen.getByRole("button", { name: "Workspace menu" })).toBeInTheDocument();
     expect(await screen.findByRole("tree", { name: "Outline" })).toBeInTheDocument();
-    expect(screen.getByText("Saved locally")).toBeInTheDocument();
+    expect(screen.queryByLabelText(/Sync status/)).not.toBeInTheDocument();
   });
 
   it("renders a persisted snapshot through the Yjs workspace runtime", async () => {
@@ -86,7 +86,7 @@ describe("App", () => {
     await waitFor(() => expect(container.querySelectorAll(".outline-row")).toHaveLength(2));
   });
 
-  it("renders the runtime remote sync status", async () => {
+  it("keeps runtime remote sync state out of the top controls", async () => {
     const document = makeDocumentWithTexts(["A"]);
     render(
       <App
@@ -95,7 +95,8 @@ describe("App", () => {
       />
     );
 
-    expect(await screen.findByText("Synced")).toBeInTheDocument();
+    await screen.findByText("A");
+    expect(screen.queryByText("Synced")).not.toBeInTheDocument();
   });
 
   it("imports plain text into the current workspace without replacing existing nodes", async () => {
@@ -133,23 +134,33 @@ describe("App", () => {
     await screen.findByText("A");
 
     openSettingsPanel();
-    fireEvent.change(screen.getByLabelText("Theme"), { target: { value: "dark" } });
-    fireEvent.click(screen.getByLabelText("Word count"));
-    fireEvent.click(screen.getByLabelText("Sync status"));
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    fireEvent.change(screen.getByLabelText("Theme"), { target: { value: "dark" } });
     fireEvent.change(screen.getByLabelText("Font"), { target: { value: "mono" } });
+    fireEvent.change(screen.getByLabelText("Outline density"), { target: { value: "spacious" } });
+    fireEvent.change(screen.getByLabelText("Content width"), { target: { value: "wide" } });
+    fireEvent.change(screen.getByLabelText("Bullet style"), { target: { value: "diamond" } });
+    fireEvent.change(screen.getByLabelText("Indent size"), { target: { value: "32" } });
+    fireEvent.change(screen.getByLabelText("Editor text size"), { target: { value: "16" } });
+    fireEvent.click(screen.getByRole("button", { name: "General" }));
+    fireEvent.click(screen.getByLabelText("Word count"));
     fireEvent.click(screen.getByRole("button", { name: "Editor" }));
     fireEvent.click(screen.getByLabelText("Spellcheck"));
 
     await waitFor(() => expect(persistence.preferences.theme).toBe("dark"));
     expect(persistence.preferences.font).toBe("mono");
+    expect(persistence.preferences.outlineDensity).toBe("spacious");
+    expect(persistence.preferences.contentWidth).toBe("wide");
+    expect(persistence.preferences.bulletStyle).toBe("diamond");
+    expect(persistence.preferences.indentSizePx).toBe(32);
+    expect(persistence.preferences.editorFontSizePx).toBe(16);
     expect(persistence.preferences.spellcheck).toBe(false);
     expect(persistence.preferences.showWordCount).toBe(false);
-    expect(persistence.preferences.showSyncStatus).toBe(false);
 
     fireEvent.keyDown(window, { key: "z", code: "KeyZ", ctrlKey: true });
     expect(screen.getByText("A")).toBeInTheDocument();
     expect(window.document.documentElement.dataset.theme).toBe("dark");
+    expect(screen.getByRole("main")).toHaveAttribute("data-bullet-style", "diamond");
   });
 
   it("opens file actions and settings from the hierarchical workspace menu", async () => {
@@ -186,6 +197,9 @@ describe("App", () => {
     expect(normalizePreferences({ typewriterScrollOffsetPx: 999 }).typewriterScrollOffsetPx).toBe(240);
     expect(normalizePreferences({ typewriterScrollOffsetPx: -999 }).typewriterScrollOffsetPx).toBe(-240);
     expect(normalizePreferences({}).typewriterScrollEnabled).toBe(false);
+    expect(normalizePreferences({ indentSizePx: 999 }).indentSizePx).toBe(48);
+    expect(normalizePreferences({ editorFontSizePx: 1 }).editorFontSizePx).toBe(12);
+    expect(normalizePreferences({ outlineDensity: "huge" as never }).outlineDensity).toBe("comfortable");
   });
 
   it("scopes saved custom CSS to the outliner editor", async () => {
