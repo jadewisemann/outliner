@@ -471,6 +471,14 @@ function KeyboardPlugin({
   const [editor] = useLexicalComposerContext();
 
   useEffect(() => {
+    const insertLineBreak = () => {
+      editor.update(() => {
+        const selection = $getSelection();
+        if ($isRangeSelection(selection)) {
+          selection.insertText("\n");
+        }
+      });
+    };
     const readOffset = () => {
       let offset = editorText.length;
       editor.getEditorState().read(() => {
@@ -490,6 +498,11 @@ function KeyboardPlugin({
         if (event && matchesKeyBinding(event, keymap.focusNodeNote)) {
           event.preventDefault();
           onFocusNote();
+          return true;
+        }
+        if (event && matchesKeyBinding(event, keymap.insertLineBreak)) {
+          event.preventDefault();
+          insertLineBreak();
           return true;
         }
         if (event && matchesKeyBinding(event, keymap.createSiblingNode)) {
@@ -654,6 +667,12 @@ function KeyboardPlugin({
         } else {
           onIndent();
         }
+        return;
+      }
+      if (matchesKeyBinding(event, keymap.insertLineBreak)) {
+        event.preventDefault();
+        event.stopPropagation();
+        insertLineBreak();
         return;
       }
       if (matchesKeyBinding(event, keymap.createSiblingNode)) {

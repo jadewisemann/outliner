@@ -485,6 +485,7 @@ function SettingsPanel({
     "openNodePalette",
     "openCommandPalette",
     "focusNodeNote",
+    "insertLineBreak",
     "createSiblingNode"
   ];
   const duplicateShortcuts = findDuplicateShortcuts(preferences.keymap);
@@ -658,6 +659,8 @@ function commandLabel(command: CommandId): string {
       ? "Command palette"
       : command === "focusNodeNote"
         ? "Edit note"
+        : command === "insertLineBreak"
+          ? "Insert line break"
         : command === "createSiblingNode"
           ? "Create sibling node"
       : command === "undo"

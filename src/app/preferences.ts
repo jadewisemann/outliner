@@ -5,6 +5,7 @@ export type CommandId =
   | "openNodePalette"
   | "openCommandPalette"
   | "focusNodeNote"
+  | "insertLineBreak"
   | "createSiblingNode";
 
 export type ThemePreference = "light" | "dark";
@@ -38,6 +39,7 @@ export const DEFAULT_PREFERENCES: PreferenceSettings = {
     openNodePalette: "Mod+P",
     openCommandPalette: "Mod+Shift+P",
     focusNodeNote: "Shift+Enter",
+    insertLineBreak: "Alt+Enter",
     createSiblingNode: "Mod+Enter"
   }
 };

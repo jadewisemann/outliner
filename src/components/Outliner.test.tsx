@@ -247,6 +247,35 @@ describe("Outliner", () => {
     expect(screen.getAllByRole("textbox", { name: "Outline node text" })).toHaveLength(1);
   });
 
+  it("inserts a line break inside the current node with alt enter", async () => {
+    const document = makeDocumentWithTexts(["Line"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    const { container } = render(<Harness />);
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Enter",
+      code: "Enter",
+      altKey: true
+    });
+
+    await waitFor(() => {
+      expect(container.querySelector(".outline-row-active")).toHaveAttribute("data-node-text", "Line\n");
+      expect(screen.getByRole("tree", { name: "Outline" })).toHaveAttribute("data-visible-count", "1");
+    });
+  });
+
   it("commits Korean IME text in a markdown heading source without losing the marker", async () => {
     const document = makeDocumentWithTexts([""]);
     document.nodes["n-1"] = { ...document.nodes["n-1"], heading: 1 };
