@@ -386,7 +386,9 @@ function SharedTextEditor({
 }) {
   const skipInitialChangeRef = useRef(true);
   const composingRef = useRef(false);
+  const compositionStartTextRef = useRef(text);
   const lastCompositionTextRef = useRef("");
+  const lastSyncedTextRef = useRef(text);
   const initialConfig = {
     namespace: `outline-${editorKey}`,
     onError(error: Error) {
@@ -417,6 +419,7 @@ function SharedTextEditor({
             onClick={(event) => event.stopPropagation()}
             onCompositionStart={() => {
               composingRef.current = true;
+              compositionStartTextRef.current = text;
               lastCompositionTextRef.current = "";
             }}
             onCompositionUpdate={(event) => {
@@ -427,10 +430,12 @@ function SharedTextEditor({
               const finalCompositionText = (event.nativeEvent as CompositionEvent).data;
               const previousCompositionText = lastCompositionTextRef.current;
               const currentText = event.currentTarget.textContent || "";
-              const nextText =
-                finalCompositionText && previousCompositionText && currentText.endsWith(previousCompositionText)
-                  ? `${currentText.slice(0, -previousCompositionText.length)}${finalCompositionText}`
-                  : currentText || finalCompositionText || "";
+              const nextText = resolveCompositionText({
+                startText: compositionStartTextRef.current,
+                currentText,
+                previousCompositionText,
+                finalCompositionText
+              });
               lastCompositionTextRef.current = "";
               if (nextText !== text) {
                 onTextChange(nextText);
@@ -441,7 +446,7 @@ function SharedTextEditor({
         placeholder={<span className="editor-placeholder">{placeholder}</span>}
         ErrorBoundary={LexicalErrorBoundary}
       />
-      <SyncInitialTextPlugin text={text} />
+      <SyncInitialTextPlugin text={text} composingRef={composingRef} lastSyncedTextRef={lastSyncedTextRef} />
       <OnChangePlugin
         onChange={(editorState: EditorState) => {
           editorState.read(() => {
@@ -469,11 +474,50 @@ function SharedTextEditor({
   );
 }
 
-function SyncInitialTextPlugin({ text }: { text: string }) {
+function resolveCompositionText({
+  startText,
+  currentText,
+  previousCompositionText,
+  finalCompositionText
+}: {
+  startText: string;
+  currentText: string;
+  previousCompositionText: string;
+  finalCompositionText: string;
+}): string {
+  if (!finalCompositionText) {
+    return currentText;
+  }
+  const appendedFinalText = `${startText}${finalCompositionText}`;
+  if (currentText === appendedFinalText) {
+    return currentText;
+  }
+  if (currentText.startsWith(startText) && currentText.length > appendedFinalText.length) {
+    return appendedFinalText;
+  }
+  if (previousCompositionText && currentText.endsWith(previousCompositionText)) {
+    return `${currentText.slice(0, -previousCompositionText.length)}${finalCompositionText}`;
+  }
+  return currentText || finalCompositionText;
+}
+
+function SyncInitialTextPlugin({
+  text,
+  composingRef,
+  lastSyncedTextRef
+}: {
+  text: string;
+  composingRef: MutableRefObject<boolean>;
+  lastSyncedTextRef: MutableRefObject<string>;
+}) {
   const [editor] = useLexicalComposerContext();
   useLayoutEffect(() => {
+    if (composingRef.current && text === lastSyncedTextRef.current) {
+      return;
+    }
     editor.update(() => {
       if ($getRoot().getTextContent() === text) {
+        lastSyncedTextRef.current = text;
         return;
       }
       const root = $getRoot();
@@ -481,8 +525,9 @@ function SyncInitialTextPlugin({ text }: { text: string }) {
       const paragraph = $createParagraphNode();
       paragraph.append($createTextNode(text));
       root.append(paragraph);
+      lastSyncedTextRef.current = text;
     });
-  }, [editor, text]);
+  }, [composingRef, editor, lastSyncedTextRef, text]);
   return null;
 }
 

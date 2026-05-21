@@ -228,6 +228,42 @@ describe("Outliner", () => {
     expect(screen.getByRole("textbox", { name: "Outline node text" })).toBe(textbox);
   });
 
+  it("does not overwrite visible Korean IME text on unrelated rerenders", async () => {
+    const document = makeDocumentWithTexts([""]);
+    const [nodeId] = document.nodes[document.rootId].children;
+    let rerenderParent: () => void = () => {};
+    function Harness() {
+      const [tick, setTick] = useState(0);
+      rerenderParent = () => setTick((value) => value + 1);
+      return (
+        <div data-testid="rerender-count">{tick}
+          <Outliner
+            document={document}
+            view={{ ...createInitialView(document), selectedNodeId: nodeId }}
+            createId={() => "new"}
+            now={() => 1}
+            onDocumentChange={vi.fn()}
+            onViewChange={vi.fn()}
+          />
+        </div>
+      );
+    }
+    render(<Harness />);
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+
+    fireEvent.compositionStart(textbox);
+    Object.defineProperty(textbox, "textContent", {
+      configurable: true,
+      get: () => "하"
+    });
+    act(() => {
+      rerenderParent();
+    });
+
+    expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("하");
+    delete (textbox as { textContent?: string }).textContent;
+  });
+
   it("commits the final Korean IME text from compositionend data", async () => {
     const document = makeDocumentWithTexts(["#"]);
     function Harness() {
@@ -258,6 +294,39 @@ describe("Outliner", () => {
 
     await waitFor(() => {
       expect(screen.getByText("한").closest(".outline-row")).toHaveAttribute("data-node-text", "한");
+    });
+  });
+
+  it("stores completed Korean syllables instead of duplicated intermediate jamo", async () => {
+    const document = makeDocumentWithTexts([""]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+
+    fireEvent.compositionStart(textbox);
+    fireEvent.compositionUpdate(textbox, { data: "낳" });
+    Object.defineProperty(textbox, "textContent", {
+      configurable: true,
+      get: () => "ㅇ낳"
+    });
+    fireEvent.compositionEnd(textbox, { data: "않" });
+    delete (textbox as { textContent?: string }).textContent;
+
+    await waitFor(() => {
+      expect(screen.getByText("않").closest(".outline-row")).toHaveAttribute("data-node-text", "않");
     });
   });
 

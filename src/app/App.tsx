@@ -3,12 +3,12 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type ChangeEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type SetStateAction
 } from "react";
 import { Outliner } from "../components/Outliner";
-import { SyncStatusBadge } from "../components/SyncStatusBadge";
 import {
   applyImportedOutline,
   exportToJson,
@@ -30,11 +30,18 @@ import {
   COMMAND_REGISTRY,
   DEFAULT_KEYMAP,
   DEFAULT_PREFERENCES,
+  EDITOR_FONT_SIZE_MAX,
+  EDITOR_FONT_SIZE_MIN,
+  INDENT_SIZE_MAX,
+  INDENT_SIZE_MIN,
   TYPEWRITER_SCROLL_OFFSET_MAX,
   TYPEWRITER_SCROLL_OFFSET_MIN,
   matchesKeyBinding,
+  normalizeEditorFontSize,
+  normalizeIndentSize,
   normalizePreferences,
   normalizeTypewriterScrollOffset,
+  rowHeightForDensity,
   type CommandId,
   type PreferenceSettings
 } from "./preferences";
@@ -51,7 +58,7 @@ type AppProps = {
 export function App({ persistence: providedPersistence, remoteStore }: AppProps = {}) {
   const browserPersistence = useMemo(() => createBrowserLocalPersistence("workspace_root"), []);
   const persistence = providedPersistence ?? browserPersistence;
-  const { snapshot, loaded, commitSnapshot, snapshotHistory, restoreSnapshot, undo, redo, syncStatus } = useOutlineWorkspace({
+  const { snapshot, loaded, commitSnapshot, snapshotHistory, restoreSnapshot, undo, redo } = useOutlineWorkspace({
     persistence,
     remoteStore,
     createId,
@@ -81,6 +88,22 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
   const scopedCustomCss = useMemo(
     () => (preferences.customCssEnabled ? scopeCustomCss(preferences.customCss) : { css: "" }),
     [preferences.customCss, preferences.customCssEnabled]
+  );
+  const appearanceStyle = useMemo(
+    () =>
+      ({
+        "--content-width": contentWidthToCssValue(preferences.contentWidth),
+        "--outline-indent-size": `${preferences.indentSizePx}px`,
+        "--outline-font-size": `${preferences.editorFontSizePx}px`,
+        "--outline-row-min-height": `${rowHeightForDensity(preferences.outlineDensity)}px`,
+        "--outline-row-padding-y": `${rowPaddingForDensity(preferences.outlineDensity)}px`
+      }) as CSSProperties,
+    [
+      preferences.contentWidth,
+      preferences.editorFontSizePx,
+      preferences.indentSizePx,
+      preferences.outlineDensity
+    ]
   );
   const commandPaletteItems = useMemo(
     () =>
@@ -402,7 +425,12 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
   };
 
   return (
-    <main className="app-shell">
+    <main
+      className="app-shell"
+      data-density={preferences.outlineDensity}
+      data-bullet-style={preferences.bulletStyle}
+      style={appearanceStyle}
+    >
       <style data-testid="custom-css-style">{scopedCustomCss.css}</style>
       <div className="floating-app-controls" aria-label="Workspace controls">
         <button
@@ -415,7 +443,6 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
           <span aria-hidden="true" className="app-menu-line" />
           <span aria-hidden="true" className="app-menu-line" />
         </button>
-        {preferences.showSyncStatus ? <SyncStatusBadge status={syncStatus} /> : null}
       </div>
       {importError ? <p className="import-error" role="alert">Import failed: {importError}</p> : null}
       {workspaceMenuOpen ? (
@@ -487,6 +514,8 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
             keymap={preferences.keymap}
             typewriterScrollEnabled={preferences.typewriterScrollEnabled}
             typewriterScrollOffsetPx={preferences.typewriterScrollOffsetPx}
+            indentSizePx={preferences.indentSizePx}
+            rowHeightPx={rowHeightForDensity(preferences.outlineDensity)}
             onDocumentChange={setDocument}
             onViewChange={setView}
           />
@@ -597,17 +626,6 @@ function SettingsPanel({
         {section === "general" ? (
           <>
             <label>
-              Theme
-              <select
-                aria-label="Theme"
-                value={preferences.theme}
-                onChange={(event) => onPreferenceChange("theme", event.target.value as PreferenceSettings["theme"])}
-              >
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </label>
-            <label>
               <input
                 aria-label="Word count"
                 type="checkbox"
@@ -615,15 +633,6 @@ function SettingsPanel({
                 onChange={(event) => onPreferenceChange("showWordCount", event.target.checked)}
               />
               Word count
-            </label>
-            <label>
-              <input
-                aria-label="Sync status"
-                type="checkbox"
-                checked={preferences.showSyncStatus}
-                onChange={(event) => onPreferenceChange("showSyncStatus", event.target.checked)}
-              />
-              Sync status
             </label>
             <label>
               <input
@@ -682,18 +691,98 @@ function SettingsPanel({
           </>
         ) : null}
         {section === "appearance" ? (
-          <label>
-            Font
-            <select
-              aria-label="Font"
-              value={preferences.font}
-              onChange={(event) => onPreferenceChange("font", event.target.value as PreferenceSettings["font"])}
-            >
-              <option value="system">System</option>
-              <option value="serif">Serif</option>
-              <option value="mono">Mono</option>
-            </select>
-          </label>
+          <>
+            <label>
+              Theme
+              <select
+                aria-label="Theme"
+                value={preferences.theme}
+                onChange={(event) => onPreferenceChange("theme", event.target.value as PreferenceSettings["theme"])}
+              >
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+            <label>
+              Font
+              <select
+                aria-label="Font"
+                value={preferences.font}
+                onChange={(event) => onPreferenceChange("font", event.target.value as PreferenceSettings["font"])}
+              >
+                <option value="system">System</option>
+                <option value="serif">Serif</option>
+                <option value="mono">Mono</option>
+              </select>
+            </label>
+            <label>
+              Density
+              <select
+                aria-label="Outline density"
+                value={preferences.outlineDensity}
+                onChange={(event) =>
+                  onPreferenceChange("outlineDensity", event.target.value as PreferenceSettings["outlineDensity"])
+                }
+              >
+                <option value="compact">Compact</option>
+                <option value="comfortable">Comfortable</option>
+                <option value="spacious">Spacious</option>
+              </select>
+            </label>
+            <label>
+              Width
+              <select
+                aria-label="Content width"
+                value={preferences.contentWidth}
+                onChange={(event) =>
+                  onPreferenceChange("contentWidth", event.target.value as PreferenceSettings["contentWidth"])
+                }
+              >
+                <option value="narrow">Narrow</option>
+                <option value="standard">Standard</option>
+                <option value="wide">Wide</option>
+                <option value="full">Full</option>
+              </select>
+            </label>
+            <label>
+              Bullet
+              <select
+                aria-label="Bullet style"
+                value={preferences.bulletStyle}
+                onChange={(event) =>
+                  onPreferenceChange("bulletStyle", event.target.value as PreferenceSettings["bulletStyle"])
+                }
+              >
+                <option value="circle">Circle</option>
+                <option value="diamond">Diamond</option>
+                <option value="dash">Dash</option>
+              </select>
+            </label>
+            <label>
+              Indent
+              <input
+                aria-label="Indent size"
+                type="number"
+                min={INDENT_SIZE_MIN}
+                max={INDENT_SIZE_MAX}
+                step={2}
+                value={preferences.indentSizePx}
+                onChange={(event) => onPreferenceChange("indentSizePx", normalizeIndentSize(event.target.value))}
+              />
+            </label>
+            <label>
+              Text size
+              <input
+                aria-label="Editor text size"
+                type="number"
+                min={EDITOR_FONT_SIZE_MIN}
+                max={EDITOR_FONT_SIZE_MAX}
+                step={1}
+                value={preferences.editorFontSizePx}
+                onChange={(event) => onPreferenceChange("editorFontSizePx", normalizeEditorFontSize(event.target.value))}
+              />
+            </label>
+          </>
         ) : null}
         {section === "shortcuts" ? (
           <>
@@ -1033,6 +1122,14 @@ function commandPreview(commandId: CommandId): string | undefined {
       : commandId === "resetTextColor"
         ? "Return the selected node color to the theme default."
         : undefined;
+}
+
+function contentWidthToCssValue(width: PreferenceSettings["contentWidth"]): string {
+  return width === "narrow" ? "820px" : width === "wide" ? "1360px" : width === "full" ? "100vw" : "1100px";
+}
+
+function rowPaddingForDensity(density: PreferenceSettings["outlineDensity"]): number {
+  return density === "compact" ? 1 : density === "spacious" ? 6 : 3;
 }
 
 function getNodePath(document: OutlineDocument, targetNodeId: NodeId): NodeId[] {
