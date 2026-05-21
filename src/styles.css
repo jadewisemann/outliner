@@ -619,6 +619,27 @@ button {
   padding: 0 2px;
 }
 
+.rich-latex-inline,
+.rich-latex-block {
+  font-family: "Times New Roman", Times, serif;
+  color: #165a72;
+}
+
+.rich-latex-inline {
+  padding: 1px 4px;
+  border-radius: 4px;
+  background: #eaf7f9;
+}
+
+.rich-latex-block {
+  display: block;
+  margin: 6px 0;
+  padding: 8px 10px;
+  border-left: 3px solid #38a3b8;
+  background: #f1fbfc;
+  white-space: pre-wrap;
+}
+
 .plain-row-text a {
   color: #205c9c;
 }

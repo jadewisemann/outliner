@@ -25,4 +25,13 @@ describe("rich text renderer", () => {
     expect(container.querySelector("pre")).toHaveAttribute("data-language", "ts");
     expect(container.querySelectorAll("code")).toHaveLength(2);
   });
+
+  it("renders inline and block LaTeX with accessible source fallback", () => {
+    const { container } = render(<div>{renderMarkdownLikeText("Inline $x^2$.\n$$\ny = mx + b\n$$")}</div>);
+
+    expect(container.querySelector(".rich-latex-inline")).toHaveTextContent("x^2");
+    expect(container.querySelector(".rich-latex-inline")).toHaveAttribute("aria-label", "LaTeX x^2");
+    expect(container.querySelector(".rich-latex-block")).toHaveTextContent("y = mx + b");
+    expect(container.querySelector(".rich-latex-block")).toHaveAttribute("aria-label", "LaTeX y = mx + b");
+  });
 });
