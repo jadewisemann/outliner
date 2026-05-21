@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import userEvent from "@testing-library/user-event";
 import { useState } from "react";
 import { describe, expect, it, vi } from "vitest";
-import { createInitialView, updateNodeText } from "../domain/outline";
+import { createInitialView, updateNodeLinks, updateNodeText } from "../domain/outline";
 import type { OutlineDocument, ViewState } from "../domain/outlineTypes";
 import { makeDocumentWithTexts, makeLargeDocument } from "../test/factories";
 import { Outliner } from "./Outliner";
@@ -1279,6 +1279,59 @@ describe("Outliner", () => {
     await userEvent.click(screen.getByRole("button", { name: "Target" }));
     expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("Source [[Target]]");
     expect(screen.getByTestId("source-links")).toHaveTextContent('"targetNodeId":"n-2"');
+  });
+
+  it("inserts the first internal link candidate with Enter", async () => {
+    const document = makeDocumentWithTexts(["Source [[Tar", "Target"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: "n-1" });
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+    textbox.focus();
+    fireEvent.keyDown(textbox, { key: "Enter" });
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("Source [[Target]]");
+    });
+  });
+
+  it("opens stored internal links from inactive rows", async () => {
+    const baseDocument = makeDocumentWithTexts(["See [[Target]]", "Target"]);
+    const document = updateNodeLinks(
+      baseDocument,
+      "n-1",
+      [{ source: "[[Target]]", targetNodeId: "n-2", label: "Target" }],
+      () => 1
+    );
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: "n-1" });
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    await userEvent.click(screen.getByText("Target"));
+    await userEvent.click(screen.getByRole("button", { name: "Target" }));
+    expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("Target");
   });
 
   it("renders markdown-like source richly only for inactive rows", () => {

@@ -154,11 +154,13 @@ export function findLinkCandidates(
   document: OutlineDocument,
   zoomNodeId: NodeId,
   query: string,
-  limit = 8
+  limit = 8,
+  options: { excludeNodeId?: NodeId } = {}
 ): LinkCandidate[] {
   const normalizedQuery = query.trim().toLocaleLowerCase();
   return collectSubtree(document, zoomNodeId)
     .map(({ nodeId }) => document.nodes[nodeId])
+    .filter((node) => node.id !== options.excludeNodeId)
     .filter((node) => node.text.trim().length > 0)
     .filter((node) => !normalizedQuery || node.text.toLocaleLowerCase().includes(normalizedQuery))
     .slice(0, limit)

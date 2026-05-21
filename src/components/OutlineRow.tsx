@@ -24,7 +24,7 @@ import {
   type EditorState
 } from "lexical";
 import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties, type MutableRefObject, type ReactNode } from "react";
-import type { OutlineNode } from "../domain/outlineTypes";
+import type { NodeId, OutlineNode } from "../domain/outlineTypes";
 import type { CursorTextEdit } from "../domain/multiCursor";
 import { extractTags, getNodeTagSources } from "../domain/searchSelectors";
 import { renderInlineMarkdown, renderMarkdownLikeText } from "../domain/richText";
@@ -48,6 +48,7 @@ type OutlineRowProps = {
   keymap: PreferenceSettings["keymap"];
   onSelect: () => void;
   onSelectTag: (tag: string) => void;
+  onOpenInternalLink: (targetNodeId: NodeId) => void;
   onTextChange: (text: string) => void;
   onNoteChange: (note: string) => void;
   onCreateAfter: (offset?: number) => void;
@@ -158,7 +159,12 @@ function OutlineRowComponent(props: OutlineRowProps) {
             {!noteEditing && props.showNotes && node.note ? <NotePreview note={node.note} /> : null}
           </>
         ) : (
-          <PlainRowText node={node} showNotes={props.showNotes} onSelectTag={props.onSelectTag} />
+          <PlainRowText
+            node={node}
+            showNotes={props.showNotes}
+            onSelectTag={props.onSelectTag}
+            onOpenInternalLink={props.onOpenInternalLink}
+          />
         )}
       </div>
     </div>
@@ -187,11 +193,13 @@ export const OutlineRow = memo(OutlineRowComponent, (previous, next) => {
 function PlainRowText({
   node,
   showNotes,
-  onSelectTag
+  onSelectTag,
+  onOpenInternalLink
 }: {
   node: OutlineNode;
   showNotes: boolean;
   onSelectTag: (tag: string) => void;
+  onOpenInternalLink: (targetNodeId: NodeId) => void;
 }) {
   const { text } = node;
   const tags = extractTags(text);
@@ -202,7 +210,7 @@ function PlainRowText({
     return (
       <RichRowText
         node={node}
-        content={renderMarkdownLikeText(text)}
+        content={renderNodeText(node, 0, text.length, onOpenInternalLink)}
         tags={metadataTags}
         showNotes={showNotes}
         onSelectTag={onSelectTag}
@@ -213,7 +221,9 @@ function PlainRowText({
   let cursor = 0;
   for (const tag of tags) {
     if (tag.start > cursor) {
-      parts.push(<span key={`text-${cursor}`}>{renderInlineMarkdown(text.slice(cursor, tag.start))}</span>);
+      parts.push(
+        <span key={`text-${cursor}`}>{renderNodeText(node, cursor, tag.start, onOpenInternalLink)}</span>
+      );
     }
     parts.push(
       <button
@@ -231,7 +241,9 @@ function PlainRowText({
     cursor = tag.end;
   }
   if (cursor < text.length) {
-    parts.push(<span key={`text-${cursor}`}>{renderInlineMarkdown(text.slice(cursor))}</span>);
+    parts.push(
+      <span key={`text-${cursor}`}>{renderNodeText(node, cursor, text.length, onOpenInternalLink)}</span>
+    );
   }
   return (
     <RichRowText
@@ -242,6 +254,51 @@ function PlainRowText({
       onSelectTag={onSelectTag}
     />
   );
+}
+
+function renderNodeText(
+  node: OutlineNode,
+  start: number,
+  end: number,
+  onOpenInternalLink: (targetNodeId: NodeId) => void
+): ReactNode {
+  const source = node.text.slice(start, end);
+  const tokens = [...source.matchAll(/\[\[[^\]]+\]\]/g)]
+    .map((match) => {
+      const tokenStart = start + (match.index ?? 0);
+      const token = match[0];
+      const link = (node.links ?? []).find((item) => item.source === token);
+      return link ? { ...link, start: tokenStart, end: tokenStart + token.length } : undefined;
+    })
+    .filter((link): link is NonNullable<typeof link> => Boolean(link));
+  if (tokens.length === 0) {
+    return renderMarkdownLikeText(node.text.slice(start, end));
+  }
+  const parts: ReactNode[] = [];
+  let cursor = start;
+  for (const link of tokens) {
+    if (link.start > cursor) {
+      parts.push(<span key={`internal-text-${cursor}`}>{renderMarkdownLikeText(node.text.slice(cursor, link.start))}</span>);
+    }
+    parts.push(
+      <button
+        key={`internal-link-${link.start}-${link.targetNodeId}`}
+        className="internal-link"
+        type="button"
+        onClick={(event) => {
+          event.stopPropagation();
+          onOpenInternalLink(link.targetNodeId);
+        }}
+      >
+        {link.label}
+      </button>
+    );
+    cursor = link.end;
+  }
+  if (cursor < end) {
+    parts.push(<span key={`internal-text-${cursor}`}>{renderMarkdownLikeText(node.text.slice(cursor, end))}</span>);
+  }
+  return parts;
 }
 
 function RichRowText({

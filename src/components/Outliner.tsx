@@ -184,8 +184,11 @@ export function Outliner({
   const activeNodeText = view.selectedNodeId ? document.nodes[view.selectedNodeId]?.text ?? "" : "";
   const linkQuery = parseOpenLinkQuery(activeNodeText);
   const linkCandidates = useMemo(
-    () => (linkQuery ? findLinkCandidates(document, view.zoomNodeId, linkQuery.query) : []),
-    [document, linkQuery, view.zoomNodeId]
+    () =>
+      linkQuery
+        ? findLinkCandidates(document, view.zoomNodeId, linkQuery.query, 8, { excludeNodeId: view.selectedNodeId })
+        : [],
+    [document, linkQuery, view.selectedNodeId, view.zoomNodeId]
   );
 
   const selectNode = useStableCallback((nodeId: NodeId) => {
@@ -393,6 +396,20 @@ export function Outliner({
     });
   });
 
+  const openInternalLink = useStableCallback((targetNodeId: NodeId) => {
+    if (!document.nodes[targetNodeId]) {
+      return;
+    }
+    onDocumentChange((current) => revealNode(current, targetNodeId, now));
+    onViewChange({
+      ...view,
+      selectedNodeId: targetNodeId,
+      selectionAnchorNodeId: undefined,
+      selectionFocusNodeId: undefined,
+      cursors: undefined
+    });
+  });
+
   const indent = useStableCallback((nodeId: NodeId) => {
     if (hasBulkSelection) {
       commitDocument(bulkIndentNodes(document, selectedNodeIds, now), nodeId, { preserveSelection: true });
@@ -569,6 +586,12 @@ export function Outliner({
         focusSelectedText();
         return;
       }
+      if (linkQuery && linkCandidates[0] && (event.key === "Enter" || event.key === "Tab")) {
+        event.preventDefault();
+        event.stopPropagation();
+        insertInternalLink(linkCandidates[0].nodeId, linkCandidates[0].label);
+        return;
+      }
       if (matchesKeyBinding(event, keymap.focusNodeNote) && view.selectedNodeId) {
         event.preventDefault();
         event.stopPropagation();
@@ -688,13 +711,32 @@ export function Outliner({
           ))}
         </div>
       ) : null}
-      {linkQuery && linkCandidates.length > 0 ? (
+      {linkQuery ? (
         <div className="link-candidates" aria-label="Internal link candidates">
-          {linkCandidates.map((candidate) => (
-            <button key={candidate.nodeId} type="button" onClick={() => insertInternalLink(candidate.nodeId, candidate.label)}>
-              {candidate.label}
-            </button>
-          ))}
+          <div className="link-candidates-header">
+            <span>Link to</span>
+            <strong>{linkQuery.query || "Search notes"}</strong>
+          </div>
+          {linkCandidates.length > 0 ? (
+            <div className="link-candidates-list">
+              {linkCandidates.map((candidate, index) => (
+                <button
+                  key={candidate.nodeId}
+                  className={index === 0 ? "link-candidate-active" : ""}
+                  type="button"
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => insertInternalLink(candidate.nodeId, candidate.label)}
+                >
+                  <span className="link-candidate-title">{candidate.label}</span>
+                  <span className="link-candidate-path" aria-hidden="true">
+                    {formatCandidatePath(document, candidate.breadcrumbIds, candidate.nodeId)}
+                  </span>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="link-candidates-empty">No matching node</div>
+          )}
         </div>
       ) : null}
       <Breadcrumb document={document} zoomNodeId={view.zoomNodeId} onNavigate={navigate} />
@@ -751,6 +793,7 @@ export function Outliner({
                 focusRequestKey={focusRequest?.nodeId === item.id ? focusRequest.key : undefined}
                 onSelect={() => selectNode(item.id)}
                 onSelectTag={selectTagFilter}
+                onOpenInternalLink={openInternalLink}
                 onTextChange={(text) => updateText(item.id, text)}
                 onNoteChange={(note) => updateNote(item.id, note)}
                 keymap={keymap}
@@ -927,6 +970,14 @@ function sameTags(left: string[] | undefined, right: string[] | undefined): bool
 function mergeTags(left: string[] | undefined, right: string[] | undefined): string[] | undefined {
   const tags = [...(left ?? []), ...(right ?? [])];
   return tags.length > 0 ? [...new Set(tags)] : undefined;
+}
+
+function formatCandidatePath(document: OutlineDocument, breadcrumbIds: NodeId[], nodeId: NodeId): string {
+  const path = breadcrumbIds
+    .filter((id) => id !== document.rootId && id !== nodeId)
+    .map((id) => document.nodes[id]?.text)
+    .filter((text): text is string => Boolean(text));
+  return path.length > 0 ? path.join(" / ") : "Current outline";
 }
 
 function parseOpenLinkQuery(text: string): { start: number; end: number; query: string } | undefined {
