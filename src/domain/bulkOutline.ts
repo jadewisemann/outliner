@@ -5,6 +5,7 @@ import type { Clock, IdGenerator, NodeId, OutlineDocument, OutlineNode } from ".
 export type PastedOutlineDraft = {
   text: string;
   depth: number;
+  note?: string;
 };
 
 type DraftStackItem = { id: NodeId; depth: number };

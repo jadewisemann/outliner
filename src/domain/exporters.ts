@@ -50,9 +50,9 @@ export function exportToMarkdown(document: OutlineDocument, options: ExportOptio
 
 export function exportToPlainText(document: OutlineDocument, options: ExportOptions = {}): string {
   if (options.visibleOnly) {
-    return getVisibleNodes(document, options.zoomNodeId ?? document.rootId)
-      .map((item) => `${"  ".repeat(item.depth)}${item.node.text}`)
-      .join("\n");
+    return getVisibleNodes(document, options.zoomNodeId ?? document.rootId).flatMap((item) =>
+      formatNodePlainTextLines(item.node, item.depth)
+    ).join("\n");
   }
   const lines: string[] = [];
   const visit = (nodeId: NodeId, depth: number) => {
@@ -60,7 +60,7 @@ export function exportToPlainText(document: OutlineDocument, options: ExportOpti
     if (!node) {
       return;
     }
-    lines.push(`${"  ".repeat(depth)}${node.text}`);
+    lines.push(...formatNodePlainTextLines(node, depth));
     for (const childId of node.children) {
       visit(childId, depth + 1);
     }
@@ -99,7 +99,7 @@ export function exportToOpml(document: OutlineDocument, options: ExportOptions =
 }
 
 export function importFromPlainText(value: string, createId: IdGenerator, now: Clock = Date.now): OutlineSnapshot {
-  return createSnapshotFromDrafts(parseIndentedText(value), createId, now);
+  return createSnapshotFromDrafts(parsePlainTextOutline(value), createId, now);
 }
 
 export function importFromOpml(value: string, createId: IdGenerator, now: Clock = Date.now): OutlineSnapshot {
@@ -187,6 +187,64 @@ function formatNoteLines(note: string, indent: string): string[] {
   return note.split("\n").map((line) => `${indent}  > ${line}`);
 }
 
+function formatNodePlainTextLines(node: OutlineNode, depth: number): string[] {
+  const indent = "  ".repeat(depth);
+  const textLines = node.text.split("\n");
+  const [firstLine = "", ...continuationLines] = textLines;
+  return [
+    `${indent}${firstLine}`,
+    ...continuationLines.map((line) => `${indent}  | ${line}`),
+    ...(node.note ? formatNoteLines(node.note, indent) : [])
+  ];
+}
+
+function parsePlainTextOutline(value: string): PastedOutlineDraft[] {
+  const lines = value.split(/\r?\n/);
+  const rawDrafts: PastedOutlineDraft[] = [];
+  let baseDepth: number | undefined;
+  for (const line of lines) {
+    const match = line.match(/^(\s*)(.*)$/);
+    const indentation = match?.[1] ?? "";
+    const content = `${getIndentRemainder(indentation, getIndentDepth(indentation))}${match?.[2] ?? ""}`.trimEnd();
+    if (!content) {
+      continue;
+    }
+    const rawDepth = getIndentDepth(indentation);
+    if (content.startsWith("| ") || content.startsWith("> ")) {
+      if (baseDepth === undefined) {
+        continue;
+      }
+      const targetDepth = Math.max(0, rawDepth - baseDepth - 1);
+      const target = findLastDraftAtDepth(rawDrafts, targetDepth);
+      if (!target) {
+        continue;
+      }
+      const lineText = content.slice(2);
+      if (content.startsWith("| ")) {
+        target.text = `${target.text}\n${lineText}`;
+      } else {
+        target.note = target.note ? `${target.note}\n${lineText}` : lineText;
+      }
+      continue;
+    }
+    baseDepth ??= rawDepth;
+    rawDrafts.push({
+      text: content,
+      depth: Math.max(0, rawDepth - baseDepth)
+    });
+  }
+  return rawDrafts.length > 0 ? rawDrafts : parseIndentedText(value);
+}
+
+function findLastDraftAtDepth(drafts: PastedOutlineDraft[], depth: number): PastedOutlineDraft | undefined {
+  for (let index = drafts.length - 1; index >= 0; index -= 1) {
+    if (drafts[index].depth === depth) {
+      return drafts[index];
+    }
+  }
+  return undefined;
+}
+
 function getExportRootChildren(document: OutlineDocument, options: ExportOptions): NodeId[] {
   if (!options.visibleOnly) {
     return document.nodes[options.zoomNodeId ?? document.rootId]?.children ?? [];
@@ -266,6 +324,7 @@ function createSnapshotFromDrafts(drafts: PastedOutlineDraft[], createId: IdGene
       text: draft.text,
       children: [],
       collapsed: false,
+      ...optionalObject("note", draft.note),
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -308,6 +367,25 @@ function optionalObject<T>(key: string, value: T | undefined): Record<string, T>
 
 function parseHeading(value: string | null): 1 | 2 | 3 | undefined {
   return value === "1" || value === "2" || value === "3" ? (Number(value) as 1 | 2 | 3) : undefined;
+}
+
+function getIndentDepth(indentation: string): number {
+  let columns = 0;
+  for (const char of indentation) {
+    columns += char === "\t" ? 2 : 1;
+  }
+  return Math.floor(columns / 2);
+}
+
+function getIndentRemainder(indentation: string, depth: number): string {
+  const consumedColumns = depth * 2;
+  let columns = 0;
+  let index = 0;
+  while (index < indentation.length && columns < consumedColumns) {
+    columns += indentation[index] === "\t" ? 2 : 1;
+    index += 1;
+  }
+  return indentation.slice(index);
 }
 
 function escapeXml(value: string): string {

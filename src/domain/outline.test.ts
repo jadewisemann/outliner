@@ -356,6 +356,25 @@ describe("exporters", () => {
     expect(exportToPlainText(imported.document)).toBe("A\n  B\n    C\nD");
   });
 
+  it("round-trips plain text body continuations and notes", () => {
+    const doc = makeDocumentWithTexts(["A line 1\nA line 2", "B"]);
+    const [a, b] = doc.nodes[doc.rootId].children;
+    const withNote = updateNodeMetadata(doc, a, { note: "Note one\nNote two" }, () => 10);
+    const nested = indentNode(withNote, b, () => 11);
+
+    const exported = exportToPlainText(nested);
+    expect(exported).toBe("A line 1\n  | A line 2\n  > Note one\n  > Note two\n  B");
+
+    const imported = importFromPlainText(exported, makeIdGenerator("plain"), () => 20);
+    const [importedA] = imported.document.nodes[imported.document.rootId].children;
+    const [importedB] = imported.document.nodes[importedA].children;
+    expect(imported.document.nodes[importedA]).toMatchObject({
+      text: "A line 1\nA line 2",
+      note: "Note one\nNote two"
+    });
+    expect(imported.document.nodes[importedB].text).toBe("B");
+  });
+
   it("exports visible items only when requested", () => {
     const doc = makeDocumentWithTexts(["A", "B", "C"]);
     const [a, b] = doc.nodes[doc.rootId].children;

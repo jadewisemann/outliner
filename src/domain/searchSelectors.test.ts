@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { indentNode, revealNode, toggleCollapse, updateNodeLinks, updateNodeText } from "./outline";
+import { indentNode, revealNode, toggleCollapse, updateNodeLinks, updateNodeMetadata, updateNodeText } from "./outline";
 import {
   extractTags,
   findLinkCandidates,
@@ -26,6 +26,18 @@ describe("outline search", () => {
     const [parent, child] = doc.nodes[doc.rootId].children;
     const collapsed = toggleCollapse(indentNode(doc, child, () => 10), parent, () => 11);
     expect(searchOutline(collapsed, "target").map((result) => result.nodeId)).toEqual([child]);
+  });
+
+  it("includes note text matches in node search", () => {
+    const doc = makeDocumentWithTexts(["Project", "Decision"]);
+    const [_, decision] = doc.nodes[doc.rootId].children;
+    const withNote = updateNodeMetadata(doc, decision, { note: "Discuss launch risk" }, () => 10);
+    expect(searchOutline(withNote, "launch")[0]).toMatchObject({
+      nodeId: decision,
+      text: "Discuss launch risk",
+      source: "note",
+      matchText: "launch"
+    });
   });
 
   it("returns depth, breadcrumb, and match ranges", () => {

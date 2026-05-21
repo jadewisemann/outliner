@@ -4,6 +4,7 @@ import type { NodeId, OutlineDocument } from "./outlineTypes";
 export type SearchResult = {
   nodeId: NodeId;
   text: string;
+  source: "text" | "note";
   depth: number;
   breadcrumbIds: NodeId[];
   matchStart: number;
@@ -46,18 +47,28 @@ export function searchOutline(
   return collectSubtree(document, zoomNodeId)
     .map(({ nodeId, depth }) => {
       const node = document.nodes[nodeId];
-      const index = node.text.toLocaleLowerCase().indexOf(normalizedQuery);
-      if (index < 0) {
+      const textMatch = findTextMatch(node.text, normalizedQuery, query.trim().length);
+      if (textMatch) {
+        return {
+          nodeId,
+          text: node.text,
+          source: "text",
+          depth,
+          breadcrumbIds: getBreadcrumbPath(document, nodeId),
+          ...textMatch
+        } satisfies SearchResult;
+      }
+      const noteMatch = node.note ? findTextMatch(node.note, normalizedQuery, query.trim().length) : undefined;
+      if (!noteMatch) {
         return undefined;
       }
       return {
         nodeId,
-        text: node.text,
+        text: node.note ?? "",
+        source: "note",
         depth,
         breadcrumbIds: getBreadcrumbPath(document, nodeId),
-        matchStart: index,
-        matchEnd: index + query.trim().length,
-        matchText: node.text.slice(index, index + query.trim().length)
+        ...noteMatch
       } satisfies SearchResult;
     })
     .filter((result): result is SearchResult => Boolean(result));
@@ -88,7 +99,8 @@ export function findNodesByTag(document: OutlineDocument, zoomNodeId: NodeId, ta
     return [];
   }
   return collectSubtree(document, zoomNodeId)
-    .map(({ nodeId, depth }) => {
+    .map((item): SearchResult | undefined => {
+      const { nodeId, depth } = item;
       const node = document.nodes[nodeId];
       const token = extractTags(node.text).find((item) => item.value.toLocaleLowerCase() === normalizedTag);
       if (!token) {
@@ -97,6 +109,7 @@ export function findNodesByTag(document: OutlineDocument, zoomNodeId: NodeId, ta
       return {
         nodeId,
         text: node.text,
+        source: "text",
         depth,
         breadcrumbIds: getBreadcrumbPath(document, nodeId),
         matchStart: token.start,
@@ -105,6 +118,22 @@ export function findNodesByTag(document: OutlineDocument, zoomNodeId: NodeId, ta
       } satisfies SearchResult;
     })
     .filter((result): result is SearchResult => Boolean(result));
+}
+
+function findTextMatch(
+  source: string,
+  normalizedQuery: string,
+  queryLength: number
+): Pick<SearchResult, "matchStart" | "matchEnd" | "matchText"> | undefined {
+  const index = source.toLocaleLowerCase().indexOf(normalizedQuery);
+  if (index < 0) {
+    return undefined;
+  }
+  return {
+    matchStart: index,
+    matchEnd: index + queryLength,
+    matchText: source.slice(index, index + queryLength)
+  };
 }
 
 export function findLinkCandidates(

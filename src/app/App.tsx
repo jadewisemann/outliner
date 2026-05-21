@@ -742,9 +742,9 @@ function buildCommandPaletteItems({
     .slice(0, 12)
     .map((result) => ({
       id: `node:${result.nodeId}`,
-      title: result.text || "Untitled node",
-      kind: "Node",
-      preview: searchResultPreview(document, result.breadcrumbIds, result.text),
+      title: result.source === "note" ? document.nodes[result.nodeId]?.text || "Untitled node" : result.text || "Untitled node",
+      kind: result.source === "note" ? "Note match" : "Node",
+      preview: searchResultPreview(document, result.breadcrumbIds, result.text, result.source),
       run: () => jumpToNode(result.nodeId)
     }));
   return nodeResults;
@@ -766,12 +766,18 @@ function nodeToPaletteItem(
   };
 }
 
-function searchResultPreview(document: OutlineDocument, breadcrumbIds: NodeId[], text: string): string {
+function searchResultPreview(
+  document: OutlineDocument,
+  breadcrumbIds: NodeId[],
+  text: string,
+  source: "text" | "note" = "text"
+): string {
   const context = breadcrumbIds
     .map((nodeId) => document.nodes[nodeId]?.text.trim())
     .filter(Boolean)
     .join(" / ");
-  return context ? `${context} / Match: ${text}` : `Match: ${text}`;
+  const label = source === "note" ? `Note: ${text}` : `Match: ${text}`;
+  return context ? `${context} / ${label}` : label;
 }
 
 function nodePreview(document: OutlineDocument, nodeId: NodeId): string {

@@ -717,6 +717,7 @@ export function Outliner({
                 {
                   nodeId: backlink.sourceNodeId,
                   text: document.nodes[backlink.sourceNodeId]?.text ?? "",
+                  source: "text",
                   depth: 0,
                   breadcrumbIds: [],
                   matchStart: 0,
