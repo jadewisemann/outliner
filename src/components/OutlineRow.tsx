@@ -387,7 +387,9 @@ function SharedTextEditor({
             const nextText = $getRoot().getTextContent();
             if (skipInitialChangeRef.current) {
               skipInitialChangeRef.current = false;
-              return;
+              if (nextText === text) {
+                return;
+              }
             }
             if (composingRef.current) {
               return;

@@ -276,6 +276,34 @@ describe("Outliner", () => {
     });
   });
 
+  it("persists the first alt enter line break without a second keypress", async () => {
+    const document = makeDocumentWithTexts(["Line"]);
+    const onDocumentChange = vi.fn();
+    render(
+      <Outliner
+        document={document}
+        view={createInitialView(document)}
+        createId={() => "new"}
+        now={() => 1}
+        onDocumentChange={onDocumentChange}
+        onViewChange={vi.fn()}
+      />
+    );
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "Enter",
+      code: "Enter",
+      altKey: true
+    });
+
+    await waitFor(() => {
+      expect(
+        onDocumentChange.mock.calls
+          .map(([change]) => (typeof change === "function" ? change(document) : change))
+          .some((next) => next.nodes["n-1"].text === "Line\n")
+      ).toBe(true);
+    });
+  });
+
   it("commits Korean IME text in a markdown heading source without losing the marker", async () => {
     const document = makeDocumentWithTexts([""]);
     document.nodes["n-1"] = { ...document.nodes["n-1"], heading: 1 };
