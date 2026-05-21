@@ -660,7 +660,7 @@ textarea {
   --indent-size: 24px;
   position: relative;
   display: grid;
-  grid-template-columns: 22px 22px minmax(0, 1fr);
+  grid-template-columns: 22px 22px 24px minmax(0, 1fr);
   align-items: start;
   min-height: 32px;
   padding: 3px 10px 3px calc(10px + var(--depth) * var(--indent-size));
@@ -719,7 +719,8 @@ textarea {
 }
 
 .collapse-button,
-.bullet-button {
+.bullet-button,
+.complete-button {
   width: 22px;
   height: 26px;
   border: 0;
@@ -746,6 +747,29 @@ textarea {
 .outline-row-active .bullet-button::before {
   border-color: #2f7dd1;
   background: #2f7dd1;
+}
+
+.complete-button {
+  display: inline-grid;
+  place-content: center;
+  width: 20px;
+  height: 20px;
+  margin-top: 3px;
+  border: 1px solid #b8c3cf;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #205c9c;
+  font-size: 14px;
+}
+
+.complete-button[aria-pressed="true"] {
+  border-color: #2f7dd1;
+  background: #eef6ff;
+}
+
+.outline-row-completed .plain-row-content {
+  color: #7a8797;
+  text-decoration: line-through;
 }
 
 .row-editor {
@@ -867,6 +891,10 @@ textarea {
   color: #236b3a;
   padding: 0 2px;
   cursor: pointer;
+}
+
+.node-tag {
+  margin-left: 6px;
 }
 
 .lexical-editor {

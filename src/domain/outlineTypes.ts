@@ -11,11 +11,13 @@ export type OutlineNode = {
   heading?: 1 | 2 | 3;
   color?: string;
   numbered?: boolean;
+  tags?: string[];
+  completed?: boolean;
   createdAt: number;
   updatedAt: number;
 };
 
-export type OutlineNodeMetadata = Pick<OutlineNode, "note" | "noteVisible" | "heading" | "color">;
+export type OutlineNodeMetadata = Pick<OutlineNode, "note" | "noteVisible" | "heading" | "color" | "tags" | "completed">;
 
 export type OutlineLink = {
   source: string;

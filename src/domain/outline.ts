@@ -77,6 +77,35 @@ export function updateNodeText(
   });
 }
 
+export function parseNodeTextInput(text: string): Pick<OutlineNode, "text" | "tags" | "completed"> {
+  const completedMatch = /^\s*\[([ xX])\]\s*/.exec(text);
+  const completed = completedMatch ? completedMatch[1].toLocaleLowerCase() === "x" : undefined;
+  const withoutCompletion = completedMatch ? text.slice(completedMatch[0].length) : text;
+  const tags = extractTagRanges(withoutCompletion).map((tag) => tag.source);
+  const parsedText = tags.length > 0 ? removeTagsFromText(withoutCompletion).trim() : withoutCompletion;
+  return {
+    text: parsedText,
+    tags: tags.length > 0 ? [...new Set(tags)] : undefined,
+    completed
+  };
+}
+
+export function toggleNodeCompleted(
+  document: OutlineDocument,
+  nodeId: NodeId,
+  now: Clock = Date.now
+): OutlineDocument {
+  const node = document.nodes[nodeId];
+  if (!node || nodeId === document.rootId) {
+    return document;
+  }
+  return replaceNode(document, {
+    ...node,
+    completed: !node.completed,
+    updatedAt: now()
+  });
+}
+
 export function updateNodeLinks(
   document: OutlineDocument,
   nodeId: NodeId,
@@ -429,6 +458,38 @@ function makeNode(id: NodeId, text: string, timestamp: number): OutlineNode {
     createdAt: timestamp,
     updatedAt: timestamp
   };
+}
+
+function removeTagsFromText(text: string): string {
+  const tags = extractTagRanges(text);
+  if (tags.length === 0) {
+    return text;
+  }
+  let result = "";
+  let cursor = 0;
+  for (const tag of tags) {
+    result += text.slice(cursor, tag.start);
+    cursor = tag.end;
+  }
+  result += text.slice(cursor);
+  return result.replace(/[ \t]{2,}/g, " ").replace(/[ \t]+\n/g, "\n");
+}
+
+function extractTagRanges(text: string): Array<{ source: string; start: number; end: number }> {
+  const tags: Array<{ source: string; start: number; end: number }> = [];
+  const pattern = /(^|[\s([{])([#@])([A-Za-z0-9가-힣_-]+)/gu;
+  for (const match of text.matchAll(pattern)) {
+    const prefix = match[1] ?? "";
+    const marker = match[2];
+    const value = match[3];
+    const start = (match.index ?? 0) + prefix.length;
+    tags.push({
+      source: `${marker}${value}`,
+      start,
+      end: start + marker.length + value.length
+    });
+  }
+  return tags;
 }
 
 function moveFirstChildUp(

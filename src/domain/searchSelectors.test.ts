@@ -77,6 +77,12 @@ describe("tags and internal links", () => {
     expect(extractTags("Plan #phase9 with @jade").map((tag) => tag.source)).toEqual(["#phase9", "@jade"]);
   });
 
+  it("filters nodes by stored tags", () => {
+    const doc = makeDocumentWithTexts(["Root", "Tagged"]);
+    doc.nodes["n-2"] = { ...doc.nodes["n-2"], tags: ["#phase9"] };
+    expect(findNodesByTag(doc, doc.rootId, "#phase9").map((result) => result.nodeId)).toEqual(["n-2"]);
+  });
+
   it("filters nodes by tag under the current zoom root", () => {
     const doc = makeDocumentWithTexts(["Root #skip", "Parent", "Child #phase9"]);
     const [_, parent, child] = doc.nodes[doc.rootId].children;

@@ -1130,6 +1130,63 @@ describe("Outliner", () => {
     expect(screen.getAllByRole("button", { name: "#phase9" })[0]).not.toHaveClass("toolbar-button-active");
   });
 
+  it("stores typed hash tags as node metadata and removes them from node text", async () => {
+    const document = makeDocumentWithTexts(["Alpha"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <>
+          <Outliner
+            document={currentDocument}
+            view={view}
+            createId={() => "new"}
+            now={() => 1}
+            onDocumentChange={setCurrentDocument}
+            onViewChange={setView}
+          />
+          <div data-testid="node-state">{JSON.stringify(currentDocument.nodes["n-1"])}</div>
+        </>
+      );
+    }
+    render(<Harness />);
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+    Object.defineProperty(textbox, "textContent", {
+      configurable: true,
+      get: () => "Alpha #asd"
+    });
+    fireEvent.compositionEnd(textbox, { data: "" });
+    delete (textbox as { textContent?: string }).textContent;
+
+    await waitFor(() => {
+      expect(screen.getByTestId("node-state")).toHaveTextContent('"text":"Alpha"');
+      expect(screen.getByTestId("node-state")).toHaveTextContent('"tags":["#asd"]');
+      expect(screen.getByRole("button", { name: "#asd" })).toBeInTheDocument();
+    });
+  });
+
+  it("toggles completed state with the row checkbox", async () => {
+    const document = makeDocumentWithTexts(["Task"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    const { container } = render(<Harness />);
+    await userEvent.click(screen.getByRole("button", { name: "Mark node complete" }));
+    expect(container.querySelector('[data-node-id="n-1"]')).toHaveClass("outline-row-completed");
+    expect(screen.getByRole("button", { name: "Mark node incomplete" })).toHaveAttribute("aria-pressed", "true");
+  });
+
   it("stores metadata when choosing an internal link candidate", async () => {
     const document = makeDocumentWithTexts(["Source [[Tar", "Target"]);
     function Harness() {

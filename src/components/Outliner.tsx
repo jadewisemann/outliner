@@ -27,10 +27,12 @@ import {
   moveNodeDown,
   moveNodeUp,
   outdentNode,
+  parseNodeTextInput,
   removeEmptyNodeOrPromoteChildren,
   revealNode,
   splitNode,
   toggleCollapse,
+  toggleNodeCompleted,
   updateNodeLinks,
   updateNodeMetadata,
   updateNodeText,
@@ -50,9 +52,9 @@ import {
   getVisibleNodes
 } from "../domain/outlineSelectors";
 import {
-  extractTags,
   findLinkCandidates,
   findNodesByTag,
+  getNodeTagSources,
   getBacklinks,
   searchOutline,
   type SearchResult
@@ -233,21 +235,33 @@ export function Outliner({
       }
       const markdownHeading = parseMarkdownHeadingSource(text);
       if (!markdownHeading) {
-        if (node.text === text && !node.heading) {
+        const metadata = parseNodeTextInput(text);
+        const tags = mergeTags(node.tags, metadata.tags);
+        const completed = metadata.completed ?? node.completed;
+        if (node.text === metadata.text && !node.heading && sameTags(node.tags, tags) && node.completed === completed) {
           return current;
         }
-        const next = updateNodeText(current, nodeId, text, now);
+        const next = updateNodeText(current, nodeId, metadata.text, now);
         const updated = next.nodes[nodeId];
         return updated?.heading
           ? {
               ...next,
               nodes: {
                 ...next.nodes,
-                [nodeId]: { ...updated, heading: undefined }
+                [nodeId]: { ...updated, heading: undefined, tags, completed }
               }
             }
-          : next;
+          : {
+              ...next,
+              nodes: {
+                ...next.nodes,
+                [nodeId]: { ...updated, tags, completed }
+              }
+            };
       }
+      const metadata = parseNodeTextInput(markdownHeading.text);
+      const tags = mergeTags(node.tags, metadata.tags);
+      const completed = metadata.completed ?? node.completed;
       const timestamp = now();
       return {
         ...current,
@@ -255,8 +269,10 @@ export function Outliner({
           ...current.nodes,
           [nodeId]: {
             ...node,
-            text: markdownHeading.text,
+            text: metadata.text,
             heading: markdownHeading.heading,
+            tags,
+            completed,
             updatedAt: timestamp
           }
         }
@@ -486,6 +502,10 @@ export function Outliner({
       return;
     }
     commitDocument(toggleCollapse(document, nodeId, now), nodeId);
+  });
+
+  const toggleCompleted = useStableCallback((nodeId: NodeId) => {
+    commitDocument(toggleNodeCompleted(document, nodeId, now), nodeId);
   });
 
   const addCursor = useStableCallback((direction: "previous" | "next", nodeId: NodeId, offset: number) => {
@@ -743,6 +763,7 @@ export function Outliner({
                 onApplyTextToCursors={applyCursorEdit}
                 onClearPowerSelection={clearPowerSelection}
                 onToggleCollapse={() => toggle(item.id)}
+                onToggleCompleted={() => toggleCompleted(item.id)}
                 onCopySelection={copySelection}
                 onZoom={() => zoom(item.id)}
                 onFocusNote={focusSelectedNote}
@@ -879,14 +900,23 @@ function collectTags(document: OutlineDocument, zoomNodeId: NodeId): string[] {
     if (!node) {
       continue;
     }
-    for (const tag of extractTags(node.text)) {
-      tags.add(tag.source);
+    for (const tag of getNodeTagSources(node)) {
+      tags.add(tag);
     }
     for (let index = node.children.length - 1; index >= 0; index -= 1) {
       stack.push(node.children[index]);
     }
   }
   return [...tags].sort((left, right) => left.localeCompare(right));
+}
+
+function sameTags(left: string[] | undefined, right: string[] | undefined): boolean {
+  return JSON.stringify(left ?? []) === JSON.stringify(right ?? []);
+}
+
+function mergeTags(left: string[] | undefined, right: string[] | undefined): string[] | undefined {
+  const tags = [...(left ?? []), ...(right ?? [])];
+  return tags.length > 0 ? [...new Set(tags)] : undefined;
 }
 
 function parseOpenLinkQuery(text: string): { start: number; end: number; query: string } | undefined {

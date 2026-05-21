@@ -1,4 +1,4 @@
-import { findParentId } from "./outline";
+import { findParentId, parseNodeTextInput } from "./outline";
 import { getVisibleNodes } from "./outlineSelectors";
 import type { Clock, IdGenerator, NodeId, OutlineDocument, OutlineNode } from "./outlineTypes";
 
@@ -6,6 +6,8 @@ export type PastedOutlineDraft = {
   text: string;
   depth: number;
   note?: string;
+  tags?: string[];
+  completed?: boolean;
 };
 
 type DraftStackItem = { id: NodeId; depth: number };
@@ -17,8 +19,11 @@ export function parseIndentedText(text: string): PastedOutlineDraft[] {
       const match = line.match(/^(\s*)(.*)$/);
       const indentation = match?.[1] ?? "";
       const depth = getIndentDepth(indentation);
+      const metadata = parseNodeTextInput(`${getIndentRemainder(indentation, depth)}${match?.[2] ?? ""}`.trimEnd());
       return {
-        text: `${getIndentRemainder(indentation, depth)}${match?.[2] ?? ""}`.trimEnd(),
+        text: metadata.text,
+        tags: metadata.tags,
+        completed: metadata.completed,
         depth
       };
     })
@@ -55,6 +60,8 @@ export function insertNodesFromText(
     [targetNodeId]: {
       ...target,
       text: `${prefix}${drafts[0].text}`,
+      tags: mergeTags(target.tags, drafts[0].tags),
+      ...(drafts[0].completed === undefined ? {} : { completed: drafts[0].completed }),
       children: [...target.children],
       updatedAt: timestamp
     }
@@ -111,7 +118,7 @@ function appendDraftNode(
   suffix: string,
   timestamp: number
 ): void {
-  nodes[id] = makePastedNode(id, `${draft.text}${suffix}`, timestamp);
+  nodes[id] = makePastedNode(id, `${draft.text}${suffix}`, draft, timestamp);
   trimDraftStack(stack, draft.depth);
   const parent = stack[stack.length - 1];
   if (parent && draft.depth > 0) {
@@ -126,15 +133,22 @@ function appendDraftNode(
   stack.push({ id, depth: draft.depth });
 }
 
-function makePastedNode(id: NodeId, text: string, timestamp: number): OutlineNode {
+function makePastedNode(id: NodeId, text: string, draft: PastedOutlineDraft, timestamp: number): OutlineNode {
   return {
     id,
     text,
     children: [],
     collapsed: false,
+    ...(draft.tags ? { tags: draft.tags } : {}),
+    ...(draft.completed === undefined ? {} : { completed: draft.completed }),
     createdAt: timestamp,
     updatedAt: timestamp
   };
+}
+
+function mergeTags(left: string[] | undefined, right: string[] | undefined): string[] | undefined {
+  const tags = [...(left ?? []), ...(right ?? [])];
+  return tags.length > 0 ? [...new Set(tags)] : undefined;
 }
 
 function trimDraftStack(stack: DraftStackItem[], depth: number): void {

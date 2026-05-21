@@ -1,5 +1,5 @@
 import { getBreadcrumbPath } from "./outlineSelectors";
-import type { NodeId, OutlineDocument } from "./outlineTypes";
+import type { NodeId, OutlineDocument, OutlineNode } from "./outlineTypes";
 
 export type SearchResult = {
   nodeId: NodeId;
@@ -93,6 +93,18 @@ export function extractTags(text: string): TagToken[] {
   return tags;
 }
 
+export function getNodeTagSources(node: OutlineNode): string[] {
+  const tags = new Set<string>();
+  for (const tag of node.tags ?? []) {
+    const normalized = tag.startsWith("#") || tag.startsWith("@") ? tag : `#${tag}`;
+    tags.add(normalized);
+  }
+  for (const tag of extractTags(node.text)) {
+    tags.add(tag.source);
+  }
+  return [...tags];
+}
+
 export function findNodesByTag(document: OutlineDocument, zoomNodeId: NodeId, tag: string): SearchResult[] {
   const normalizedTag = tag.replace(/^[#@]/, "").toLocaleLowerCase();
   if (!normalizedTag) {
@@ -102,8 +114,10 @@ export function findNodesByTag(document: OutlineDocument, zoomNodeId: NodeId, ta
     .map((item): SearchResult | undefined => {
       const { nodeId, depth } = item;
       const node = document.nodes[nodeId];
-      const token = extractTags(node.text).find((item) => item.value.toLocaleLowerCase() === normalizedTag);
-      if (!token) {
+      const metadataTag = getNodeTagSources(node).find(
+        (item) => item.replace(/^[#@]/, "").toLocaleLowerCase() === normalizedTag
+      );
+      if (!metadataTag) {
         return undefined;
       }
       return {
@@ -112,9 +126,9 @@ export function findNodesByTag(document: OutlineDocument, zoomNodeId: NodeId, ta
         source: "text",
         depth,
         breadcrumbIds: getBreadcrumbPath(document, nodeId),
-        matchStart: token.start,
-        matchEnd: token.end,
-        matchText: token.source
+        matchStart: 0,
+        matchEnd: metadataTag.length,
+        matchText: metadataTag
       } satisfies SearchResult;
     })
     .filter((result): result is SearchResult => Boolean(result));

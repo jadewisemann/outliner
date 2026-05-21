@@ -26,7 +26,7 @@ import {
 import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties, type MutableRefObject, type ReactNode } from "react";
 import type { OutlineNode } from "../domain/outlineTypes";
 import type { CursorTextEdit } from "../domain/multiCursor";
-import { extractTags } from "../domain/searchSelectors";
+import { extractTags, getNodeTagSources } from "../domain/searchSelectors";
 import { renderInlineMarkdown, renderMarkdownLikeText } from "../domain/richText";
 import { matchesKeyBinding, type PreferenceSettings } from "../app/preferences";
 
@@ -64,6 +64,7 @@ type OutlineRowProps = {
   onApplyTextToCursors: (edit: CursorTextEdit) => void;
   onClearPowerSelection: () => void;
   onToggleCollapse: () => void;
+  onToggleCompleted: () => void;
   onCopySelection: () => string | undefined;
   onZoom: () => void;
   onFocusNote: () => void;
@@ -90,7 +91,9 @@ function OutlineRowComponent(props: OutlineRowProps) {
     <div
       className={`outline-row ${active ? "outline-row-active" : ""} ${selected ? "outline-row-selected" : ""} ${
         highlighted ? "outline-row-highlighted" : ""
-      } ${node.heading ? `outline-row-heading-${node.heading}` : ""} ${hasCursor ? "outline-row-cursor" : ""}`}
+      } ${node.heading ? `outline-row-heading-${node.heading}` : ""} ${hasCursor ? "outline-row-cursor" : ""} ${
+        node.completed ? "outline-row-completed" : ""
+      }`}
       data-node-id={node.id}
       data-node-text={node.text}
       style={{ "--depth": depth, "--node-color": node.color ?? "inherit" } as CSSProperties}
@@ -116,6 +119,18 @@ function OutlineRowComponent(props: OutlineRowProps) {
           onZoom();
         }}
       />
+      <button
+        className="complete-button"
+        type="button"
+        aria-label={node.completed ? "Mark node incomplete" : "Mark node complete"}
+        aria-pressed={node.completed ? "true" : "false"}
+        onClick={(event) => {
+          event.stopPropagation();
+          props.onToggleCompleted();
+        }}
+      >
+        {node.completed ? "✓" : ""}
+      </button>
       <div className="row-editor" onClick={onSelect}>
         {active ? (
           <>
@@ -180,8 +195,19 @@ function PlainRowText({
 }) {
   const { text } = node;
   const tags = extractTags(text);
+  const metadataTags = getNodeTagSources(node).filter(
+    (tag) => !tags.some((inlineTag) => inlineTag.source.toLocaleLowerCase() === tag.toLocaleLowerCase())
+  );
   if (tags.length === 0) {
-    return <RichRowText node={node} content={renderMarkdownLikeText(text)} showNotes={showNotes} />;
+    return (
+      <RichRowText
+        node={node}
+        content={renderMarkdownLikeText(text)}
+        tags={metadataTags}
+        showNotes={showNotes}
+        onSelectTag={onSelectTag}
+      />
+    );
   }
   const parts: JSX.Element[] = [];
   let cursor = 0;
@@ -207,13 +233,46 @@ function PlainRowText({
   if (cursor < text.length) {
     parts.push(<span key={`text-${cursor}`}>{renderInlineMarkdown(text.slice(cursor))}</span>);
   }
-  return <RichRowText node={node} content={parts.length > 0 ? parts : "\u00a0"} showNotes={showNotes} />;
+  return (
+    <RichRowText
+      node={node}
+      content={parts.length > 0 ? parts : "\u00a0"}
+      tags={metadataTags}
+      showNotes={showNotes}
+      onSelectTag={onSelectTag}
+    />
+  );
 }
 
-function RichRowText({ node, content, showNotes }: { node: OutlineNode; content: ReactNode; showNotes: boolean }) {
+function RichRowText({
+  node,
+  content,
+  tags,
+  showNotes,
+  onSelectTag
+}: {
+  node: OutlineNode;
+  content: ReactNode;
+  tags: string[];
+  showNotes: boolean;
+  onSelectTag: (tag: string) => void;
+}) {
   return (
     <span className="plain-row-text">
-      <span>{content}</span>
+      <span className="plain-row-content">{content}</span>
+      {tags.map((tag) => (
+        <button
+          key={tag}
+          className="inline-tag node-tag"
+          type="button"
+          onClick={(event) => {
+            event.stopPropagation();
+            onSelectTag(tag);
+          }}
+        >
+          {tag}
+        </button>
+      ))}
       {showNotes && node.note ? <NotePreview note={node.note} /> : null}
     </span>
   );

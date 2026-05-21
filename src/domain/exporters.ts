@@ -1,5 +1,5 @@
 import { parseIndentedText, type PastedOutlineDraft } from "./bulkOutline";
-import { createEmptyDocument, createInitialView } from "./outline";
+import { createEmptyDocument, createInitialView, parseNodeTextInput } from "./outline";
 import { getVisibleNodes } from "./outlineSelectors";
 import type { Clock, IdGenerator, NodeId, OutlineDocument, OutlineNode, OutlineSnapshot, ViewState } from "./outlineTypes";
 
@@ -177,9 +177,11 @@ export function applyImportedOutline(
 
 function formatNodeMarkdownLines(node: OutlineDocument["nodes"][string], depth: number): string[] {
   const indent = "  ".repeat(depth);
+  const completedPrefix = node.completed ? "[x] " : "";
   const headingPrefix = node.heading ? `${"#".repeat(node.heading)} ` : "";
+  const tagsSuffix = formatTagsSuffix(node.tags);
   const colorSuffix = node.color ? ` {color=${node.color}}` : "";
-  const lines = [`${indent}- ${headingPrefix}${node.text}${colorSuffix}`];
+  const lines = [`${indent}- ${completedPrefix}${headingPrefix}${node.text}${tagsSuffix}${colorSuffix}`];
   return node.note ? [...lines, ...formatNoteLines(node.note, indent)] : lines;
 }
 
@@ -189,10 +191,12 @@ function formatNoteLines(note: string, indent: string): string[] {
 
 function formatNodePlainTextLines(node: OutlineNode, depth: number): string[] {
   const indent = "  ".repeat(depth);
+  const completedPrefix = node.completed ? "[x] " : "";
+  const tagsSuffix = formatTagsSuffix(node.tags);
   const textLines = node.text.split("\n");
   const [firstLine = "", ...continuationLines] = textLines;
   return [
-    `${indent}${firstLine}`,
+    `${indent}${completedPrefix}${firstLine}${tagsSuffix}`,
     ...continuationLines.map((line) => `${indent}  | ${line}`),
     ...(node.note ? formatNoteLines(node.note, indent) : [])
   ];
@@ -228,8 +232,11 @@ function parsePlainTextOutline(value: string): PastedOutlineDraft[] {
       continue;
     }
     baseDepth ??= rawDepth;
+    const parsed = parseNodeTextInput(content);
     rawDrafts.push({
-      text: content,
+      text: parsed.text,
+      tags: parsed.tags,
+      completed: parsed.completed,
       depth: Math.max(0, rawDepth - baseDepth)
     });
   }
@@ -261,7 +268,9 @@ function formatOpmlAttributes(node: OutlineNode): string {
     ...booleanAttribute("_collapsed", node.collapsed),
     ...booleanAttribute("_noteVisible", !!node.noteVisible),
     ...optionalAttribute("_heading", node.heading ? String(node.heading) : undefined),
-    ...optionalAttribute("_color", node.color)
+    ...optionalAttribute("_color", node.color),
+    ...optionalAttribute("_tags", node.tags?.join(" ")),
+    ...booleanAttribute("_completed", !!node.completed)
   ];
   return attributes.map(([key, value]) => `${key}="${escapeXml(value)}"`).join(" ");
 }
@@ -275,18 +284,22 @@ function importOpmlElement(
   const id = createId();
   const childElements = Array.from(element.children).filter((child) => child.tagName.toLowerCase() === "outline");
   const children: NodeId[] = [];
+  const parsedText = parseNodeTextInput(element.getAttribute("text") ?? element.getAttribute("title") ?? "");
   const node: OutlineNode = {
     id,
-    text: element.getAttribute("text") ?? element.getAttribute("title") ?? "",
+    text: parsedText.text,
     children,
     collapsed: parseBooleanAttribute(element.getAttribute("_collapsed")),
+    ...optionalObject("tags", parsedText.tags),
+    ...optionalObject("completed", parsedText.completed),
     createdAt: timestamp,
     updatedAt: timestamp
   };
   const note = element.getAttribute("_note") ?? element.getAttribute("note");
   const heading = parseHeading(element.getAttribute("_heading"));
   const color = element.getAttribute("_color");
-  applyImportedNodeMetadata(node, element, { note, heading, color });
+  const tags = parseTagsAttribute(element.getAttribute("_tags"));
+  applyImportedNodeMetadata(node, element, { note, heading, color, tags });
   nodes[id] = node;
   for (const childElement of childElements) {
     children.push(importOpmlElement(childElement, nodes, createId, timestamp).id);
@@ -297,14 +310,16 @@ function importOpmlElement(
 function applyImportedNodeMetadata(
   node: OutlineNode,
   element: Element,
-  metadata: { note: string | null; heading?: 1 | 2 | 3; color: string | null }
+  metadata: { note: string | null; heading?: 1 | 2 | 3; color: string | null; tags?: string[] }
 ): void {
-  const { note, heading, color } = metadata;
+  const { note, heading, color, tags } = metadata;
   Object.assign(node, {
     ...optionalObject("note", note || undefined),
     ...optionalObject("noteVisible", parseBooleanAttribute(element.getAttribute("_noteVisible")) || undefined),
     ...optionalObject("heading", heading),
-    ...optionalObject("color", color || undefined)
+    ...optionalObject("color", color || undefined),
+    ...optionalObject("tags", tags ?? node.tags),
+    ...optionalObject("completed", parseBooleanAttribute(element.getAttribute("_completed")) || node.completed || undefined)
   });
 }
 
@@ -325,6 +340,8 @@ function createSnapshotFromDrafts(drafts: PastedOutlineDraft[], createId: IdGene
       children: [],
       collapsed: false,
       ...optionalObject("note", draft.note),
+      ...optionalObject("tags", draft.tags),
+      ...optionalObject("completed", draft.completed),
       createdAt: timestamp,
       updatedAt: timestamp
     };
@@ -363,6 +380,15 @@ function booleanAttribute(key: string, value: boolean): Array<[string, string]> 
 
 function optionalObject<T>(key: string, value: T | undefined): Record<string, T> {
   return value === undefined ? {} : { [key]: value };
+}
+
+function formatTagsSuffix(tags: string[] | undefined): string {
+  return tags && tags.length > 0 ? ` ${tags.join(" ")}` : "";
+}
+
+function parseTagsAttribute(value: string | null): string[] | undefined {
+  const tags = value?.split(/\s+/).filter(Boolean);
+  return tags && tags.length > 0 ? tags : undefined;
 }
 
 function parseHeading(value: string | null): 1 | 2 | 3 | undefined {
