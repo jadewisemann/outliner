@@ -25,7 +25,7 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
 - 사용자가 `==highlight==` 또는 `== highlight ==` 형태로 입력하면 inactive row에서 형광펜 mark로 렌더링되고, 편집 중에는 원문으로 되돌아갈 수 있다.
 - `Ctrl+P` 또는 플랫폼별 동등 단축키가 command palette/global search를 열고, 명령과 노드를 키보드만으로 실행/이동할 수 있다.
 - `Shift+Enter`가 현재 노드 바로 아래의 Dynalist-style note editor를 열고 note 입력으로 포커스를 이동하며, note 입력에서 다시 `Shift+Enter`를 누르면 note editor를 닫고 노드 본문 편집으로 돌아간다.
-- `Ctrl+Enter`가 현재 노드 본문 안에 새 줄을 삽입하며, 일반 `Enter`의 새 노드 생성 동작과 충돌하지 않는다.
+- `Alt+Enter`가 현재 노드 본문 안에 새 줄을 삽입하며, 일반 `Enter`의 새 노드 생성 동작과 충돌하지 않는다.
 - 노드 본문에서 `Enter`로 새 노드를 만들면 새 노드가 active row가 되고, 브라우저의 실제 caret과 selection anchor가 새 노드 editor 안에 있어야 한다.
 - 여러 선택/커서에서 indent, outdent, move, delete, text insert 같은 핵심 편집 명령이 일관되게 적용된다.
 - 멀티라인 paste는 하나의 outline structure transaction으로 처리되며, 중간 Lexical DOM 변화가 문서 Undo/Redo stack에 별도 텍스트 transaction으로 들어가지 않는다.
@@ -64,7 +64,7 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
   - [x] CSS 입력/저장 UI를 설정 창에 추가한다.
   - [x] 적용 범위를 editor root 또는 app theme layer로 제한한다.
   - [x] CSS 비활성화, 초기화, 오류 표시를 제공한다.
-- [ ] Rich text format 확장
+- [x] Rich text format 확장
   - [x] `# `, `## `, `### ` 입력을 heading 1/2/3으로 변환한다.
   - [x] heading 노드는 active editor에서도 WYSIWYG로 표시한다.
   - [x] `==text==` 형광펜 mark를 inactive row에서 렌더링하고 active row에서는 원문 편집을 유지한다.
@@ -72,15 +72,15 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
   - [x] text color
   - [x] inline code
   - [x] code block
-  - 기존 bold/italic/link 등과 함께 command registry에 통합한다.
-- [ ] Command palette와 전역 검색
+  - [x] 기존 bold/italic/link 등과 함께 command registry에 통합한다.
+- [x] Command palette와 전역 검색
   - [x] `Ctrl+P` 기본 단축키를 추가한다.
   - [x] `Ctrl+P`는 노드 검색을 기본으로 하고, `>` prefix가 있을 때 command mode로 전환한다.
   - [x] `Ctrl+Shift+P`는 command mode로 바로 연다.
   - [x] 상시 노출 검색창을 제거하고 palette 중심 검색/명령 실행으로 통합한다.
   - [x] 명령 실행, 노드 검색, 최근 노드 이동을 같은 palette에서 처리한다.
   - [x] 검색 결과는 키보드 이동, preview, 현재 노드로 점프를 지원한다.
-  - [ ] 최근 문서 이동은 다중 문서/workspace 모델이 생기는 Phase 16에서 연결한다.
+  - [x] 최근 문서 이동은 다중 문서/workspace 모델이 생기는 Phase 16에서 연결한다. - Phase 15에서는 deferred 항목으로 분리
 - [x] 노드 메모
   - [x] `Shift+Enter`로 현재 노드의 note를 생성/편집한다.
   - [x] note editor는 필요할 때만 열고, note 입력의 `Shift+Enter`로 닫은 뒤 노드 본문 편집으로 돌아간다.
@@ -89,23 +89,24 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
   - [x] 전역 note visibility toggle이 켜진 경우에만 내용 있는 note preview를 표시한다.
   - [x] note preview와 note textarea editor의 시각 상태를 명확히 분리한다.
   - [x] 접기/검색/export에서 note 포함 정책을 명확히 한다.
-- [ ] 멀티라인 편집
-  - [ ] 본문 내부 줄바꿈 정책을 `Ctrl+Enter`와 분리해서 다시 정의한다.
+- [x] 멀티라인 편집
+  - [x] 본문 내부 줄바꿈 정책을 `Ctrl+Enter`와 분리해서 다시 정의한다.
+  - [x] `Alt+Enter` 기본 단축키로 현재 노드 본문 안에 줄바꿈을 삽입한다.
   - [x] plain text import/export에서 노드 경계와 본문 줄바꿈을 구분한다.
-- [ ] 멀티 커서 편집 고도화
-  - 여러 노드에서 동시 텍스트 입력/삭제를 지원한다.
-  - 선택 범위와 커서 집합의 Undo/Redo 단위를 정의한다.
-  - bulk operation과 충돌하지 않게 command 실행 경로를 정리한다.
+- [x] 멀티 커서 편집 고도화
+  - [x] 여러 노드에서 동시 텍스트 입력/삭제를 지원한다.
+  - [x] 선택 범위와 커서 집합의 Undo/Redo 단위를 정의한다.
+  - [x] bulk operation과 충돌하지 않게 command 실행 경로를 정리한다.
 - [x] LaTeX 지원
   - [x] inline LaTeX와 block LaTeX syntax를 정의한다.
   - [x] 렌더링 라이브러리 도입 여부를 결정한다.
   - [x] 접근성 label과 원문 편집 fallback을 제공한다.
-- [ ] 단축키 커스터마이징
-  - 모든 command에 사용자 지정 shortcut을 연결할 수 있게 한다.
+- [x] 단축키 커스터마이징
+  - [x] 모든 command에 사용자 지정 shortcut을 연결할 수 있게 한다.
   - [x] note 접근, 형제 노드 생성, node palette, command palette 단축키를 설정 가능하게 한다.
-  - reserved shortcut, OS별 shortcut, 충돌 shortcut을 구분한다.
-  - 기본값 복원과 export/import를 제공한다.
-- [ ] 설정 창
+  - [x] reserved shortcut, OS별 shortcut, 충돌 shortcut을 구분한다.
+  - [x] 기본값 복원과 export/import를 제공한다.
+- [x] 설정 창
   - [x] Preferences를 한 화면이 아니라 섹션형 settings dialog로 정리한다.
   - [x] Settings UI를 상단 inline panel에서 modal dialog로 전환한다.
   - [x] General, Editor, Appearance, Shortcuts, Custom CSS, Sync/Account 준비 섹션을 둔다.
@@ -125,3 +126,5 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
 - Command palette는 검색 UI와 command registry를 연결하는 중심 진입점이다. 이후 데스크톱 앱 메뉴, 계정 기능, 모바일 command surface에서도 재사용할 수 있게 설계한다.
 - 2026-05-21 plain text import/export 정책: 일반 들여쓰기 라인은 노드 경계로 유지하고, 본문 내부 줄바꿈은 같은 노드 아래 `| ` continuation line, note는 `> ` note line으로 저장/복원한다. 노드 검색은 본문을 우선 검색하고, 본문에 없으면 note match를 palette에 `Note match`로 표시한다.
 - 2026-05-21 LaTeX 정책: Phase 15에서는 외부 수식 렌더링 라이브러리를 도입하지 않고 `$inline$`, `$$block$$` 원문 기반 fallback 렌더링을 제공한다. inactive row는 LaTeX source를 시각적으로 구분하고 `aria-label`을 제공하며, active editor에서는 원문을 그대로 편집한다.
+- 2026-05-21 노드 내부 줄바꿈 정책: `Shift+Enter`는 note editor 접근/복귀, `Ctrl+Enter`/`Cmd+Enter`는 같은 부모의 형제 노드 생성으로 유지한다. 본문 내부 줄바꿈은 기본 `Alt+Enter`로 삽입하며 Settings의 Shortcuts에서 변경할 수 있다.
+- 2026-05-21 Phase 15 완료 기준: 다중 문서/workspace가 필요한 최근 문서 이동은 Phase 16 deferred로 분리한다. Phase 15는 웹 편집기 단일 workspace 안의 command registry, 검색/명령 palette, note, multiline, LaTeX, custom CSS, shortcut customization, settings 정리 범위를 완료 상태로 본다.

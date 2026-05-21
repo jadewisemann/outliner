@@ -31,7 +31,8 @@
 - [x] Phase 12-C: full snapshot write/read bandwidth 비용을 줄이는 patch 기반 sync protocol 완성
 - [x] Phase 13: OPML과 indentation plain text import/export 확장
 - [x] Phase 14: 히스토리, 백업, 사용자 설정
-- [ ] Phase 15: 웹 버전 고도화와 Dynalist 대안 기능
+- [x] Phase 15: 웹 버전 고도화와 Dynalist 대안 기능
+- [x] Phase 15.5: 아웃라이닝 앱 폴리시와 타입라이터 스크롤
 - [ ] Phase 16: 데스크톱 앱과 계정 기능 명세 구체화
 - [ ] Phase 17: 모바일 패키징은 웹/데스크톱 이후 별도 검증
 

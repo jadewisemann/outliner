@@ -20,13 +20,24 @@ import {
   type ImportFormat
 } from "../domain/exporters";
 import type { NodeId, OutlineDocument, ViewState } from "../domain/outlineTypes";
-import { revealNode } from "../domain/outline";
+import { indentNode, moveNodeDown, moveNodeUp, outdentNode, revealNode, toggleCollapse, updateNodeMetadata } from "../domain/outline";
 import { getVisibleNodes } from "../domain/outlineSelectors";
 import { searchOutline } from "../domain/searchSelectors";
 import { createBrowserLocalPersistence, type LocalPersistence } from "../persistence/localPersistence";
 import type { RemoteStoreV2 } from "../sync/syncTypes";
 import { createManualBackup, serializeManualBackup } from "./backup";
-import { DEFAULT_PREFERENCES, matchesKeyBinding, normalizePreferences, type CommandId, type PreferenceSettings } from "./preferences";
+import {
+  COMMAND_REGISTRY,
+  DEFAULT_KEYMAP,
+  DEFAULT_PREFERENCES,
+  TYPEWRITER_SCROLL_OFFSET_MAX,
+  TYPEWRITER_SCROLL_OFFSET_MIN,
+  matchesKeyBinding,
+  normalizePreferences,
+  normalizeTypewriterScrollOffset,
+  type CommandId,
+  type PreferenceSettings
+} from "./preferences";
 import { useOutlineWorkspace } from "./useOutlineWorkspace";
 
 const createId = () => crypto.randomUUID();
@@ -50,6 +61,7 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
   const pendingSnapshotRef = useRef(snapshot);
   const commitScheduledRef = useRef(false);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const shortcutInputRef = useRef<HTMLInputElement>(null);
   const [importFormat, setImportFormat] = useState<ImportFormat>("opml");
   const [importMode, setImportMode] = useState<ImportApplyOptions["mode"]>("mergeRoot");
   const [importError, setImportError] = useState<string>();
@@ -84,6 +96,9 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
           const current = latestSnapshotRef.current;
           const nextDocument = revealNode(current.document, nodeId, now);
           commit(nextDocument, { ...current.view, selectedNodeId: nodeId });
+        },
+        runCommand: (commandId) => {
+          runRegistryCommand(commandId);
         }
       }),
     [commandPaletteQuery, document, recentNodeIds, view]
@@ -251,6 +266,86 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
     );
   };
 
+  const resetKeymap = () => {
+    updatePreference("keymap", DEFAULT_KEYMAP);
+  };
+
+  const downloadShortcutExport = () => {
+    const url = URL.createObjectURL(new Blob([JSON.stringify(preferences.keymap, null, 2)], { type: "application/json" }));
+    const anchor = window.document.createElement("a");
+    anchor.href = url;
+    anchor.download = "outliner-shortcuts.json";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const importShortcutFile = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file) {
+      return;
+    }
+    const value = await readFileAsText(file);
+    const parsed = JSON.parse(value) as Partial<PreferenceSettings["keymap"]>;
+    setPreferences((current) => normalizePreferences({ ...current, keymap: { ...current.keymap, ...parsed } }));
+  };
+
+  const runRegistryCommand = (commandId: CommandId) => {
+    const current = latestSnapshotRef.current;
+    const selectedNodeId = current.view.selectedNodeId;
+    const selectedNode = selectedNodeId ? current.document.nodes[selectedNodeId] : undefined;
+    const updateSelectedNode = (nextDocument: OutlineDocument, nextView = current.view) => {
+      commit(nextDocument, nextView);
+    };
+    if (commandId === "toggleSettings") {
+      setSettingsOpen(true);
+      setSettingsSection("general");
+      return;
+    }
+    if (commandId === "setHeading1" || commandId === "setHeading2" || commandId === "setHeading3") {
+      if (selectedNodeId) {
+        updateSelectedNode(updateNodeMetadata(current.document, selectedNodeId, { heading: Number(commandId.at(-1)) as 1 | 2 | 3 }, now));
+      }
+      return;
+    }
+    if (commandId === "clearHeading" && selectedNodeId) {
+      updateSelectedNode(updateNodeMetadata(current.document, selectedNodeId, { heading: undefined }, now));
+      return;
+    }
+    if (commandId === "setTextColor" && selectedNodeId) {
+      updateSelectedNode(updateNodeMetadata(current.document, selectedNodeId, { color: selectedNode?.color ?? "#2f7dd1" }, now));
+      return;
+    }
+    if (commandId === "resetTextColor" && selectedNodeId) {
+      updateSelectedNode(updateNodeMetadata(current.document, selectedNodeId, { color: undefined }, now));
+      return;
+    }
+    if (commandId === "toggleCollapse" && selectedNodeId) {
+      updateSelectedNode(toggleCollapse(current.document, selectedNodeId, now));
+      return;
+    }
+    if (commandId === "indentNode" && selectedNodeId) {
+      updateSelectedNode(indentNode(current.document, selectedNodeId, now));
+      return;
+    }
+    if (commandId === "outdentNode" && selectedNodeId) {
+      updateSelectedNode(outdentNode(current.document, selectedNodeId, now));
+      return;
+    }
+    if (commandId === "moveNodeUp" && selectedNodeId) {
+      updateSelectedNode(moveNodeUp(current.document, selectedNodeId, current.view.zoomNodeId, now));
+      return;
+    }
+    if (commandId === "moveNodeDown" && selectedNodeId) {
+      updateSelectedNode(moveNodeDown(current.document, selectedNodeId, current.view.zoomNodeId, now));
+      return;
+    }
+    if (commandId === "openFormatHelp") {
+      setSettingsOpen(true);
+      setSettingsSection("editor");
+    }
+  };
+
   const runCommandPaletteItem = (item: CommandPaletteItem | undefined) => {
     if (!item) {
       return;
@@ -375,8 +470,12 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
             onSectionChange={setSettingsSection}
             onPreferenceChange={updatePreference}
             onKeyBindingChange={updateKeyBinding}
+            onResetKeymap={resetKeymap}
+            onExportKeymap={downloadShortcutExport}
+            onImportKeymap={() => shortcutInputRef.current?.click()}
             onClose={() => setSettingsOpen(false)}
           />
+          <input ref={shortcutInputRef} aria-label="Import shortcuts file" type="file" accept=".json,application/json" hidden onChange={importShortcutFile} />
         </div>
       ) : null}
       {preferences.showWordCount ? <p className="word-count">{countWords(document)} words</p> : null}
@@ -400,6 +499,8 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
             autoFocus={preferences.autoFocus}
             showNotes={preferences.showNotes}
             keymap={preferences.keymap}
+            typewriterScrollEnabled={preferences.typewriterScrollEnabled}
+            typewriterScrollOffsetPx={preferences.typewriterScrollOffsetPx}
             onDocumentChange={setDocument}
             onViewChange={setView}
           />
@@ -468,6 +569,9 @@ function SettingsPanel({
   onSectionChange,
   onPreferenceChange,
   onKeyBindingChange,
+  onResetKeymap,
+  onExportKeymap,
+  onImportKeymap,
   onClose
 }: {
   preferences: PreferenceSettings;
@@ -476,19 +580,13 @@ function SettingsPanel({
   onSectionChange: (section: SettingsSection) => void;
   onPreferenceChange: <K extends keyof PreferenceSettings>(key: K, value: PreferenceSettings[K]) => void;
   onKeyBindingChange: (command: CommandId, value: string) => void;
+  onResetKeymap: () => void;
+  onExportKeymap: () => void;
+  onImportKeymap: () => void;
   onClose: () => void;
 }) {
-  const keyCommands: CommandId[] = [
-    "undo",
-    "redo",
-    "toggleSettings",
-    "openNodePalette",
-    "openCommandPalette",
-    "focusNodeNote",
-    "insertLineBreak",
-    "createSiblingNode"
-  ];
   const duplicateShortcuts = findDuplicateShortcuts(preferences.keymap);
+  const reservedShortcuts = findReservedShortcuts(preferences.keymap);
   return (
     <aside className="settings-panel" role="dialog" aria-modal="true" aria-label="Settings" onMouseDown={(event) => event.stopPropagation()}>
       <div className="settings-header">
@@ -563,6 +661,29 @@ function SettingsPanel({
               />
               Auto focus
             </label>
+            <label>
+              <input
+                aria-label="Typewriter scroll"
+                type="checkbox"
+                checked={preferences.typewriterScrollEnabled}
+                onChange={(event) => onPreferenceChange("typewriterScrollEnabled", event.target.checked)}
+              />
+              Typewriter scroll
+            </label>
+            <label>
+              Typewriter scroll offset
+              <input
+                aria-label="Typewriter scroll offset"
+                type="number"
+                min={TYPEWRITER_SCROLL_OFFSET_MIN}
+                max={TYPEWRITER_SCROLL_OFFSET_MAX}
+                step={8}
+                value={preferences.typewriterScrollOffsetPx}
+                onChange={(event) =>
+                  onPreferenceChange("typewriterScrollOffsetPx", normalizeTypewriterScrollOffset(event.target.value))
+                }
+              />
+            </label>
           </>
         ) : null}
         {section === "appearance" ? (
@@ -581,17 +702,33 @@ function SettingsPanel({
         ) : null}
         {section === "shortcuts" ? (
           <>
-            {keyCommands.map((command) => {
-              const duplicate = duplicateShortcuts.has(preferences.keymap[command].toLocaleLowerCase());
+            <div className="settings-shortcut-actions">
+              <button type="button" onClick={onResetKeymap}>
+                Restore default shortcuts
+              </button>
+              <button type="button" onClick={onExportKeymap}>
+                Export shortcuts
+              </button>
+              <button type="button" onClick={onImportKeymap}>
+                Import shortcuts
+              </button>
+            </div>
+            {COMMAND_REGISTRY.map((command) => {
+              const key = preferences.keymap[command.id].trim().toLocaleLowerCase();
+              const duplicate = duplicateShortcuts.has(key);
+              const reserved = reservedShortcuts.has(key);
+              const unassigned = key.length === 0;
               return (
-                <label key={command}>
-                  {commandLabel(command)}
+                <label key={command.id}>
+                  {command.label}
                   <input
-                    aria-label={`${commandLabel(command)} shortcut`}
-                    value={preferences.keymap[command]}
-                    onChange={(event) => onKeyBindingChange(command, event.target.value)}
+                    aria-label={`${command.label} shortcut`}
+                    value={preferences.keymap[command.id]}
+                    onChange={(event) => onKeyBindingChange(command.id, event.target.value)}
                   />
                   {duplicate ? <span role="alert">Shortcut conflict</span> : null}
+                  {reserved ? <span role="alert">Reserved shortcut</span> : null}
+                  {unassigned ? <span role="alert">Unassigned shortcut</span> : null}
                 </label>
               );
             })}
@@ -650,24 +787,6 @@ function previewSnapshot(document: OutlineDocument): string {
   return text ? text.slice(0, 40) : "Untitled";
 }
 
-function commandLabel(command: CommandId): string {
-  return command === "toggleSettings"
-    ? "Settings"
-    : command === "openNodePalette"
-      ? "Node palette"
-    : command === "openCommandPalette"
-      ? "Command palette"
-      : command === "focusNodeNote"
-        ? "Edit note"
-        : command === "insertLineBreak"
-          ? "Insert line break"
-        : command === "createSiblingNode"
-          ? "Create sibling node"
-      : command === "undo"
-        ? "Undo"
-        : "Redo";
-}
-
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: "general", label: "General" },
   { id: "editor", label: "Editor" },
@@ -684,7 +803,8 @@ function buildCommandPaletteItems({
   recentNodeIds,
   openSettings,
   closePalette,
-  jumpToNode
+  jumpToNode,
+  runCommand
 }: {
   document: OutlineDocument;
   view: ViewState;
@@ -693,18 +813,18 @@ function buildCommandPaletteItems({
   openSettings: (section: SettingsSection) => void;
   closePalette: () => void;
   jumpToNode: (nodeId: string) => void;
+  runCommand: (commandId: CommandId) => void;
 }): CommandPaletteItem[] {
   const commandMode = query.trimStart().startsWith(">");
   const normalizedQuery = (commandMode ? query.trimStart().slice(1) : query).trim().toLocaleLowerCase();
   const commands: CommandPaletteItem[] = [
-    {
-      id: "command:settings",
-      title: "Open settings",
-      kind: "Command",
-      run: () => {
-        openSettings("general");
-      }
-    },
+    ...COMMAND_REGISTRY.filter((command) => command.palette).map((command) => ({
+      id: `command:${command.id}`,
+      title: command.label,
+      kind: command.group === "format" ? "Format command" : "Command",
+      preview: commandPreview(command.id),
+      run: () => runCommand(command.id)
+    })),
     {
       id: "command:shortcuts",
       title: "Edit shortcuts",
@@ -792,6 +912,16 @@ function nodePreview(document: OutlineDocument, nodeId: NodeId): string {
   return path || "Top level";
 }
 
+function commandPreview(commandId: CommandId): string | undefined {
+  return commandId === "openFormatHelp"
+    ? "Use Markdown-like source: **bold**, *italic*, `code`, ~~strike~~, ==highlight==, [link](url), ```code```."
+    : commandId === "setTextColor"
+      ? "Apply the default accent color to the selected node."
+      : commandId === "resetTextColor"
+        ? "Return the selected node color to the theme default."
+        : undefined;
+}
+
 function getNodePath(document: OutlineDocument, targetNodeId: NodeId): NodeId[] {
   const path: NodeId[] = [];
   const visit = (nodeId: NodeId): boolean => {
@@ -866,7 +996,19 @@ function findDuplicateShortcuts(keymap: PreferenceSettings["keymap"]): Set<strin
   const counts = new Map<string, number>();
   for (const value of Object.values(keymap)) {
     const key = value.trim().toLocaleLowerCase();
+    if (!key) {
+      continue;
+    }
     counts.set(key, (counts.get(key) ?? 0) + 1);
   }
   return new Set(Array.from(counts.entries()).filter(([, count]) => count > 1).map(([key]) => key));
+}
+
+function findReservedShortcuts(keymap: PreferenceSettings["keymap"]): Set<string> {
+  const reserved = new Set(["mod+r", "mod+l", "mod+w", "mod+t", "mod+n", "f5"]);
+  return new Set(
+    Object.values(keymap)
+      .map((value) => value.trim().toLocaleLowerCase())
+      .filter((value) => reserved.has(value))
+  );
 }

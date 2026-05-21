@@ -51,6 +51,27 @@ describe("multi cursor editing", () => {
     ]);
   });
 
+  it("applies same-node cursor edits in deterministic descending offset order", () => {
+    const doc = makeDocumentWithTexts(["ABCD"]);
+    const [a] = doc.nodes[doc.rootId].children;
+    const result = applyTextToCursors(
+      doc,
+      doc.rootId,
+      [
+        { nodeId: a, offset: 1 },
+        { nodeId: a, offset: 3 }
+      ],
+      { type: "insert", text: "x" },
+      () => 10
+    );
+
+    expect(result.document.nodes[a].text).toBe("AxBCxD");
+    expect(result.cursors).toEqual([
+      { nodeId: a, offset: 2 },
+      { nodeId: a, offset: 4 }
+    ]);
+  });
+
   it("applies backspace and delete to every cursor position", () => {
     const doc = makeDocumentWithTexts(["ABC", "DEF"]);
     const [a, b] = doc.nodes[doc.rootId].children;

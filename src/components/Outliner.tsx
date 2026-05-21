@@ -69,6 +69,8 @@ type OutlinerProps = {
   autoFocus?: boolean;
   showNotes?: boolean;
   keymap?: PreferenceSettings["keymap"];
+  typewriterScrollEnabled?: boolean;
+  typewriterScrollOffsetPx?: number;
   onDocumentChange: Dispatch<SetStateAction<OutlineDocument>>;
   onViewChange: (view: ViewState) => void;
   onRenderRow?: (nodeId: NodeId) => void;
@@ -79,6 +81,7 @@ const INDENT_SIZE = 24;
 const VIRTUALIZATION_THRESHOLD = 300;
 const VIRTUAL_OVERSCAN = 12;
 const FALLBACK_VIEWPORT_HEIGHT = 640;
+const SCROLL_CHANGE_EPSILON = 1;
 type SearchMode = "context" | "flat";
 
 function useStableCallback<T extends (...args: never[]) => unknown>(callback: T): T {
@@ -96,6 +99,8 @@ export function Outliner({
   autoFocus = true,
   showNotes = true,
   keymap = DEFAULT_PREFERENCES.keymap,
+  typewriterScrollEnabled = DEFAULT_PREFERENCES.typewriterScrollEnabled,
+  typewriterScrollOffsetPx = DEFAULT_PREFERENCES.typewriterScrollOffsetPx,
   onDocumentChange,
   onViewChange,
   onRenderRow
@@ -524,7 +529,7 @@ export function Outliner({
     const handleKeyDown = (event: KeyboardEvent) => {
       const activeElement = window.document.activeElement as HTMLElement | null;
       if (activeElement?.getAttribute("role") !== "textbox") {
-        if (event.key === "Escape" && (hasBulkSelection || hasMultiCursor)) {
+        if (matchesKeyBinding(event, keymap.clearPowerSelection) && (hasBulkSelection || hasMultiCursor)) {
           event.preventDefault();
           event.stopPropagation();
           clearPowerSelection();
@@ -546,17 +551,17 @@ export function Outliner({
         focusSelectedNote();
         return;
       }
-      if (event.key === "Tab" && view.selectedNodeId) {
+      if ((matchesKeyBinding(event, keymap.indentNode) || matchesKeyBinding(event, keymap.outdentNode)) && view.selectedNodeId) {
         event.preventDefault();
         event.stopPropagation();
-        if (event.shiftKey) {
+        if (matchesKeyBinding(event, keymap.outdentNode)) {
           outdent(view.selectedNodeId);
         } else {
           indent(view.selectedNodeId);
         }
         return;
       }
-      if (event.key === "Escape" && (hasBulkSelection || hasMultiCursor)) {
+      if (matchesKeyBinding(event, keymap.clearPowerSelection) && (hasBulkSelection || hasMultiCursor)) {
         event.preventDefault();
         event.stopPropagation();
         clearPowerSelection();
@@ -578,6 +583,51 @@ export function Outliner({
       height: element.clientHeight || FALLBACK_VIEWPORT_HEIGHT
     }));
   }, [displayedNodes.length]);
+
+  useLayoutEffect(() => {
+    const element = listRef.current;
+    const selectedNodeId = view.selectedNodeId;
+    if (!typewriterScrollEnabled || !element || !selectedNodeId) {
+      return;
+    }
+    const containerHeight = element.clientHeight || viewport.height || FALLBACK_VIEWPORT_HEIGHT;
+    const targetViewportCenter = containerHeight / 2 + typewriterScrollOffsetPx;
+    const maxScrollTop = Math.max(0, element.scrollHeight - containerHeight);
+    const renderedRow = Array.from(element.querySelectorAll<HTMLElement>("[data-node-id]")).find(
+      (row) => row.dataset.nodeId === selectedNodeId
+    );
+    let nextScrollTop: number | undefined;
+    if (renderedRow) {
+      const containerRect = element.getBoundingClientRect();
+      const rowRect = renderedRow.getBoundingClientRect();
+      const rowCenter = element.scrollTop + rowRect.top - containerRect.top + rowRect.height / 2;
+      nextScrollTop = rowCenter - targetViewportCenter;
+    } else {
+      const selectedIndex = displayedNodes.findIndex((item) => item.id === selectedNodeId);
+      if (selectedIndex >= 0) {
+        nextScrollTop = selectedIndex * ROW_HEIGHT + ROW_HEIGHT / 2 - targetViewportCenter;
+      }
+    }
+    if (nextScrollTop === undefined) {
+      return;
+    }
+    const clampedScrollTop = Math.min(maxScrollTop, Math.max(0, Math.round(nextScrollTop)));
+    if (Math.abs(element.scrollTop - clampedScrollTop) <= SCROLL_CHANGE_EPSILON) {
+      return;
+    }
+    element.scrollTop = clampedScrollTop;
+    setViewport({
+      scrollTop: clampedScrollTop,
+      height: containerHeight
+    });
+  }, [
+    displayedNodes,
+    typewriterScrollEnabled,
+    typewriterScrollOffsetPx,
+    view.selectedNodeId,
+    viewport.height,
+    virtualWindow.start
+  ]);
 
   const copySelection = useStableCallback(() =>
     hasBulkSelection ? serializeNodesForClipboard(document, selectedNodeIds) : undefined

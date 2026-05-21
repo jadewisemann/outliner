@@ -6,7 +6,7 @@ import type { LocalPersistence } from "../persistence/localPersistence";
 import { makeDocumentWithTexts } from "../test/factories";
 import { FakeRemoteStoreV2 } from "../sync/fakeRemoteStoreV2";
 import { App } from "./App";
-import { DEFAULT_PREFERENCES, type PreferenceSettings } from "./preferences";
+import { COMMAND_REGISTRY, DEFAULT_PREFERENCES, normalizePreferences, type PreferenceSettings } from "./preferences";
 
 function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersistence & { preferences: PreferenceSettings } {
   let current = initial;
@@ -148,6 +148,27 @@ describe("App", () => {
     expect(window.document.documentElement.dataset.theme).toBe("dark");
   });
 
+  it("stores typewriter scroll settings in preferences", async () => {
+    const outlineDocument = makeDocumentWithTexts(["A"]);
+    const persistence = memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) });
+    render(<App persistence={persistence} />);
+    await screen.findByText("A");
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Editor" }));
+    fireEvent.click(screen.getByLabelText("Typewriter scroll"));
+    fireEvent.change(screen.getByLabelText("Typewriter scroll offset"), { target: { value: "48" } });
+
+    await waitFor(() => expect(persistence.preferences.typewriterScrollEnabled).toBe(true));
+    expect(persistence.preferences.typewriterScrollOffsetPx).toBe(48);
+  });
+
+  it("normalizes typewriter scroll preferences from persisted values", () => {
+    expect(normalizePreferences({ typewriterScrollOffsetPx: 999 }).typewriterScrollOffsetPx).toBe(240);
+    expect(normalizePreferences({ typewriterScrollOffsetPx: -999 }).typewriterScrollOffsetPx).toBe(-240);
+    expect(normalizePreferences({}).typewriterScrollEnabled).toBe(false);
+  });
+
   it("scopes saved custom CSS to the outliner editor", async () => {
     const outlineDocument = makeDocumentWithTexts(["A"]);
     const persistence = memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) });
@@ -207,7 +228,20 @@ describe("App", () => {
     const paletteSearch = await screen.findByRole("searchbox", { name: "Command palette search" });
 
     expect(paletteSearch).toHaveValue(">");
-    expect(screen.getByRole("option", { name: /Open settings/i })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Settings Command" })).toBeInTheDocument();
+  });
+
+  it("executes formatting commands from the command palette", async () => {
+    const outlineDocument = makeDocumentWithTexts(["Alpha"]);
+    render(<App persistence={memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) })} />);
+    await screen.findByText("Alpha");
+
+    fireEvent.keyDown(window, { key: "p", code: "KeyP", ctrlKey: true, shiftKey: true });
+    const paletteSearch = await screen.findByRole("searchbox", { name: "Command palette search" });
+    fireEvent.change(paletteSearch, { target: { value: ">heading 2" } });
+    fireEvent.keyDown(paletteSearch, { key: "Enter", code: "Enter" });
+
+    await waitFor(() => expect(screen.getByText("Alpha").closest(".outline-row")).toHaveClass("outline-row-heading-2"));
   });
 
   it("shows search result preview and moves the active result with arrow keys", async () => {
@@ -264,5 +298,46 @@ describe("App", () => {
     });
 
     await waitFor(() => expect(screen.getByRole("tree", { name: "Outline" })).toHaveAttribute("data-visible-count", "2"));
+  });
+
+  it("shows every registry command in shortcut settings and warns about conflicts and reserved shortcuts", async () => {
+    const outlineDocument = makeDocumentWithTexts(["A"]);
+    render(<App persistence={memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) })} />);
+    await screen.findByText("A");
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
+
+    for (const command of COMMAND_REGISTRY) {
+      expect(screen.getByLabelText(`${command.label} shortcut`)).toBeInTheDocument();
+    }
+    fireEvent.change(screen.getByLabelText("Node palette shortcut"), { target: { value: "Mod+R" } });
+    fireEvent.change(screen.getByLabelText("Command palette shortcut"), { target: { value: "Mod+R" } });
+
+    expect(screen.getAllByText("Shortcut conflict")).toHaveLength(2);
+    expect(screen.getAllByText("Reserved shortcut")).toHaveLength(2);
+    expect(screen.getAllByText("Unassigned shortcut").length).toBeGreaterThan(0);
+  });
+
+  it("restores default shortcuts and imports shortcut json", async () => {
+    const outlineDocument = makeDocumentWithTexts(["A"]);
+    const persistence = memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) });
+    render(<App persistence={persistence} />);
+    await screen.findByText("A");
+
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
+    fireEvent.change(screen.getByLabelText("Create sibling node shortcut"), { target: { value: "Ctrl+Alt+Enter" } });
+    fireEvent.click(screen.getByRole("button", { name: "Restore default shortcuts" }));
+    expect(screen.getByLabelText("Create sibling node shortcut")).toHaveValue("Mod+Enter");
+
+    const file = new File([JSON.stringify({ createSiblingNode: "Ctrl+Alt+Enter", unknownCommand: "F9" })], "shortcuts.json", {
+      type: "application/json"
+    });
+    fireEvent.change(screen.getByLabelText("Import shortcuts file"), { target: { files: [file] } });
+
+    await waitFor(() => expect(screen.getByLabelText("Create sibling node shortcut")).toHaveValue("Ctrl+Alt+Enter"));
+    expect(persistence.preferences.keymap.createSiblingNode).toBe("Ctrl+Alt+Enter");
+    expect("unknownCommand" in persistence.preferences.keymap).toBe(false);
   });
 });

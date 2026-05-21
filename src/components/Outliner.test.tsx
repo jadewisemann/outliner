@@ -60,6 +60,103 @@ describe("Outliner", () => {
     expect(screen.getAllByRole("textbox", { name: "Outline node text" })).toHaveLength(1);
   });
 
+  it("keeps scroll position unchanged when typewriter scroll is disabled", async () => {
+    const document = makeDocumentWithTexts(["A", "B", "C", "D", "E"]);
+    const [, , targetNodeId] = document.nodes[document.rootId].children;
+    let selectTarget: () => void = () => {};
+    function Harness() {
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: "n-1" });
+      selectTarget = () => setView((current) => ({ ...current, selectedNodeId: targetNodeId }));
+      return (
+        <Outliner
+          document={document}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          typewriterScrollEnabled={false}
+          typewriterScrollOffsetPx={40}
+          onDocumentChange={vi.fn()}
+          onViewChange={setView}
+        />
+      );
+    }
+    const { container } = render(<Harness />);
+    const list = screen.getByRole("tree", { name: "Outline" });
+    mockScrollContainer(list, { height: 400, scrollHeight: 1000 });
+    mockRowRect(container, targetNodeId, { top: 164, height: 32 });
+
+    act(() => {
+      selectTarget();
+    });
+
+    await waitFor(() => expect(screen.getByText("C").closest(".outline-row")).toHaveClass("outline-row-active"));
+    expect(list.scrollTop).toBe(0);
+  });
+
+  it("centers the focused node with the configured typewriter scroll offset", async () => {
+    const document = makeDocumentWithTexts(["A", "B", "C", "D", "E", "F", "G", "H", "I", "J"]);
+    const targetNodeId = document.nodes[document.rootId].children[9];
+    let selectTarget: () => void = () => {};
+    function Harness() {
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: "n-1" });
+      selectTarget = () => setView((current) => ({ ...current, selectedNodeId: targetNodeId }));
+      return (
+        <Outliner
+          document={document}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          typewriterScrollEnabled
+          typewriterScrollOffsetPx={40}
+          onDocumentChange={vi.fn()}
+          onViewChange={setView}
+        />
+      );
+    }
+    const { container } = render(<Harness />);
+    const list = screen.getByRole("tree", { name: "Outline" });
+    mockScrollContainer(list, { height: 400, scrollHeight: 1000 });
+    mockRowRect(container, targetNodeId, { top: 388, height: 32 });
+
+    act(() => {
+      selectTarget();
+    });
+
+    await waitFor(() => expect(list.scrollTop).toBe(64));
+  });
+
+  it("clamps typewriter scroll to the scrollable range", async () => {
+    const document = makeDocumentWithTexts(["A", "B", "C"]);
+    const targetNodeId = document.nodes[document.rootId].children[2];
+    let selectTarget: () => void = () => {};
+    function Harness() {
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: "n-1" });
+      selectTarget = () => setView((current) => ({ ...current, selectedNodeId: targetNodeId }));
+      return (
+        <Outliner
+          document={document}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          typewriterScrollEnabled
+          typewriterScrollOffsetPx={-40}
+          onDocumentChange={vi.fn()}
+          onViewChange={setView}
+        />
+      );
+    }
+    const { container } = render(<Harness />);
+    const list = screen.getByRole("tree", { name: "Outline" });
+    mockScrollContainer(list, { height: 400, scrollHeight: 450 });
+    mockRowRect(container, targetNodeId, { top: 1200, height: 32 });
+
+    act(() => {
+      selectTarget();
+    });
+
+    await waitFor(() => expect(list.scrollTop).toBe(50));
+  });
+
   it("does not re-render inactive rows when typing updates the active row", async () => {
     const document = makeDocumentWithTexts(["A", "B", "C"]);
     const [a, b, c] = document.nodes[document.rootId].children;
@@ -1200,3 +1297,41 @@ describe("Outliner", () => {
     });
   });
 });
+
+function mockScrollContainer(element: HTMLElement, options: { height: number; scrollHeight: number }) {
+  Object.defineProperty(element, "clientHeight", { configurable: true, value: options.height });
+  Object.defineProperty(element, "scrollHeight", { configurable: true, value: options.scrollHeight });
+  vi.spyOn(element, "getBoundingClientRect").mockReturnValue({
+    top: 100,
+    bottom: 100 + options.height,
+    left: 0,
+    right: 800,
+    width: 800,
+    height: options.height,
+    x: 0,
+    y: 100,
+    toJSON: () => ({})
+  });
+}
+
+function mockRowRect(container: HTMLElement, nodeId: string, options: { top: number; height: number }) {
+  const row = container.querySelector<HTMLElement>(`[data-node-id="${nodeId}"]`);
+  if (!row) {
+    throw new Error(`Missing row for ${nodeId}`);
+  }
+  vi.spyOn(row, "getBoundingClientRect").mockImplementation(() => {
+    const scrollTop = row.parentElement?.scrollTop ?? 0;
+    const top = options.top - scrollTop;
+    return {
+      top,
+      bottom: top + options.height,
+      left: 0,
+      right: 800,
+      width: 800,
+      height: options.height,
+      x: 0,
+      y: top,
+      toJSON: () => ({})
+    };
+  });
+}

@@ -243,6 +243,7 @@ function ActiveRowEditor({
   onAddCursor,
   onApplyTextToCursors,
   onClearPowerSelection,
+  onToggleCollapse,
   onCopySelection,
   onFocusNote,
   keymap,
@@ -284,6 +285,7 @@ function ActiveRowEditor({
         onAddCursor={onAddCursor}
         onApplyTextToCursors={onApplyTextToCursors}
         onClearPowerSelection={onClearPowerSelection}
+        onToggleCollapse={onToggleCollapse}
         onPasteText={onPasteText}
         suppressNextChangeRef={suppressNextTextChangeRef}
         onCopySelection={onCopySelection}
@@ -440,6 +442,7 @@ function KeyboardPlugin({
   onAddCursor,
   onApplyTextToCursors,
   onClearPowerSelection,
+  onToggleCollapse,
   onPasteText,
   suppressNextChangeRef,
   onCopySelection,
@@ -462,6 +465,7 @@ function KeyboardPlugin({
   onAddCursor: (direction: "previous" | "next", offset: number) => void;
   onApplyTextToCursors: (edit: CursorTextEdit) => void;
   onClearPowerSelection: () => void;
+  onToggleCollapse: () => void;
   onPasteText: (offset: number, text: string) => void;
   suppressNextChangeRef?: MutableRefObject<boolean>;
   onCopySelection: () => string | undefined;
@@ -641,34 +645,46 @@ function KeyboardPlugin({
       if (isComposingEvent(event)) {
         return;
       }
-      if (event.altKey && event.key === "ArrowUp") {
+      if (matchesKeyBinding(event, keymap.addCursorUp)) {
         event.preventDefault();
         event.stopPropagation();
-        if (event.metaKey || event.ctrlKey) {
-          onAddCursor("previous", readOffset());
-        } else {
-          onMoveNode("previous");
-        }
+        onAddCursor("previous", readOffset());
         return;
       }
-      if (event.altKey && event.key === "ArrowDown") {
+      if (matchesKeyBinding(event, keymap.addCursorDown)) {
         event.preventDefault();
         event.stopPropagation();
-        if (event.metaKey || event.ctrlKey) {
-          onAddCursor("next", readOffset());
-        } else {
-          onMoveNode("next");
-        }
+        onAddCursor("next", readOffset());
         return;
       }
-      if (event.key === "Tab") {
+      if (matchesKeyBinding(event, keymap.moveNodeUp)) {
         event.preventDefault();
         event.stopPropagation();
-        if (event.shiftKey) {
-          onOutdent();
-        } else {
-          onIndent();
-        }
+        onMoveNode("previous");
+        return;
+      }
+      if (matchesKeyBinding(event, keymap.moveNodeDown)) {
+        event.preventDefault();
+        event.stopPropagation();
+        onMoveNode("next");
+        return;
+      }
+      if (matchesKeyBinding(event, keymap.outdentNode)) {
+        event.preventDefault();
+        event.stopPropagation();
+        onOutdent();
+        return;
+      }
+      if (matchesKeyBinding(event, keymap.indentNode)) {
+        event.preventDefault();
+        event.stopPropagation();
+        onIndent();
+        return;
+      }
+      if (matchesKeyBinding(event, keymap.toggleCollapse)) {
+        event.preventDefault();
+        event.stopPropagation();
+        onToggleCollapse();
         return;
       }
       if (matchesKeyBinding(event, keymap.insertLineBreak)) {
@@ -683,7 +699,7 @@ function KeyboardPlugin({
         onCreateSibling();
         return;
       }
-      if (event.key === "Escape" && (hasMultiCursor || hasBulkSelection)) {
+      if (matchesKeyBinding(event, keymap.clearPowerSelection) && (hasMultiCursor || hasBulkSelection)) {
         event.preventDefault();
         event.stopPropagation();
         onClearPowerSelection();
@@ -735,6 +751,7 @@ function KeyboardPlugin({
     onAddCursor,
     onApplyTextToCursors,
     onClearPowerSelection,
+    onToggleCollapse,
     onCopySelection,
     onCreateAfter,
     onCreateSibling,
