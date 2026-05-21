@@ -56,7 +56,7 @@ function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersist
 describe("App", () => {
   it("renders the root outliner screen", async () => {
     render(<App />);
-    expect(screen.getByRole("heading", { name: "Outliner" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Workspace menu" })).toBeInTheDocument();
     expect(await screen.findByRole("tree", { name: "Outline" })).toBeInTheDocument();
     expect(screen.getByText("Saved locally")).toBeInTheDocument();
   });
@@ -103,6 +103,7 @@ describe("App", () => {
     render(<App persistence={memoryPersistence({ document, view: createInitialView(document) })} />);
     await screen.findByText("A");
 
+    openWorkspaceMenuSection("Import");
     fireEvent.change(screen.getByLabelText("Import format"), { target: { value: "plainText" } });
     const file = new File(["B\n  C"], "outline.txt", { type: "text/plain" });
     fireEvent.change(screen.getByLabelText("Import outline file"), { target: { files: [file] } });
@@ -117,6 +118,7 @@ describe("App", () => {
     render(<App persistence={memoryPersistence({ document, view: createInitialView(document) })} />);
     await screen.findByText("A");
 
+    openWorkspaceMenuSection("Import");
     const file = new File(["<opml><body><outline></body></opml>"], "broken.opml", { type: "text/x-opml" });
     fireEvent.change(screen.getByLabelText("Import outline file"), { target: { files: [file] } });
 
@@ -130,9 +132,10 @@ describe("App", () => {
     render(<App persistence={persistence} />);
     await screen.findByText("A");
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    openSettingsPanel();
     fireEvent.change(screen.getByLabelText("Theme"), { target: { value: "dark" } });
     fireEvent.click(screen.getByLabelText("Word count"));
+    fireEvent.click(screen.getByLabelText("Sync status"));
     fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
     fireEvent.change(screen.getByLabelText("Font"), { target: { value: "mono" } });
     fireEvent.click(screen.getByRole("button", { name: "Editor" }));
@@ -142,10 +145,26 @@ describe("App", () => {
     expect(persistence.preferences.font).toBe("mono");
     expect(persistence.preferences.spellcheck).toBe(false);
     expect(persistence.preferences.showWordCount).toBe(false);
+    expect(persistence.preferences.showSyncStatus).toBe(false);
 
     fireEvent.keyDown(window, { key: "z", code: "KeyZ", ctrlKey: true });
     expect(screen.getByText("A")).toBeInTheDocument();
     expect(window.document.documentElement.dataset.theme).toBe("dark");
+  });
+
+  it("opens file actions and settings from the hierarchical workspace menu", async () => {
+    const outlineDocument = makeDocumentWithTexts(["A"]);
+    render(<App persistence={memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) })} />);
+    await screen.findByText("A");
+
+    fireEvent.click(screen.getByRole("button", { name: "Workspace menu" }));
+    expect(screen.getByRole("dialog", { name: "Workspace menu" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Export JSON" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    fireEvent.click(screen.getByRole("button", { name: "Editor" }));
+
+    expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Typewriter scroll")).toBeInTheDocument();
   });
 
   it("stores typewriter scroll settings in preferences", async () => {
@@ -154,7 +173,7 @@ describe("App", () => {
     render(<App persistence={persistence} />);
     await screen.findByText("A");
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    openSettingsPanel();
     fireEvent.click(screen.getByRole("button", { name: "Editor" }));
     fireEvent.click(screen.getByLabelText("Typewriter scroll"));
     fireEvent.change(screen.getByLabelText("Typewriter scroll offset"), { target: { value: "48" } });
@@ -175,7 +194,7 @@ describe("App", () => {
     render(<App persistence={persistence} />);
     await screen.findByText("A");
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    openSettingsPanel();
     fireEvent.click(screen.getByRole("button", { name: "Custom CSS" }));
     fireEvent.click(screen.getByLabelText("Enable custom CSS"));
     fireEvent.change(screen.getByLabelText("Custom CSS"), {
@@ -285,7 +304,7 @@ describe("App", () => {
     render(<App persistence={memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) })} />);
     await screen.findByText("A");
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    openSettingsPanel();
     expect(screen.getByRole("dialog", { name: "Settings" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
     fireEvent.change(screen.getByLabelText("Create sibling node shortcut"), { target: { value: "Ctrl+Alt+Enter" } });
@@ -305,7 +324,7 @@ describe("App", () => {
     render(<App persistence={memoryPersistence({ document: outlineDocument, view: createInitialView(outlineDocument) })} />);
     await screen.findByText("A");
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    openSettingsPanel();
     fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
 
     for (const command of COMMAND_REGISTRY) {
@@ -325,7 +344,7 @@ describe("App", () => {
     render(<App persistence={persistence} />);
     await screen.findByText("A");
 
-    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    openSettingsPanel();
     fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
     fireEvent.change(screen.getByLabelText("Create sibling node shortcut"), { target: { value: "Ctrl+Alt+Enter" } });
     fireEvent.click(screen.getByRole("button", { name: "Restore default shortcuts" }));
@@ -341,3 +360,14 @@ describe("App", () => {
     expect("unknownCommand" in persistence.preferences.keymap).toBe(false);
   });
 });
+
+function openSettingsPanel() {
+  fireEvent.click(screen.getByRole("button", { name: "Workspace menu" }));
+  fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+  fireEvent.click(screen.getByRole("button", { name: "General" }));
+}
+
+function openWorkspaceMenuSection(section: "File" | "Import" | "Settings") {
+  fireEvent.click(screen.getByRole("button", { name: "Workspace menu" }));
+  fireEvent.click(screen.getByRole("button", { name: section }));
+}

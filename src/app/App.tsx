@@ -67,6 +67,8 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
   const [importError, setImportError] = useState<string>();
   const [preferences, setPreferences] = useState<PreferenceSettings>(DEFAULT_PREFERENCES);
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
+  const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
+  const [workspaceMenuSection, setWorkspaceMenuSection] = useState<WorkspaceMenuSection>("file");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -402,65 +404,49 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
   return (
     <main className="app-shell">
       <style data-testid="custom-css-style">{scopedCustomCss.css}</style>
-      <header className="top-bar">
-        <div>
-          <h1>Outliner</h1>
-          <p>Local-first keyboard workspace</p>
-        </div>
-        <div className="top-actions">
-          <button type="button" onClick={() => downloadExport("json")}>
-            Export JSON
-          </button>
-          <button type="button" onClick={() => downloadExport("markdown")}>
-            Export Markdown
-          </button>
-          <button type="button" onClick={() => downloadExport("opml")}>
-            Export OPML
-          </button>
-          <button type="button" onClick={() => downloadExport("plainText")}>
-            Export Text
-          </button>
-          <button type="button" onClick={() => downloadExport("opml", true)}>
-            Export Visible OPML
-          </button>
-          <button type="button" onClick={downloadBackup}>
-            Backup
-          </button>
-          <select
-            aria-label="Import format"
-            value={importFormat}
-            onChange={(event) => setImportFormat(event.target.value as ImportFormat)}
-          >
-            <option value="opml">OPML</option>
-            <option value="plainText">Text</option>
-          </select>
-          <select
-            aria-label="Import mode"
-            value={importMode}
-            onChange={(event) => setImportMode(event.target.value as ImportApplyOptions["mode"])}
-          >
-            <option value="mergeRoot">Merge at root</option>
-            <option value="insertUnder">Insert under selected</option>
-            <option value="replace">Replace workspace</option>
-          </select>
-          <button type="button" onClick={() => importInputRef.current?.click()}>
-            Import
-          </button>
-          <button type="button" aria-label="Settings" onClick={() => setSettingsOpen((open) => !open)}>
-            Settings
-          </button>
-          <input
-            ref={importInputRef}
-            aria-label="Import outline file"
-            type="file"
-            accept=".opml,.xml,.txt,text/plain,text/x-opml,application/xml"
-            hidden
-            onChange={importOutlineFile}
+      <div className="floating-app-controls" aria-label="Workspace controls">
+        <button
+          type="button"
+          className="app-menu-button"
+          aria-label="Workspace menu"
+          onClick={() => setWorkspaceMenuOpen(true)}
+        >
+          <span aria-hidden="true" className="app-menu-line" />
+          <span aria-hidden="true" className="app-menu-line" />
+          <span aria-hidden="true" className="app-menu-line" />
+        </button>
+        {preferences.showSyncStatus ? <SyncStatusBadge status={syncStatus} /> : null}
+      </div>
+      {importError ? <p className="import-error" role="alert">Import failed: {importError}</p> : null}
+      {workspaceMenuOpen ? (
+        <div className="workspace-menu-backdrop" role="presentation" onMouseDown={() => setWorkspaceMenuOpen(false)}>
+          <WorkspaceMenu
+            section={workspaceMenuSection}
+            importFormat={importFormat}
+            importMode={importMode}
+            onSectionChange={setWorkspaceMenuSection}
+            onExport={downloadExport}
+            onBackup={downloadBackup}
+            onImportFormatChange={setImportFormat}
+            onImportModeChange={setImportMode}
+            onImport={() => importInputRef.current?.click()}
+            onOpenSettings={(section) => {
+              setWorkspaceMenuOpen(false);
+              setSettingsSection(section);
+              setSettingsOpen(true);
+            }}
+            onClose={() => setWorkspaceMenuOpen(false)}
           />
-          <SyncStatusBadge status={syncStatus} />
         </div>
-        {importError ? <p role="alert">Import failed: {importError}</p> : null}
-      </header>
+      ) : null}
+      <input
+        ref={importInputRef}
+        aria-label="Import outline file"
+        type="file"
+        accept=".opml,.xml,.txt,text/plain,text/x-opml,application/xml"
+        hidden
+        onChange={importOutlineFile}
+      />
       {settingsOpen ? (
         <div className="settings-modal-backdrop" role="presentation" onMouseDown={() => setSettingsOpen(false)}>
           <SettingsPanel
@@ -632,6 +618,15 @@ function SettingsPanel({
             </label>
             <label>
               <input
+                aria-label="Sync status"
+                type="checkbox"
+                checked={preferences.showSyncStatus}
+                onChange={(event) => onPreferenceChange("showSyncStatus", event.target.checked)}
+              />
+              Sync status
+            </label>
+            <label>
+              <input
                 aria-label="Show notes"
                 type="checkbox"
                 checked={preferences.showNotes}
@@ -795,6 +790,124 @@ const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: "customCss", label: "Custom CSS" },
   { id: "sync", label: "Sync" }
 ];
+
+type WorkspaceMenuSection = "file" | "import" | "settings";
+
+function WorkspaceMenu({
+  section,
+  importFormat,
+  importMode,
+  onSectionChange,
+  onExport,
+  onBackup,
+  onImportFormatChange,
+  onImportModeChange,
+  onImport,
+  onOpenSettings,
+  onClose
+}: {
+  section: WorkspaceMenuSection;
+  importFormat: ImportFormat;
+  importMode: ImportApplyOptions["mode"];
+  onSectionChange: (section: WorkspaceMenuSection) => void;
+  onExport: (kind: "json" | "markdown" | "opml" | "plainText", visibleOnly?: boolean) => void;
+  onBackup: () => void;
+  onImportFormatChange: (format: ImportFormat) => void;
+  onImportModeChange: (mode: ImportApplyOptions["mode"]) => void;
+  onImport: () => void;
+  onOpenSettings: (section: SettingsSection) => void;
+  onClose: () => void;
+}) {
+  return (
+    <aside className="workspace-menu" role="dialog" aria-modal="true" aria-label="Workspace menu" onMouseDown={(event) => event.stopPropagation()}>
+      <div className="workspace-menu-header">
+        <div>
+          <strong>Outliner</strong>
+          <span>Workspace menu</span>
+        </div>
+        <button type="button" aria-label="Close workspace menu" onClick={onClose}>
+          Close
+        </button>
+      </div>
+      <div className="workspace-menu-body">
+        <nav className="workspace-menu-nav" aria-label="Workspace menu sections">
+          <button type="button" className={section === "file" ? "workspace-menu-tab-active" : ""} onClick={() => onSectionChange("file")}>
+            File
+          </button>
+          <button type="button" className={section === "import" ? "workspace-menu-tab-active" : ""} onClick={() => onSectionChange("import")}>
+            Import
+          </button>
+          <button type="button" className={section === "settings" ? "workspace-menu-tab-active" : ""} onClick={() => onSectionChange("settings")}>
+            Settings
+          </button>
+        </nav>
+        <div className="workspace-menu-section">
+          {section === "file" ? (
+            <>
+              <button type="button" onClick={() => onExport("json")}>
+                Export JSON
+              </button>
+              <button type="button" onClick={() => onExport("markdown")}>
+                Export Markdown
+              </button>
+              <button type="button" onClick={() => onExport("opml")}>
+                Export OPML
+              </button>
+              <button type="button" onClick={() => onExport("plainText")}>
+                Export Text
+              </button>
+              <button type="button" onClick={() => onExport("opml", true)}>
+                Export Visible OPML
+              </button>
+              <button type="button" onClick={onBackup}>
+                Backup
+              </button>
+            </>
+          ) : null}
+          {section === "import" ? (
+            <>
+              <label>
+                Format
+                <select
+                  aria-label="Import format"
+                  value={importFormat}
+                  onChange={(event) => onImportFormatChange(event.target.value as ImportFormat)}
+                >
+                  <option value="opml">OPML</option>
+                  <option value="plainText">Text</option>
+                </select>
+              </label>
+              <label>
+                Mode
+                <select
+                  aria-label="Import mode"
+                  value={importMode}
+                  onChange={(event) => onImportModeChange(event.target.value as ImportApplyOptions["mode"])}
+                >
+                  <option value="mergeRoot">Merge at root</option>
+                  <option value="insertUnder">Insert under selected</option>
+                  <option value="replace">Replace workspace</option>
+                </select>
+              </label>
+              <button type="button" onClick={onImport}>
+                Import file
+              </button>
+            </>
+          ) : null}
+          {section === "settings" ? (
+            <>
+              {SETTINGS_SECTIONS.map((item) => (
+                <button key={item.id} type="button" onClick={() => onOpenSettings(item.id)}>
+                  {item.label}
+                </button>
+              ))}
+            </>
+          ) : null}
+        </div>
+      </div>
+    </aside>
+  );
+}
 
 function buildCommandPaletteItems({
   document,

@@ -31,6 +31,7 @@ export type PreferenceSettings = {
   font: FontPreference;
   spellcheck: boolean;
   showWordCount: boolean;
+  showSyncStatus: boolean;
   showNotes: boolean;
   autoFocus: boolean;
   typewriterScrollEnabled: boolean;
@@ -83,6 +84,7 @@ export const DEFAULT_PREFERENCES: PreferenceSettings = {
   font: "system",
   spellcheck: true,
   showWordCount: true,
+  showSyncStatus: true,
   showNotes: true,
   autoFocus: true,
   typewriterScrollEnabled: false,
