@@ -81,25 +81,25 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
   - [x] 명령 실행, 노드 검색, 최근 노드 이동을 같은 palette에서 처리한다.
   - [x] 검색 결과는 키보드 이동, preview, 현재 노드로 점프를 지원한다.
   - [ ] 최근 문서 이동은 다중 문서/workspace 모델이 생기는 Phase 16에서 연결한다.
-- [ ] 노드 메모
+- [x] 노드 메모
   - [x] `Shift+Enter`로 현재 노드의 note를 생성/편집한다.
   - [x] note editor는 필요할 때만 열고, note 입력의 `Shift+Enter`로 닫은 뒤 노드 본문 편집으로 돌아간다.
   - [x] note는 본문과 분리된 보조 텍스트로 저장한다.
   - [x] note editor는 설정/서식 툴바가 아니라 현재 노드 바로 아래에 표시한다.
   - [x] 전역 note visibility toggle이 켜진 경우에만 내용 있는 note preview를 표시한다.
   - [x] note preview와 note textarea editor의 시각 상태를 명확히 분리한다.
-  - 접기/검색/export에서 note 포함 정책을 명확히 한다.
+  - [x] 접기/검색/export에서 note 포함 정책을 명확히 한다.
 - [ ] 멀티라인 편집
   - [ ] 본문 내부 줄바꿈 정책을 `Ctrl+Enter`와 분리해서 다시 정의한다.
-  - plain text import/export에서 노드 경계와 본문 줄바꿈을 구분한다.
+  - [x] plain text import/export에서 노드 경계와 본문 줄바꿈을 구분한다.
 - [ ] 멀티 커서 편집 고도화
   - 여러 노드에서 동시 텍스트 입력/삭제를 지원한다.
   - 선택 범위와 커서 집합의 Undo/Redo 단위를 정의한다.
   - bulk operation과 충돌하지 않게 command 실행 경로를 정리한다.
-- [ ] LaTeX 지원
-  - inline LaTeX와 block LaTeX syntax를 정의한다.
-  - 렌더링 라이브러리 도입 여부를 결정한다.
-  - 접근성 label과 원문 편집 fallback을 제공한다.
+- [x] LaTeX 지원
+  - [x] inline LaTeX와 block LaTeX syntax를 정의한다.
+  - [x] 렌더링 라이브러리 도입 여부를 결정한다.
+  - [x] 접근성 label과 원문 편집 fallback을 제공한다.
 - [ ] 단축키 커스터마이징
   - 모든 command에 사용자 지정 shortcut을 연결할 수 있게 한다.
   - [x] note 접근, 형제 노드 생성, node palette, command palette 단축키를 설정 가능하게 한다.
@@ -123,3 +123,5 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
 - Phase 11의 리치 포맷 v1은 selector/metadata 기반으로 완료된 상태지만, Phase 15에서는 실제 사용자-facing format command와 편집 UI까지 확장한다.
 - Custom CSS는 생산성 기능이지만 앱 안정성 리스크가 있으므로, 적용 범위 제한과 reset escape hatch를 우선한다.
 - Command palette는 검색 UI와 command registry를 연결하는 중심 진입점이다. 이후 데스크톱 앱 메뉴, 계정 기능, 모바일 command surface에서도 재사용할 수 있게 설계한다.
+- 2026-05-21 plain text import/export 정책: 일반 들여쓰기 라인은 노드 경계로 유지하고, 본문 내부 줄바꿈은 같은 노드 아래 `| ` continuation line, note는 `> ` note line으로 저장/복원한다. 노드 검색은 본문을 우선 검색하고, 본문에 없으면 note match를 palette에 `Note match`로 표시한다.
+- 2026-05-21 LaTeX 정책: Phase 15에서는 외부 수식 렌더링 라이브러리를 도입하지 않고 `$inline$`, `$$block$$` 원문 기반 fallback 렌더링을 제공한다. inactive row는 LaTeX source를 시각적으로 구분하고 `aria-label`을 제공하며, active editor에서는 원문을 그대로 편집한다.
