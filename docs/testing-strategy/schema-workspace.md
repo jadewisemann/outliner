@@ -12,11 +12,14 @@ describe("workspace document commands", () => {
   it("creates and switches documents with independent root and view state", () => {});
   it("renames and deletes documents without changing document outline data", () => {});
 });
+
+describe("workspace json import and export", () => {
+  it("preserves workspace schema version when exporting and importing json", () => {});
+});
 ```
 
 다음 Red 후보:
 
-- local persistence가 v1/v2 저장값을 모두 읽고 v2 schema version을 보존한다.
-- manual backup이 `WorkspaceSnapshot`과 분리된 preferences/history를 함께 직렬화한다.
-- JSON export/import가 workspace schema version을 유지한다.
 - 문서 생성/이름 변경/삭제가 outline Undo/Redo stack에 들어가지 않는 앱 런타임 테스트를 추가한다.
+- active document switcher UI가 문서 생성/전환/이름 변경/삭제를 수행한다.
+- recent documents/targets가 workspace view state에 보존된다.

@@ -3,10 +3,12 @@ import { createInitialView } from "./outline";
 import {
   createDocumentInWorkspace,
   deleteDocumentFromWorkspace,
+  isWorkspaceSnapshot,
   renameDocumentInWorkspace,
   switchActiveDocument,
   toWorkspaceSnapshot
 } from "./workspace";
+import { exportSnapshotToJson, importSnapshotFromJson } from "./exporters";
 import { makeClock, makeDocumentWithTexts, makeIdGenerator } from "../test/factories";
 
 describe("workspace snapshot migration", () => {
@@ -84,5 +86,20 @@ describe("workspace document commands", () => {
     expect(workspace.workspace.documentOrder).toEqual(["doc-1"]);
     expect(workspace.workspace.activeDocumentId).toBe("doc-1");
     expect(workspace.workspace.view.perDocument["doc-2"]).toBeUndefined();
+  });
+});
+
+describe("workspace json import and export", () => {
+  it("preserves workspace schema version when exporting and importing json", () => {
+    const document = makeDocumentWithTexts(["Export me"]);
+    const workspace = toWorkspaceSnapshot({ document, view: createInitialView(document) }, () => "doc-1", () => 10);
+
+    const imported = importSnapshotFromJson(exportSnapshotToJson(workspace));
+
+    expect(isWorkspaceSnapshot(imported)).toBe(true);
+    if (!isWorkspaceSnapshot(imported)) {
+      throw new Error("Expected workspace snapshot");
+    }
+    expect(imported.workspace.documents["doc-1"].nodes[document.nodes[document.rootId].children[0]].text).toBe("Export me");
   });
 });

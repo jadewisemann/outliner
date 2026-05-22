@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { createInitialView } from "../domain/outline";
-import type { OutlineSnapshot } from "../domain/outlineTypes";
+import type { OutlineSnapshot, StoredSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
 import { makeDocumentWithTexts } from "../test/factories";
 import { FakeRemoteStoreV2 } from "../sync/fakeRemoteStoreV2";
@@ -9,8 +9,8 @@ import { App } from "./App";
 import { COMMAND_REGISTRY, DEFAULT_PREFERENCES, normalizePreferences, type PreferenceSettings } from "./preferences";
 
 function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersistence & { preferences: PreferenceSettings } {
-  let current = initial;
-  let conflictBackup: OutlineSnapshot | null = null;
+  let current: StoredSnapshot | null = initial;
+  let conflictBackup: StoredSnapshot | null = null;
   const history: Awaited<ReturnType<LocalPersistence["listSnapshotHistory"]>> = [];
   let preferences = DEFAULT_PREFERENCES;
   return {

@@ -59,6 +59,7 @@ export type VisibleNode = {
 };
 
 export type OutlineSnapshot = {
+  schemaVersion?: 1;
   document: OutlineDocument;
   view: ViewState;
 };
@@ -86,3 +87,5 @@ export type WorkspaceViewState = {
 export type LinkTarget =
   | { kind: "document"; documentId: DocumentId }
   | { kind: "node"; documentId: DocumentId; nodeId: NodeId };
+
+export type StoredSnapshot = OutlineSnapshot | WorkspaceSnapshot;

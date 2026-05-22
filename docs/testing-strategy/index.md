@@ -29,6 +29,6 @@ TDD 루프와 테스트 스키마를 찾는 입구다. 구현할 기능과 가�
 - [x] Remote sync Phase 12-C: full-snapshot write/read bandwidth budget 테스트
 - [x] OPML import/export round-trip
 - [ ] 50,000 node 병목 profiling
-- [ ] Phase 16 persistence/history/backup workspace schema 보존 테스트
+- [x] Phase 16 persistence/history/backup workspace schema 보존 테스트
 - [ ] 히스토리/설정 E2E smoke
 - [ ] 모바일 persistence adapter 계약 테스트

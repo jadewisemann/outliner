@@ -1,7 +1,8 @@
 import { parseIndentedText, type PastedOutlineDraft } from "./bulkOutline";
 import { createEmptyDocument, createInitialView, parseNodeTextInput } from "./outline";
 import { getVisibleNodes } from "./outlineSelectors";
-import type { Clock, IdGenerator, NodeId, OutlineDocument, OutlineNode, OutlineSnapshot, ViewState } from "./outlineTypes";
+import type { Clock, IdGenerator, NodeId, OutlineDocument, OutlineNode, OutlineSnapshot, StoredSnapshot, ViewState } from "./outlineTypes";
+import { isWorkspaceSnapshot } from "./workspace";
 
 export type ExportOptions = {
   visibleOnly?: boolean;
@@ -16,11 +17,30 @@ export type ImportApplyOptions =
   | { mode: "insertUnder"; targetNodeId: NodeId };
 
 export function exportToJson(document: OutlineDocument, view: ViewState): string {
-  return JSON.stringify({ document, view } satisfies OutlineSnapshot, null, 2);
+  return exportSnapshotToJson({ document, view });
 }
 
 export function importFromJson(value: string): OutlineSnapshot {
+  const parsed = importSnapshotFromJson(value);
+  if (isWorkspaceSnapshot(parsed)) {
+    throw new Error("Expected outline export");
+  }
+  return parsed;
+}
+
+export function exportSnapshotToJson(snapshot: StoredSnapshot): string {
+  return JSON.stringify(snapshot, null, 2);
+}
+
+export function importSnapshotFromJson(value: string): StoredSnapshot {
   const parsed = JSON.parse(value) as OutlineSnapshot;
+  const stored = parsed as StoredSnapshot;
+  if (isWorkspaceSnapshot(stored)) {
+    if (!stored.workspace?.activeDocumentId || !stored.workspace?.documents || !stored.workspace?.view) {
+      throw new Error("Invalid workspace export");
+    }
+    return stored;
+  }
   if (!parsed.document?.rootId || !parsed.document?.nodes || !parsed.view?.zoomNodeId) {
     throw new Error("Invalid outline export");
   }

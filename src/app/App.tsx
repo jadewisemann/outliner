@@ -20,6 +20,7 @@ import {
   type ImportFormat
 } from "../domain/exporters";
 import type { NodeId, OutlineDocument, ViewState } from "../domain/outlineTypes";
+import { toActiveOutlineSnapshot } from "../domain/workspace";
 import { indentNode, moveNodeDown, moveNodeUp, outdentNode, revealNode, toggleCollapse, updateNodeMetadata } from "../domain/outline";
 import { getVisibleNodes } from "../domain/outlineSelectors";
 import { searchOutline } from "../domain/searchSelectors";
@@ -496,7 +497,7 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
         <aside className="history-panel" aria-label="Snapshot history">
           {snapshotHistory.slice(0, 5).map((entry) => (
             <button key={entry.id} type="button" onClick={() => restoreSnapshot(entry.id)}>
-              {new Date(entry.createdAt).toLocaleString()} · {previewSnapshot(entry.snapshot.document)}
+              {new Date(entry.createdAt).toLocaleString()} · {previewSnapshot(toActiveOutlineSnapshot(entry.snapshot).document)}
             </button>
           ))}
         </aside>

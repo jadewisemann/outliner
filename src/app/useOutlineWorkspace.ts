@@ -6,6 +6,7 @@ import {
   ROOT_ID
 } from "../domain/outline";
 import type { Clock, IdGenerator, NodeId, OutlineSnapshot } from "../domain/outlineTypes";
+import { toActiveOutlineSnapshot } from "../domain/workspace";
 import type { LocalPersistence, SnapshotHistoryEntry } from "../persistence/localPersistence";
 import {
   createRemoteSnapshotRecord,
@@ -326,7 +327,7 @@ export function useOutlineWorkspace({
       if (!entry) {
         return;
       }
-      publishSnapshot(cloneSnapshot(entry.snapshot));
+      publishSnapshot(cloneSnapshot(toActiveOutlineSnapshot(entry.snapshot)));
     },
     [publishSnapshot, snapshotHistory]
   );
@@ -339,7 +340,7 @@ export function useOutlineWorkspace({
         return;
       }
       if (persisted) {
-        const normalized = normalizeSnapshot(persisted, createIdRef.current, nowRef.current);
+        const normalized = normalizeSnapshot(toActiveOutlineSnapshot(persisted), createIdRef.current, nowRef.current);
         workspaceRef.current = createYjsWorkspace(normalized);
         snapshotRef.current = normalized;
         undoStackRef.current = [];

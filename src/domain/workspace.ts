@@ -9,11 +9,24 @@ import type {
   IdGenerator,
   OutlineDocument,
   OutlineSnapshot,
+  StoredSnapshot,
   ViewState,
   WorkspaceSnapshot
 } from "./outlineTypes";
 
-export type StoredSnapshot = OutlineSnapshot | WorkspaceSnapshot;
+export function isWorkspaceSnapshot(snapshot: StoredSnapshot): snapshot is WorkspaceSnapshot {
+  return snapshot.schemaVersion === 2;
+}
+
+export function toActiveOutlineSnapshot(snapshot: StoredSnapshot): OutlineSnapshot {
+  if (!isWorkspaceSnapshot(snapshot)) {
+    return snapshot;
+  }
+  return {
+    document: getActiveDocument(snapshot),
+    view: getActiveView(snapshot)
+  };
+}
 
 export function toWorkspaceSnapshot(
   snapshot: StoredSnapshot,
@@ -175,10 +188,6 @@ export function deleteDocumentFromWorkspace(
       updatedAt: timestamp
     }
   };
-}
-
-function isWorkspaceSnapshot(snapshot: StoredSnapshot): snapshot is WorkspaceSnapshot {
-  return (snapshot as WorkspaceSnapshot).schemaVersion === 2;
 }
 
 function normalizeWorkspaceDocument(

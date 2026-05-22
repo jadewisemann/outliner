@@ -1,24 +1,24 @@
-import type { OutlineSnapshot } from "../domain/outlineTypes";
+import type { StoredSnapshot } from "../domain/outlineTypes";
 import { normalizePreferences, type PreferenceSettings } from "../app/preferences";
 
 export type SnapshotHistoryEntry = {
   id: string;
   createdAt: number;
   reason: "autosave" | "restore" | "conflict";
-  snapshot: OutlineSnapshot;
+  snapshot: StoredSnapshot;
 };
 
 export interface LocalPersistence {
-  load(): Promise<OutlineSnapshot | null>;
-  save(snapshot: OutlineSnapshot): Promise<void>;
+  load(): Promise<StoredSnapshot | null>;
+  save(snapshot: StoredSnapshot): Promise<void>;
   clear(): Promise<void>;
   listSnapshotHistory(): Promise<SnapshotHistoryEntry[]>;
   saveSnapshotHistory(entry: SnapshotHistoryEntry): Promise<void>;
   clearSnapshotHistory(): Promise<void>;
   loadPreferences(): Promise<PreferenceSettings>;
   savePreferences(preferences: PreferenceSettings): Promise<void>;
-  loadConflictBackup(): Promise<OutlineSnapshot | null>;
-  saveConflictBackup(snapshot: OutlineSnapshot): Promise<void>;
+  loadConflictBackup(): Promise<StoredSnapshot | null>;
+  saveConflictBackup(snapshot: StoredSnapshot): Promise<void>;
   clearConflictBackup(): Promise<void>;
 }
 
@@ -30,13 +30,13 @@ export function createBrowserLocalPersistence(name: string): LocalPersistence {
   return {
     async load() {
       if (!hasIndexedDb()) {
-        return loadFromLocalStorage<OutlineSnapshot>(key);
+        return loadFromLocalStorage<StoredSnapshot>(key);
       }
       const db = await openDb();
       return new Promise((resolve, reject) => {
         const tx = db.transaction("snapshots", "readonly");
         const request = tx.objectStore("snapshots").get(key);
-        request.onsuccess = () => resolve((request.result as OutlineSnapshot | undefined) ?? null);
+        request.onsuccess = () => resolve((request.result as StoredSnapshot | undefined) ?? null);
         request.onerror = () => reject(request.error);
       });
     },
@@ -133,13 +133,13 @@ export function createBrowserLocalPersistence(name: string): LocalPersistence {
     },
     async loadConflictBackup() {
       if (!hasIndexedDb()) {
-        return loadFromLocalStorage<OutlineSnapshot>(conflictKey);
+        return loadFromLocalStorage<StoredSnapshot>(conflictKey);
       }
       const db = await openDb();
       return new Promise((resolve, reject) => {
         const tx = db.transaction("snapshots", "readonly");
         const request = tx.objectStore("snapshots").get(conflictKey);
-        request.onsuccess = () => resolve((request.result as OutlineSnapshot | undefined) ?? null);
+        request.onsuccess = () => resolve((request.result as StoredSnapshot | undefined) ?? null);
         request.onerror = () => reject(request.error);
       });
     },
@@ -184,7 +184,7 @@ function loadFromLocalStorage<T>(key: string): T | null {
   return value ? (JSON.parse(value) as T) : null;
 }
 
-function saveToLocalStorage(key: string, snapshot: OutlineSnapshot): void {
+function saveToLocalStorage(key: string, snapshot: StoredSnapshot): void {
   if (typeof window !== "undefined") {
     window.localStorage.setItem(key, JSON.stringify(snapshot));
   }

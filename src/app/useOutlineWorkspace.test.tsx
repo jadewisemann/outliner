@@ -1,7 +1,7 @@
 import { act, renderHook, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createInitialView, createNodeAfter, updateNodeText } from "../domain/outline";
-import type { OutlineSnapshot } from "../domain/outlineTypes";
+import type { OutlineSnapshot, StoredSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
 import { DEFAULT_PREFERENCES, type PreferenceSettings } from "./preferences";
 import { makeDocumentWithTexts, makeLargeDocument } from "../test/factories";
@@ -9,15 +9,16 @@ import { FakeRemoteStoreV2 } from "../sync/fakeRemoteStoreV2";
 import { createRemoteSnapshotRecord } from "../sync/remoteSyncV2";
 import type { RemoteStoreV2 } from "../sync/syncTypes";
 import { createYjsWorkspace } from "../sync/yjsAdapter";
+import { toActiveOutlineSnapshot } from "../domain/workspace";
 import { useOutlineWorkspace } from "./useOutlineWorkspace";
 
 function memoryPersistence(
   initial: OutlineSnapshot | null = null
-): LocalPersistence & { saved: OutlineSnapshot[]; conflictBackup: OutlineSnapshot | null } {
-  const saved: OutlineSnapshot[] = [];
+): LocalPersistence & { saved: StoredSnapshot[]; conflictBackup: StoredSnapshot | null } {
+  const saved: StoredSnapshot[] = [];
   const history: Awaited<ReturnType<LocalPersistence["listSnapshotHistory"]>> = [];
-  let current = initial;
-  let conflictBackup: OutlineSnapshot | null = null;
+  let current: StoredSnapshot | null = initial;
+  let conflictBackup: StoredSnapshot | null = null;
   let preferences: PreferenceSettings = DEFAULT_PREFERENCES;
   return {
     saved,
@@ -101,7 +102,7 @@ describe("useOutlineWorkspace", () => {
 
     const childId = second.nodes[second.rootId].children[0];
     await waitFor(() => expect(result.current.snapshot.document.nodes[childId].text).toBe("B"));
-    await waitFor(() => expect(persistence.saved.at(-1)?.document.nodes[childId].text).toBe("B"));
+    await waitFor(() => expect(toActiveOutlineSnapshot(persistence.saved.at(-1)!).document.nodes[childId].text).toBe("B"));
   });
 
   it("undoes and redoes committed snapshots", async () => {
@@ -426,7 +427,7 @@ describe("useOutlineWorkspace", () => {
     });
 
     await waitFor(() => expect(result.current.syncStatus).toBe("error"));
-    expect(persistence.saved.at(-1)?.document).toBe(second);
+    expect(toActiveOutlineSnapshot(persistence.saved.at(-1)!).document).toBe(second);
     expect(await remoteStore.readLatestSnapshot()).toBeNull();
   });
 
@@ -452,7 +453,7 @@ describe("useOutlineWorkspace", () => {
     });
 
     await waitFor(() => expect(result.current.syncStatus).toBe("offline"));
-    expect(persistence.saved.at(-1)?.document).toBe(second);
+    expect(toActiveOutlineSnapshot(persistence.saved.at(-1)!).document).toBe(second);
 
     act(() => {
       window.dispatchEvent(new Event("focus"));
@@ -605,7 +606,7 @@ describe("useOutlineWorkspace", () => {
 
     await waitFor(() => expect(result.current.syncStatus).toBe("conflict"));
     const remoteChildId = remote.nodes[remote.rootId].children[0];
-    expect(persistence.conflictBackup?.document.nodes[localChildId].text).toBe("Local");
+    expect(toActiveOutlineSnapshot(persistence.conflictBackup!).document.nodes[localChildId].text).toBe("Local");
     expect(result.current.snapshot.document.nodes[remoteChildId].text).toBe("Remote");
   });
 
