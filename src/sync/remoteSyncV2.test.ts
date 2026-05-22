@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createInitialView } from "../domain/outline";
+import { toActiveOutlineSnapshot } from "../domain/workspace";
 import { makeDocumentWithTexts } from "../test/factories";
 import { FakeRemoteStoreV2 } from "./fakeRemoteStoreV2";
 import { createRemoteSnapshotRecord, writeRemoteSnapshotPatchV2, writeRemoteSnapshotV2 } from "./remoteSyncV2";
@@ -106,7 +107,7 @@ describe("remote sync v2", () => {
     const latest = await store.readLatestSnapshot();
     expect(latest).not.toBeNull();
     const materialized = getYjsSnapshot(mergeIntoNewWorkspace(latest!.state));
-    expect(materialized?.document.nodes[nodeId].text).toBe("A changed");
+    expect(toActiveOutlineSnapshot(materialized!).document.nodes[nodeId].text).toBe("A changed");
     expect(store.getMetering().writeBytes - beforePatchBytes).toBe(estimateEncodedPatchBytes(patch));
     expect(estimateEncodedPatchBytes(patch)).toBeLessThan(estimateEncodedSnapshotBytes(createRemoteSnapshotRecord(createYjsWorkspace({ document: secondDocument, view: createInitialView(secondDocument) }), "client-a", 2, 11)));
   });

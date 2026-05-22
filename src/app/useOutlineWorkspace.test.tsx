@@ -4,16 +4,21 @@ import { createInitialView, createNodeAfter, updateNodeText } from "../domain/ou
 import type { OutlineSnapshot, StoredSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
 import { DEFAULT_PREFERENCES, type PreferenceSettings } from "./preferences";
-import { makeDocumentWithTexts, makeLargeDocument } from "../test/factories";
+import { makeDocumentWithTexts, makeIdGenerator, makeLargeDocument } from "../test/factories";
 import { FakeRemoteStoreV2 } from "../sync/fakeRemoteStoreV2";
 import { createRemoteSnapshotRecord } from "../sync/remoteSyncV2";
 import type { RemoteStoreV2 } from "../sync/syncTypes";
 import { createYjsWorkspace } from "../sync/yjsAdapter";
-import { toActiveOutlineSnapshot } from "../domain/workspace";
+import {
+  createDocumentInWorkspace,
+  isWorkspaceSnapshot,
+  switchActiveDocument,
+  toActiveOutlineSnapshot
+} from "../domain/workspace";
 import { useOutlineWorkspace } from "./useOutlineWorkspace";
 
 function memoryPersistence(
-  initial: OutlineSnapshot | null = null
+  initial: StoredSnapshot | null = null
 ): LocalPersistence & { saved: StoredSnapshot[]; conflictBackup: StoredSnapshot | null } {
   const saved: StoredSnapshot[] = [];
   const history: Awaited<ReturnType<LocalPersistence["listSnapshotHistory"]>> = [];
@@ -83,6 +88,23 @@ describe("useOutlineWorkspace", () => {
     expect(result.current.snapshot.document.nodes[childId].text).toBe("Saved");
   });
 
+  it("promotes and saves a v1 persisted snapshot as a v2 workspace", async () => {
+    const document = makeDocumentWithTexts(["Saved"]);
+    const persistence = memoryPersistence({ document, view: createInitialView(document) });
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        createId: () => "doc-1",
+        now: () => 1
+      })
+    );
+
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    await waitFor(() => expect(isWorkspaceSnapshot(persistence.saved.at(-1)!)).toBe(true));
+    expect(result.current.workspaceSnapshot.schemaVersion).toBe(2);
+    expect(result.current.workspaceSnapshot.workspace.documentOrder).toEqual(["doc-1"]);
+  });
+
   it("commits snapshots and persists the latest runtime state", async () => {
     const first = makeDocumentWithTexts(["A"]);
     const second = makeDocumentWithTexts(["B"]);
@@ -134,6 +156,46 @@ describe("useOutlineWorkspace", () => {
     });
 
     await waitFor(() => expect(result.current.snapshot.document.nodes[second.rootId].children).toHaveLength(2));
+  });
+
+  it("keeps document commands out of outline undo and preserves per-document view state", async () => {
+    const first = makeDocumentWithTexts(["A"]);
+    const persistence = memoryPersistence({ document: first, view: createInitialView(first) });
+    const { result } = renderHook(() =>
+      useOutlineWorkspace({
+        persistence,
+        createId: makeIdGenerator("runtime"),
+        now: () => 10
+      })
+    );
+    await waitFor(() => expect(result.current.loaded).toBe(true));
+    const firstDocumentId = result.current.workspaceSnapshot.workspace.activeDocumentId;
+
+    act(() => {
+      result.current.commitWorkspaceCommand(
+        createDocumentInWorkspace(result.current.workspaceSnapshot, "Second", () => "doc-2", () => "node-2", () => 11)
+      );
+    });
+    await waitFor(() => expect(result.current.workspaceSnapshot.workspace.documentOrder).toEqual([firstDocumentId, "doc-2"]));
+    const second = result.current.activeSnapshot.document;
+    const secondChildId = second.nodes[second.rootId].children[0];
+
+    act(() => {
+      result.current.commitActiveOutline({
+        document: second,
+        view: { ...result.current.activeSnapshot.view, selectedNodeId: secondChildId }
+      });
+      result.current.commitWorkspaceCommand(switchActiveDocument(result.current.workspaceSnapshot, firstDocumentId));
+    });
+
+    await waitFor(() => expect(result.current.workspaceSnapshot.workspace.activeDocumentId).toBe(firstDocumentId));
+    act(() => {
+      result.current.undo();
+    });
+
+    expect(result.current.workspaceSnapshot.workspace.documentOrder).toEqual([firstDocumentId, "doc-2"]);
+    expect(result.current.workspaceSnapshot.workspace.activeDocumentId).toBe(firstDocumentId);
+    expect(result.current.workspaceSnapshot.workspace.view.perDocument["doc-2"].selectedNodeId).toBe(secondChildId);
   });
 
   it("keeps an editable node after undoing to an empty document", async () => {

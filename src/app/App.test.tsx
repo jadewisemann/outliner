@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createInitialView } from "../domain/outline";
 import type { OutlineSnapshot, StoredSnapshot } from "../domain/outlineTypes";
 import type { LocalPersistence } from "../persistence/localPersistence";
@@ -8,7 +8,7 @@ import { FakeRemoteStoreV2 } from "../sync/fakeRemoteStoreV2";
 import { App } from "./App";
 import { COMMAND_REGISTRY, DEFAULT_PREFERENCES, normalizePreferences, type PreferenceSettings } from "./preferences";
 
-function memoryPersistence(initial: OutlineSnapshot | null = null): LocalPersistence & { preferences: PreferenceSettings } {
+function memoryPersistence(initial: StoredSnapshot | null = null): LocalPersistence & { preferences: PreferenceSettings } {
   let current: StoredSnapshot | null = initial;
   let conflictBackup: StoredSnapshot | null = null;
   const history: Awaited<ReturnType<LocalPersistence["listSnapshotHistory"]>> = [];
@@ -66,6 +66,47 @@ describe("App", () => {
     render(<App persistence={memoryPersistence({ document, view: createInitialView(document) })} />);
 
     expect(await screen.findByText("Persisted")).toBeInTheDocument();
+  });
+
+  it("shows workspace documents and supports create switch rename and delete from the sidebar", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const document = makeDocumentWithTexts(["First body"]);
+    render(<App persistence={memoryPersistence({ document, view: createInitialView(document) })} />);
+    await screen.findByText("First body");
+
+    const sidebar = screen.getByRole("complementary", { name: "Documents" });
+    expect(within(sidebar).getByRole("button", { name: "Untitled" })).toHaveAttribute("aria-current", "page");
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "New document" }));
+    await waitFor(() => expect(within(sidebar).getAllByRole("listitem")).toHaveLength(2));
+    expect(within(sidebar).getAllByRole("button", { name: "Untitled" }).at(-1)).toHaveAttribute("aria-current", "page");
+
+    fireEvent.click(within(sidebar).getAllByRole("button", { name: "Rename Untitled" }).at(-1)!);
+    const titleInput = within(sidebar).getByLabelText("Document title");
+    fireEvent.change(titleInput, { target: { value: "Second" } });
+    fireEvent.keyDown(titleInput, { key: "Enter", code: "Enter" });
+    expect(await within(sidebar).findByRole("button", { name: "Second" })).toHaveAttribute("aria-current", "page");
+
+    fireEvent.click(within(sidebar).getAllByRole("button", { name: "Untitled" })[0]);
+    expect(await screen.findByText("First body")).toBeInTheDocument();
+
+    fireEvent.click(within(sidebar).getByRole("button", { name: "Delete Second" }));
+    expect(confirm).toHaveBeenCalledWith('Delete "Second"?');
+    await waitFor(() => expect(within(sidebar).queryByRole("button", { name: "Second" })).not.toBeInTheDocument());
+    confirm.mockRestore();
+  });
+
+  it("keeps the outliner editable when the workspace sidebar is collapsed", async () => {
+    const document = makeDocumentWithTexts(["A"]);
+    render(<App persistence={memoryPersistence({ document, view: createInitialView(document) })} />);
+    await screen.findByText("A");
+
+    fireEvent.click(screen.getByRole("button", { name: "Collapse document sidebar" }));
+    expect(screen.getByRole("button", { name: "Expand document sidebar" })).toBeInTheDocument();
+
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+    fireEvent.change(textbox, { target: { textContent: "Edited" } });
+    expect(screen.getByRole("tree", { name: "Outline" })).toBeInTheDocument();
   });
 
   it("undoes and redoes an outline structure edit from keyboard shortcuts", async () => {

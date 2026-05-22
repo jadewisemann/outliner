@@ -11,16 +11,22 @@ import {
 import { Outliner } from "../components/Outliner";
 import {
   applyImportedOutline,
-  exportToJson,
   exportToMarkdown,
   exportToOpml,
   exportToPlainText,
+  exportSnapshotToJson,
   previewImport,
   type ImportApplyOptions,
   type ImportFormat
 } from "../domain/exporters";
-import type { NodeId, OutlineDocument, ViewState } from "../domain/outlineTypes";
-import { toActiveOutlineSnapshot } from "../domain/workspace";
+import type { DocumentId, NodeId, OutlineDocument, ViewState, WorkspaceSnapshot } from "../domain/outlineTypes";
+import {
+  createDocumentInWorkspace,
+  deleteDocumentFromWorkspace,
+  renameDocumentInWorkspace,
+  switchActiveDocument,
+  toActiveOutlineSnapshot
+} from "../domain/workspace";
 import { indentNode, moveNodeDown, moveNodeUp, outdentNode, revealNode, toggleCollapse, updateNodeMetadata } from "../domain/outline";
 import { getVisibleNodes } from "../domain/outlineSelectors";
 import { searchOutline } from "../domain/searchSelectors";
@@ -59,7 +65,18 @@ type AppProps = {
 export function App({ persistence: providedPersistence, remoteStore }: AppProps = {}) {
   const browserPersistence = useMemo(() => createBrowserLocalPersistence("workspace_root"), []);
   const persistence = providedPersistence ?? browserPersistence;
-  const { snapshot, loaded, commitSnapshot, snapshotHistory, restoreSnapshot, undo, redo } = useOutlineWorkspace({
+  const {
+    workspaceSnapshot,
+    activeSnapshot,
+    snapshot,
+    loaded,
+    commitActiveOutline,
+    commitWorkspaceCommand,
+    snapshotHistory,
+    restoreSnapshot,
+    undo,
+    redo
+  } = useOutlineWorkspace({
     persistence,
     remoteStore,
     createId,
@@ -77,6 +94,9 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
   const [preferencesLoaded, setPreferencesLoaded] = useState(false);
   const [workspaceMenuOpen, setWorkspaceMenuOpen] = useState(false);
   const [workspaceMenuSection, setWorkspaceMenuSection] = useState<WorkspaceMenuSection>("file");
+  const [workspaceSidebarCollapsed, setWorkspaceSidebarCollapsed] = useState(false);
+  const [editingDocumentId, setEditingDocumentId] = useState<DocumentId>();
+  const [editingDocumentTitle, setEditingDocumentTitle] = useState("");
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("general");
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -85,7 +105,7 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
   const [recentNodeIds, setRecentNodeIds] = useState<NodeId[]>([]);
   const [customCssError, setCustomCssError] = useState<string>();
   latestSnapshotRef.current = snapshot;
-  const { document, view } = snapshot;
+  const { document, view } = activeSnapshot;
   const scopedCustomCss = useMemo(
     () => (preferences.customCssEnabled ? scopeCustomCss(preferences.customCss) : { css: "" }),
     [preferences.customCss, preferences.customCssEnabled]
@@ -221,7 +241,7 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
     commitScheduledRef.current = true;
     queueMicrotask(() => {
       commitScheduledRef.current = false;
-      commitSnapshot(pendingSnapshotRef.current);
+      commitActiveOutline(pendingSnapshotRef.current);
     });
   };
 
@@ -243,7 +263,7 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
     const options = { visibleOnly, zoomNodeId: view.zoomNodeId };
     const content =
       kind === "json"
-        ? exportToJson(document, view)
+        ? exportSnapshotToJson(workspaceSnapshot)
         : kind === "markdown"
           ? exportToMarkdown(document, options)
           : kind === "opml"
@@ -267,7 +287,7 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
   };
 
   const downloadBackup = () => {
-    const backup = createManualBackup(latestSnapshotRef.current, preferences, snapshotHistory, now());
+    const backup = createManualBackup(workspaceSnapshot, preferences, snapshotHistory, now());
     const url = URL.createObjectURL(new Blob([serializeManualBackup(backup)], { type: "application/json" }));
     const anchor = window.document.createElement("a");
     anchor.href = url;
@@ -422,7 +442,50 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
         ? { mode: "insertUnder", targetNodeId: current.view.selectedNodeId ?? current.document.rootId }
         : { mode: importMode };
     setImportError(undefined);
-    commitSnapshot(applyImportedOutline(current, imported, options));
+    commitActiveOutline(applyImportedOutline(current, imported, options));
+  };
+
+  const createWorkspaceDocument = () => {
+    const next = createDocumentInWorkspace(workspaceSnapshot, "Untitled", createId, createId, now);
+    commitWorkspaceCommand(withRecentDocumentTarget(next, next.workspace.activeDocumentId));
+    setRecentNodeIds([]);
+  };
+
+  const switchWorkspaceDocument = (documentId: DocumentId) => {
+    commitWorkspaceCommand(withRecentDocumentTarget(switchActiveDocument(workspaceSnapshot, documentId), documentId));
+    setRecentNodeIds([]);
+  };
+
+  const startRenameWorkspaceDocument = (documentId: DocumentId) => {
+    setEditingDocumentId(documentId);
+    setEditingDocumentTitle(workspaceSnapshot.workspace.documents[documentId]?.title ?? "Untitled");
+  };
+
+  const cancelRenameWorkspaceDocument = () => {
+    setEditingDocumentId(undefined);
+    setEditingDocumentTitle("");
+  };
+
+  const saveWorkspaceDocumentTitle = () => {
+    if (!editingDocumentId) {
+      return;
+    }
+    commitWorkspaceCommand(
+      renameDocumentInWorkspace(workspaceSnapshot, editingDocumentId, normalizeDocumentTitle(editingDocumentTitle), now)
+    );
+    cancelRenameWorkspaceDocument();
+  };
+
+  const deleteWorkspaceDocument = (documentId: DocumentId) => {
+    const documentTitle = workspaceSnapshot.workspace.documents[documentId]?.title ?? "Untitled";
+    if (!window.confirm(`Delete "${documentTitle}"?`)) {
+      return;
+    }
+    commitWorkspaceCommand(removeRecentDocumentTarget(deleteDocumentFromWorkspace(workspaceSnapshot, documentId, now), documentId));
+    if (editingDocumentId === documentId) {
+      cancelRenameWorkspaceDocument();
+    }
+    setRecentNodeIds([]);
   };
 
   return (
@@ -430,9 +493,26 @@ export function App({ persistence: providedPersistence, remoteStore }: AppProps 
       className="app-shell"
       data-density={preferences.outlineDensity}
       data-bullet-style={preferences.bulletStyle}
+      data-sidebar={workspaceSidebarCollapsed ? "collapsed" : "expanded"}
       style={appearanceStyle}
     >
       <style data-testid="custom-css-style">{scopedCustomCss.css}</style>
+      {loaded ? (
+        <WorkspaceSidebar
+          workspace={workspaceSnapshot}
+          collapsed={workspaceSidebarCollapsed}
+          editingDocumentId={editingDocumentId}
+          editingDocumentTitle={editingDocumentTitle}
+          onCollapseChange={setWorkspaceSidebarCollapsed}
+          onCreateDocument={createWorkspaceDocument}
+          onSwitchDocument={switchWorkspaceDocument}
+          onStartRenameDocument={startRenameWorkspaceDocument}
+          onEditingDocumentTitleChange={setEditingDocumentTitle}
+          onSaveRenameDocument={saveWorkspaceDocumentTitle}
+          onCancelRenameDocument={cancelRenameWorkspaceDocument}
+          onDeleteDocument={deleteWorkspaceDocument}
+        />
+      ) : null}
       <div className="floating-app-controls" aria-label="Workspace controls">
         <button
           type="button"
@@ -872,6 +952,42 @@ function previewSnapshot(document: OutlineDocument): string {
   return text ? text.slice(0, 40) : "Untitled";
 }
 
+function normalizeDocumentTitle(title: string): string {
+  return title.trim() || "Untitled";
+}
+
+function withRecentDocumentTarget(workspace: WorkspaceSnapshot, documentId: DocumentId): WorkspaceSnapshot {
+  const recentTargets = [
+    { kind: "document" as const, documentId },
+    ...(workspace.workspace.view.recentTargets ?? []).filter((target) => target.kind !== "document" || target.documentId !== documentId)
+  ].slice(0, 12);
+  return {
+    ...workspace,
+    workspace: {
+      ...workspace.workspace,
+      view: {
+        ...workspace.workspace.view,
+        recentTargets
+      }
+    }
+  };
+}
+
+function removeRecentDocumentTarget(workspace: WorkspaceSnapshot, documentId: DocumentId): WorkspaceSnapshot {
+  return {
+    ...workspace,
+    workspace: {
+      ...workspace.workspace,
+      view: {
+        ...workspace.workspace.view,
+        recentTargets: workspace.workspace.view.recentTargets?.filter(
+          (target) => target.kind !== "document" || target.documentId !== documentId
+        )
+      }
+    }
+  };
+}
+
 const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
   { id: "general", label: "General" },
   { id: "editor", label: "Editor" },
@@ -882,6 +998,116 @@ const SETTINGS_SECTIONS: Array<{ id: SettingsSection; label: string }> = [
 ];
 
 type WorkspaceMenuSection = "file" | "import" | "settings";
+
+function WorkspaceSidebar({
+  workspace,
+  collapsed,
+  editingDocumentId,
+  editingDocumentTitle,
+  onCollapseChange,
+  onCreateDocument,
+  onSwitchDocument,
+  onStartRenameDocument,
+  onEditingDocumentTitleChange,
+  onSaveRenameDocument,
+  onCancelRenameDocument,
+  onDeleteDocument
+}: {
+  workspace: WorkspaceSnapshot;
+  collapsed: boolean;
+  editingDocumentId?: DocumentId;
+  editingDocumentTitle: string;
+  onCollapseChange: (collapsed: boolean) => void;
+  onCreateDocument: () => void;
+  onSwitchDocument: (documentId: DocumentId) => void;
+  onStartRenameDocument: (documentId: DocumentId) => void;
+  onEditingDocumentTitleChange: (title: string) => void;
+  onSaveRenameDocument: () => void;
+  onCancelRenameDocument: () => void;
+  onDeleteDocument: (documentId: DocumentId) => void;
+}) {
+  const canDeleteDocuments = workspace.workspace.documentOrder.length > 1;
+  if (collapsed) {
+    return (
+      <aside className="workspace-sidebar workspace-sidebar-collapsed" aria-label="Documents">
+        <button type="button" aria-label="Expand document sidebar" onClick={() => onCollapseChange(false)}>
+          Docs
+        </button>
+      </aside>
+    );
+  }
+  return (
+    <aside className="workspace-sidebar" aria-label="Documents">
+      <div className="workspace-sidebar-header">
+        <strong>Documents</strong>
+        <div>
+          <button type="button" aria-label="New document" onClick={onCreateDocument}>
+            New
+          </button>
+          <button type="button" aria-label="Collapse document sidebar" onClick={() => onCollapseChange(true)}>
+            Hide
+          </button>
+        </div>
+      </div>
+      <div className="workspace-document-list" role="list" aria-label="Document list">
+        {workspace.workspace.documentOrder.map((documentId) => {
+          const document = workspace.workspace.documents[documentId];
+          if (!document) {
+            return null;
+          }
+          const active = documentId === workspace.workspace.activeDocumentId;
+          const title = document.title?.trim() || "Untitled";
+          const editing = editingDocumentId === documentId;
+          return (
+            <div key={documentId} className="workspace-document-row" data-active={active ? "true" : "false"} role="listitem">
+              {editing ? (
+                <input
+                  aria-label="Document title"
+                  value={editingDocumentTitle}
+                  autoFocus
+                  onChange={(event) => onEditingDocumentTitleChange(event.target.value)}
+                  onBlur={onSaveRenameDocument}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      onSaveRenameDocument();
+                    }
+                    if (event.key === "Escape") {
+                      event.preventDefault();
+                      onCancelRenameDocument();
+                    }
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  className="workspace-document-switch"
+                  aria-current={active ? "page" : undefined}
+                  onClick={() => onSwitchDocument(documentId)}
+                >
+                  {title}
+                </button>
+              )}
+              <div className="workspace-document-actions">
+                <button type="button" aria-label={`Rename ${title}`} onClick={() => onStartRenameDocument(documentId)}>
+                  Rename
+                </button>
+                <button
+                  type="button"
+                  aria-label={`Delete ${title}`}
+                  disabled={!canDeleteDocuments}
+                  onClick={() => onDeleteDocument(documentId)}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
 
 function WorkspaceMenu({
   section,

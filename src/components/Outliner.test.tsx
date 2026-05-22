@@ -7,6 +7,14 @@ import type { OutlineDocument, ViewState } from "../domain/outlineTypes";
 import { makeDocumentWithTexts, makeLargeDocument } from "../test/factories";
 import { Outliner } from "./Outliner";
 
+function selectContent(element: HTMLElement) {
+  const selection = window.getSelection();
+  const range = document.createRange();
+  range.selectNodeContents(element);
+  selection?.removeAllRanges();
+  selection?.addRange(range);
+}
+
 describe("Outliner", () => {
   it("renders root breadcrumb and visible nodes", () => {
     const document = makeDocumentWithTexts(["A", "B"]);
@@ -1234,8 +1242,46 @@ describe("Outliner", () => {
     });
   });
 
-  it("toggles completed state with the row checkbox", async () => {
+  it("shows a todo checkbox only when the text starts with todo source markers", async () => {
     const document = makeDocumentWithTexts(["Task"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <>
+          <Outliner
+            document={currentDocument}
+            view={view}
+            createId={() => "new"}
+            now={() => 1}
+            onDocumentChange={setCurrentDocument}
+            onViewChange={setView}
+          />
+          <div data-testid="node-state">{JSON.stringify(currentDocument.nodes["n-1"])}</div>
+        </>
+      );
+    }
+    render(<Harness />);
+    expect(screen.queryByRole("button", { name: "Mark node complete" })).not.toBeInTheDocument();
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+
+    Object.defineProperty(textbox, "textContent", {
+      configurable: true,
+      get: () => "[] Task"
+    });
+    fireEvent.compositionEnd(textbox, { data: "" });
+    delete (textbox as { textContent?: string }).textContent;
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Mark node complete" })).toBeInTheDocument();
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("[] Task");
+      expect(screen.getByTestId("node-state")).toHaveTextContent('"completed":false');
+    });
+  });
+
+  it("edits completed todo nodes with the [*] source marker", async () => {
+    const document = makeDocumentWithTexts(["Task"]);
+    document.nodes["n-1"] = { ...document.nodes["n-1"], completed: true };
     function Harness() {
       const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
       const [view, setView] = useState<ViewState>(createInitialView(document));
@@ -1251,9 +1297,87 @@ describe("Outliner", () => {
       );
     }
     const { container } = render(<Harness />);
-    await userEvent.click(screen.getByRole("button", { name: "Mark node complete" }));
-    expect(container.querySelector('[data-node-id="n-1"]')).toHaveClass("outline-row-completed");
-    expect(screen.getByRole("button", { name: "Mark node incomplete" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("[*] Task");
+    await userEvent.click(screen.getByRole("button", { name: "Mark node incomplete" }));
+    expect(container.querySelector('[data-node-id="n-1"]')).not.toHaveClass("outline-row-completed");
+    expect(screen.getByRole("button", { name: "Mark node complete" })).toHaveAttribute("aria-pressed", "false");
+    expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("[] Task");
+  });
+
+  it("expands ctrl+a from text to node, siblings, and parent selection", async () => {
+    const document = makeDocumentWithTexts(["Parent", "Sibling"]);
+    document.nodes["n-1"] = { ...document.nodes["n-1"], children: ["n-3"] };
+    document.nodes["n-3"] = {
+      id: "n-3",
+      text: "Child",
+      children: [],
+      collapsed: false,
+      createdAt: 1,
+      updatedAt: 1
+    };
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: "n-3" });
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    const { container } = render(<Harness />);
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+    selectContent(textbox);
+
+    fireEvent.keyDown(textbox, { key: "a", code: "KeyA", ctrlKey: true });
+    await waitFor(() => expect(container.querySelector('[data-node-id="n-3"]')).toHaveClass("outline-row-selected"));
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), { key: "a", code: "KeyA", ctrlKey: true });
+    await waitFor(() => {
+      expect(container.querySelector('[data-node-id="n-3"]')).toHaveClass("outline-row-selected");
+      expect(container.querySelector('[data-node-id="n-1"]')).not.toHaveClass("outline-row-selected");
+    });
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), { key: "a", code: "KeyA", ctrlKey: true });
+    await waitFor(() => expect(container.querySelector('[data-node-id="n-1"]')).toHaveClass("outline-row-selected"));
+  });
+
+  it("selects and deletes the current line with ctrl+l and ctrl+shift+k", async () => {
+    const document = makeDocumentWithTexts(["A", "B", "C"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: "n-2" });
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    const { container } = render(<Harness />);
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+
+    fireEvent.keyDown(textbox, { key: "l", code: "KeyL", ctrlKey: true });
+    await waitFor(() => expect(container.querySelector('[data-node-id="n-2"]')).toHaveClass("outline-row-selected"));
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), {
+      key: "K",
+      code: "KeyK",
+      ctrlKey: true,
+      shiftKey: true
+    });
+    await waitFor(() => {
+      expect(screen.queryByText("B")).not.toBeInTheDocument();
+      expect(screen.getByText("C")).toBeInTheDocument();
+    });
   });
 
   it("stores metadata when choosing an internal link candidate", async () => {

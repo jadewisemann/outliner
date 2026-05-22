@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createInitialView } from "../domain/outline";
+import { toActiveOutlineSnapshot, toWorkspaceSnapshot } from "../domain/workspace";
 import { makeDocumentWithTexts } from "../test/factories";
 import {
   applyUpdate,
@@ -16,7 +17,7 @@ describe("yjs adapter", () => {
     const snapshot = { document, view: createInitialView(document) };
     const source = createYjsWorkspace(snapshot);
     const target = mergeIntoNewWorkspace(encodeState(source));
-    expect(getYjsSnapshot(target)?.document.nodes[document.rootId].children).toEqual(
+    expect(toActiveOutlineSnapshot(getYjsSnapshot(target)!).document.nodes[document.rootId].children).toEqual(
       document.nodes[document.rootId].children
     );
   });
@@ -28,7 +29,16 @@ describe("yjs adapter", () => {
     const target = createYjsWorkspace();
     applyUpdate(target, update);
     applyUpdate(target, update);
-    expect(getYjsSnapshot(target)?.document.nodes[document.rootId].children).toHaveLength(1);
+    expect(toActiveOutlineSnapshot(getYjsSnapshot(target)!).document.nodes[document.rootId].children).toHaveLength(1);
+  });
+
+  it("preserves workspace schema version in encoded updates", () => {
+    const document = makeDocumentWithTexts(["Workspace"]);
+    const snapshot = toWorkspaceSnapshot({ document, view: createInitialView(document) }, () => "doc-1", () => 1);
+    const source = createYjsWorkspace(snapshot);
+    const target = mergeIntoNewWorkspace(encodeState(source));
+
+    expect(getYjsSnapshot(target)).toMatchObject({ schemaVersion: 2 });
   });
 
   it("undoes and redoes snapshot changes", () => {
@@ -37,11 +47,11 @@ describe("yjs adapter", () => {
     const nextDocument = makeDocumentWithTexts(["B"]);
     setYjsSnapshot(workspace, { document: nextDocument, view: createInitialView(nextDocument) });
     workspace.undoManager.undo();
-    expect(getYjsSnapshot(workspace)?.document.nodes[document.rootId].children).toEqual(
+    expect(toActiveOutlineSnapshot(getYjsSnapshot(workspace)!).document.nodes[document.rootId].children).toEqual(
       document.nodes[document.rootId].children
     );
     workspace.undoManager.redo();
-    expect(getYjsSnapshot(workspace)?.document.nodes[nextDocument.rootId].children).toEqual(
+    expect(toActiveOutlineSnapshot(getYjsSnapshot(workspace)!).document.nodes[nextDocument.rootId].children).toEqual(
       nextDocument.nodes[nextDocument.rootId].children
     );
   });

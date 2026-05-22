@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createInitialView } from "../domain/outline";
+import { toActiveOutlineSnapshot } from "../domain/workspace";
 import { makeDocumentWithTexts } from "../test/factories";
 import { bytesToBase64 } from "./remoteEncoding";
 import { createRemoteSnapshotRecord } from "./remoteSyncV2";
@@ -121,7 +122,7 @@ describe("FirebaseRemoteStoreV2", () => {
     const restored = record ? getYjsSnapshot(createYjsWorkspaceFromState(record.state)) : undefined;
 
     expect(record).toMatchObject({ version: 1, clientId: "legacy", updatedAt: 2 });
-    expect(restored?.document.nodes[latest.nodes[latest.rootId].children[0]].text).toBe("Latest");
+    expect(toActiveOutlineSnapshot(restored!).document.nodes[latest.nodes[latest.rootId].children[0]].text).toBe("Latest");
     expect(migrated).toMatchObject({
       snapshot: { version: 1, clientId: "legacy", updatedAt: 2 },
       patch: null

@@ -47,6 +47,7 @@ type OutlineRowProps = {
   highlighted: boolean;
   hasCursor: boolean;
   hasBulkSelection: boolean;
+  hasOutlineSelection: boolean;
   hasMultiCursor: boolean;
   spellcheck: boolean;
   autoFocus: boolean;
@@ -71,6 +72,9 @@ type OutlineRowProps = {
   onCursorHorizontalChange: (offset: number) => void;
   onMoveNode: (direction: "previous" | "next") => void;
   onExtendSelection: (direction: "previous" | "next") => void;
+  onExpandSelection: () => void;
+  onSelectLine: () => void;
+  onDeleteLine: () => void;
   onAddCursor: (direction: "previous" | "next", offset: number) => void;
   onApplyTextToCursors: (edit: CursorTextEdit) => void;
   onClearPowerSelection: () => void;
@@ -141,18 +145,22 @@ function OutlineRowComponent(props: OutlineRowProps) {
           onZoom();
         }}
       />
-      <button
-        className="complete-button"
-        type="button"
-        aria-label={node.completed ? "Mark node incomplete" : "Mark node complete"}
-        aria-pressed={node.completed ? "true" : "false"}
-        onClick={(event) => {
-          event.stopPropagation();
-          props.onToggleCompleted();
-        }}
-      >
-        {node.completed ? "✓" : ""}
-      </button>
+      {node.completed !== undefined ? (
+        <button
+          className="complete-button"
+          type="button"
+          aria-label={node.completed ? "Mark node incomplete" : "Mark node complete"}
+          aria-pressed={node.completed ? "true" : "false"}
+          onClick={(event) => {
+            event.stopPropagation();
+            props.onToggleCompleted();
+          }}
+        >
+          {node.completed ? "✓" : ""}
+        </button>
+      ) : (
+        <span className="complete-placeholder" aria-hidden="true" />
+      )}
       <div className="row-editor" onClick={onSelect}>
         {active ? (
           <>
@@ -202,6 +210,7 @@ export const OutlineRow = memo(OutlineRowComponent, (previous, next) => {
     previous.highlighted === next.highlighted &&
     previous.hasCursor === next.hasCursor &&
     previous.hasBulkSelection === next.hasBulkSelection &&
+    previous.hasOutlineSelection === next.hasOutlineSelection &&
     previous.hasMultiCursor === next.hasMultiCursor &&
     previous.spellcheck === next.spellcheck &&
     previous.autoFocus === next.autoFocus &&
@@ -469,6 +478,9 @@ function ActiveRowEditor({
   onCursorHorizontalChange,
   onMoveNode,
   onExtendSelection,
+  onExpandSelection,
+  onSelectLine,
+  onDeleteLine,
   onAddCursor,
   onApplyTextToCursors,
   onClearPowerSelection,
@@ -477,6 +489,7 @@ function ActiveRowEditor({
   onFocusNote,
   keymap,
   hasBulkSelection,
+  hasOutlineSelection,
   hasMultiCursor,
   spellcheck,
   autoFocus,
@@ -511,6 +524,9 @@ function ActiveRowEditor({
         onCursorHorizontalChange={onCursorHorizontalChange}
         onMoveNode={onMoveNode}
         onExtendSelection={onExtendSelection}
+        onExpandSelection={onExpandSelection}
+        onSelectLine={onSelectLine}
+        onDeleteLine={onDeleteLine}
         onAddCursor={onAddCursor}
         onApplyTextToCursors={onApplyTextToCursors}
         onClearPowerSelection={onClearPowerSelection}
@@ -521,6 +537,7 @@ function ActiveRowEditor({
         onFocusNote={onFocusNote}
         keymap={keymap}
         hasBulkSelection={hasBulkSelection}
+        hasOutlineSelection={hasOutlineSelection}
         hasMultiCursor={hasMultiCursor}
       />
     </SharedTextEditor>
@@ -713,6 +730,9 @@ function KeyboardPlugin({
   onCursorHorizontalChange,
   onMoveNode,
   onExtendSelection,
+  onExpandSelection,
+  onSelectLine,
+  onDeleteLine,
   onAddCursor,
   onApplyTextToCursors,
   onClearPowerSelection,
@@ -723,6 +743,7 @@ function KeyboardPlugin({
   onFocusNote,
   keymap,
   hasBulkSelection,
+  hasOutlineSelection,
   hasMultiCursor
 }: {
   nodeText: string;
@@ -736,6 +757,9 @@ function KeyboardPlugin({
   onCursorHorizontalChange: (offset: number) => void;
   onMoveNode: (direction: "previous" | "next") => void;
   onExtendSelection: (direction: "previous" | "next") => void;
+  onExpandSelection: () => void;
+  onSelectLine: () => void;
+  onDeleteLine: () => void;
   onAddCursor: (direction: "previous" | "next", offset: number) => void;
   onApplyTextToCursors: (edit: CursorTextEdit) => void;
   onClearPowerSelection: () => void;
@@ -746,6 +770,7 @@ function KeyboardPlugin({
   onFocusNote: () => void;
   keymap: PreferenceSettings["keymap"];
   hasBulkSelection: boolean;
+  hasOutlineSelection: boolean;
   hasMultiCursor: boolean;
 }) {
   const [editor] = useLexicalComposerContext();
@@ -943,6 +968,27 @@ function KeyboardPlugin({
         onMoveNode("next");
         return;
       }
+      if (matchesKeyBinding(event, keymap.selectNodeLine)) {
+        event.preventDefault();
+        event.stopPropagation();
+        onSelectLine();
+        return;
+      }
+      if (matchesKeyBinding(event, keymap.deleteNodeLine)) {
+        event.preventDefault();
+        event.stopPropagation();
+        onDeleteLine();
+        return;
+      }
+      if (
+        matchesKeyBinding(event, keymap.expandSelection) &&
+        (hasOutlineSelection || isEditorTextFullySelected(editor) || isDomTextFullySelected(rootElement))
+      ) {
+        event.preventDefault();
+        event.stopPropagation();
+        onExpandSelection();
+        return;
+      }
       if (matchesKeyBinding(event, keymap.outdentNode)) {
         event.preventDefault();
         event.stopPropagation();
@@ -1019,6 +1065,7 @@ function KeyboardPlugin({
   }, [
     editor,
     hasBulkSelection,
+    hasOutlineSelection,
     hasMultiCursor,
     nodeText,
     editorText,
@@ -1038,7 +1085,10 @@ function KeyboardPlugin({
     onMoveSelectionWithOffset,
     onOutdent,
     onPasteText,
-    onRemoveEmpty
+    onRemoveEmpty,
+    onExpandSelection,
+    onSelectLine,
+    onDeleteLine
   ]);
 
   return null;
@@ -1049,7 +1099,33 @@ function isComposingEvent(event?: KeyboardEvent | null): boolean {
 }
 
 function toEditorText(node: OutlineNode): string {
-  return node.heading ? `${"#".repeat(node.heading)} ${node.text}` : node.text;
+  const completedPrefix = node.completed === undefined ? "" : node.completed ? "[*] " : "[] ";
+  const headingPrefix = node.heading ? `${"#".repeat(node.heading)} ` : "";
+  return `${completedPrefix}${headingPrefix}${node.text}`;
+}
+
+function isEditorTextFullySelected(editor: ReturnType<typeof useLexicalComposerContext>[0]): boolean {
+  let fullySelected = false;
+  editor.getEditorState().read(() => {
+    const selection = $getSelection();
+    if (!$isRangeSelection(selection)) {
+      return;
+    }
+    const textLength = $getRoot().getTextContent().length;
+    const start = Math.min(selection.anchor.offset, selection.focus.offset);
+    const end = Math.max(selection.anchor.offset, selection.focus.offset);
+    fullySelected = textLength > 0 && start === 0 && end === textLength;
+  });
+  return fullySelected;
+}
+
+function isDomTextFullySelected(rootElement: HTMLElement | null): boolean {
+  const selection = window.getSelection();
+  if (!rootElement || !selection || selection.rangeCount === 0 || selection.isCollapsed) {
+    return false;
+  }
+  const range = selection.getRangeAt(0);
+  return rootElement.contains(range.commonAncestorContainer) && selection.toString() === rootElement.textContent;
 }
 
 function NoteKeyboardPlugin({

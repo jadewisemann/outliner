@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { createInitialView, createNodeAfter } from "../domain/outline";
+import { toActiveOutlineSnapshot } from "../domain/workspace";
 import { makeDocumentWithTexts } from "../test/factories";
 import { FakeRemoteStore } from "./fakeRemoteStore";
 import {
@@ -19,7 +20,7 @@ describe("remote sync", () => {
     await compactRemoteSnapshot(store, remote);
     const local = createYjsWorkspace();
     await pullRemoteUpdates(store, local, createRemoteSyncState());
-    expect(getYjsSnapshot(local)?.document.nodes[document.rootId].children).toEqual(
+    expect(toActiveOutlineSnapshot(getYjsSnapshot(local)!).document.nodes[document.rootId].children).toEqual(
       document.nodes[document.rootId].children
     );
   });
@@ -41,7 +42,7 @@ describe("remote sync", () => {
     );
     const target = createYjsWorkspace();
     await pullRemoteUpdates(store, target, createRemoteSyncState());
-    expect(getYjsSnapshot(target)?.document.nodes[document.rootId].children).toEqual(
+    expect(toActiveOutlineSnapshot(getYjsSnapshot(target)!).document.nodes[document.rootId].children).toEqual(
       document.nodes[document.rootId].children
     );
   });
@@ -65,7 +66,7 @@ describe("remote sync", () => {
     state = await pullRemoteUpdates(store, target, state);
 
     expect(state.queue.appliedIds).toEqual(["update-1"]);
-    expect(getYjsSnapshot(target)?.document.nodes[document.rootId].children).toHaveLength(1);
+    expect(toActiveOutlineSnapshot(getYjsSnapshot(target)!).document.nodes[document.rootId].children).toHaveLength(1);
   });
 
   it("keeps failed appends in the offline queue and flushes them after reconnecting", async () => {
@@ -187,7 +188,7 @@ describe("remote sync", () => {
     unsubscribe();
 
     expect(state.queue.appliedIds).toEqual(["live-1"]);
-    expect(getYjsSnapshot(target)?.document.nodes[document.rootId].children).toEqual(
+    expect(toActiveOutlineSnapshot(getYjsSnapshot(target)!).document.nodes[document.rootId].children).toEqual(
       document.nodes[document.rootId].children
     );
   });
@@ -229,7 +230,7 @@ describe("remote sync", () => {
 
     const merged = createYjsWorkspace(baseSnapshot);
     await pullRemoteUpdates(store, merged, createRemoteSyncState());
-    const snapshot = getYjsSnapshot(merged);
+    const snapshot = toActiveOutlineSnapshot(getYjsSnapshot(merged)!);
     expect(snapshot?.document.nodes["client-a-node"].text).toBe("");
     expect(snapshot?.document.nodes["client-b-node"].text).toBe("");
     expect(snapshot?.document.nodes[base.rootId].children).toEqual([

@@ -1,4 +1,5 @@
 import type { OutlineDocument, OutlineNode, OutlineSnapshot, ViewState } from "../domain/outlineTypes";
+import { toActiveOutlineSnapshot } from "../domain/workspace";
 import {
   applyUpdate,
   encodeState,
@@ -133,7 +134,7 @@ export function applyRemoteUpdate(workspace: YjsWorkspace, update: Uint8Array): 
   const incomingSnapshot = getYjsSnapshot(incomingWorkspace);
   applyUpdate(workspace, update);
   if (localSnapshot && incomingSnapshot) {
-    setYjsSnapshot(workspace, mergeOutlineSnapshots(localSnapshot, incomingSnapshot));
+    setYjsSnapshot(workspace, mergeOutlineSnapshots(toActiveOutlineSnapshot(localSnapshot), toActiveOutlineSnapshot(incomingSnapshot)));
   }
 }
 

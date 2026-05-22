@@ -1,4 +1,5 @@
-import type { NodeId, OutlineNode, OutlineSnapshot, ViewState } from "../domain/outlineTypes";
+import type { NodeId, OutlineNode, OutlineSnapshot, StoredSnapshot, ViewState } from "../domain/outlineTypes";
+import { isWorkspaceSnapshot, toActiveOutlineSnapshot } from "../domain/workspace";
 
 export type OutlineSnapshotPatch = {
   rootChildren?: NodeId[];
@@ -59,10 +60,38 @@ export function applySnapshotPatch(snapshot: OutlineSnapshot, patch: OutlineSnap
   }
   return {
     document: {
+      ...snapshot.document,
       rootId: snapshot.document.rootId,
       nodes
     },
     view: patch.view ?? snapshot.view
+  };
+}
+
+export function applySnapshotPatchToStored(snapshot: StoredSnapshot, patch: OutlineSnapshotPatch): StoredSnapshot {
+  const patched = applySnapshotPatch(toActiveOutlineSnapshot(snapshot), patch);
+  if (!isWorkspaceSnapshot(snapshot)) {
+    return patched;
+  }
+  const activeDocumentId = snapshot.workspace.activeDocumentId;
+  return {
+    ...snapshot,
+    workspace: {
+      ...snapshot.workspace,
+      documents: {
+        ...snapshot.workspace.documents,
+        [activeDocumentId]: patched.document
+      },
+      view: {
+        ...snapshot.workspace.view,
+        activeDocumentId,
+        perDocument: {
+          ...snapshot.workspace.view.perDocument,
+          [activeDocumentId]: patched.view
+        }
+      },
+      updatedAt: patched.document.updatedAt ?? snapshot.workspace.updatedAt
+    }
   };
 }
 

@@ -7,6 +7,9 @@ export type CommandId =
   | "focusNodeNote"
   | "insertLineBreak"
   | "createSiblingNode"
+  | "expandSelection"
+  | "selectNodeLine"
+  | "deleteNodeLine"
   | "setHeading1"
   | "setHeading2"
   | "setHeading3"
@@ -65,6 +68,9 @@ export const COMMAND_REGISTRY: CommandDefinition[] = [
   { id: "focusNodeNote", label: "Edit note", group: "editor", defaultShortcut: "Shift+Enter", palette: true },
   { id: "insertLineBreak", label: "Insert line break", group: "editor", defaultShortcut: "Alt+Enter", palette: false },
   { id: "createSiblingNode", label: "Create sibling node", group: "editor", defaultShortcut: "Mod+Enter", palette: false },
+  { id: "expandSelection", label: "Expand selection", group: "power", defaultShortcut: "Ctrl+A", palette: false },
+  { id: "selectNodeLine", label: "Select current line", group: "power", defaultShortcut: "Ctrl+L", palette: false },
+  { id: "deleteNodeLine", label: "Delete current line", group: "power", defaultShortcut: "Ctrl+Shift+K", palette: false },
   { id: "setHeading1", label: "Set heading 1", group: "format", defaultShortcut: "", palette: true },
   { id: "setHeading2", label: "Set heading 2", group: "format", defaultShortcut: "", palette: true },
   { id: "setHeading3", label: "Set heading 3", group: "format", defaultShortcut: "", palette: true },

@@ -5,8 +5,14 @@ import {
   ensureEditableNode,
   ROOT_ID
 } from "../domain/outline";
-import type { Clock, IdGenerator, NodeId, OutlineSnapshot } from "../domain/outlineTypes";
-import { toActiveOutlineSnapshot } from "../domain/workspace";
+import type { Clock, IdGenerator, NodeId, OutlineSnapshot, StoredSnapshot, WorkspaceSnapshot } from "../domain/outlineTypes";
+import {
+  getActiveDocument,
+  getActiveView,
+  isWorkspaceSnapshot,
+  toActiveOutlineSnapshot,
+  toWorkspaceSnapshot
+} from "../domain/workspace";
 import type { LocalPersistence, SnapshotHistoryEntry } from "../persistence/localPersistence";
 import {
   createRemoteSnapshotRecord,
@@ -16,7 +22,7 @@ import {
   writeRemoteSnapshotPatchV2,
   writeRemoteSnapshotV2
 } from "../sync/remoteSyncV2";
-import { applySnapshotPatch, createSnapshotPatch, estimateEncodedPatchBytes, isEmptySnapshotPatch } from "../sync/snapshotPatch";
+import { applySnapshotPatchToStored, createSnapshotPatch, estimateEncodedPatchBytes, isEmptySnapshotPatch } from "../sync/snapshotPatch";
 import type {
   RemoteSnapshotPatchRecord,
   RemoteSnapshotRecord,
@@ -36,8 +42,12 @@ type PendingRemoteChange =
   | { kind: "patch"; record: RemoteSnapshotPatchRecord };
 
 export type OutlineWorkspaceRuntime = {
+  workspaceSnapshot: WorkspaceSnapshot;
+  activeSnapshot: OutlineSnapshot;
   snapshot: OutlineSnapshot;
   loaded: boolean;
+  commitActiveOutline: (snapshot: OutlineSnapshot) => void;
+  commitWorkspaceCommand: (workspace: WorkspaceSnapshot) => void;
   commitSnapshot: (snapshot: OutlineSnapshot) => void;
   snapshotHistory: SnapshotHistoryEntry[];
   restoreSnapshot: (historyId: string) => void;
@@ -68,16 +78,13 @@ export function useOutlineWorkspace({
   maxRemoteUpdateBytes,
   maxRemoteSnapshotBytes = maxRemoteUpdateBytes ?? DEFAULT_REMOTE_SNAPSHOT_BYTE_BUDGET
 }: UseOutlineWorkspaceOptions): OutlineWorkspaceRuntime {
-  const initialSnapshot = useMemo(() => normalizeSnapshot(makeEmptySnapshot(createId, now), createId, now), [
-    createId,
-    now
-  ]);
-  const workspaceRef = useRef<YjsWorkspace>(createYjsWorkspace(initialSnapshot));
-  const snapshotRef = useRef<OutlineSnapshot>(initialSnapshot);
+  const initialWorkspaceSnapshot = useMemo(() => makeEmptyWorkspaceSnapshot(createId, now), [createId, now]);
+  const workspaceRef = useRef<YjsWorkspace>(createYjsWorkspace(initialWorkspaceSnapshot));
+  const snapshotRef = useRef<WorkspaceSnapshot>(initialWorkspaceSnapshot);
   const createIdRef = useRef(createId);
   const nowRef = useRef(now);
-  const undoStackRef = useRef<OutlineSnapshot[]>([]);
-  const redoStackRef = useRef<OutlineSnapshot[]>([]);
+  const undoStackRef = useRef<WorkspaceSnapshot[]>([]);
+  const redoStackRef = useRef<WorkspaceSnapshot[]>([]);
   const remoteStateRef = useRef<RemoteSyncV2State>(createRemoteSyncV2State());
   const clientIdRef = useRef<string>(createClientId());
   const pendingRemoteRecordRef = useRef<PendingRemoteChange | null>(null);
@@ -88,7 +95,7 @@ export function useOutlineWorkspace({
   const loadedRef = useRef(false);
   const saveChainRef = useRef<Promise<void>>(Promise.resolve());
   const historyChainRef = useRef<Promise<void>>(Promise.resolve());
-  const [snapshot, setSnapshot] = useState(initialSnapshot);
+  const [workspaceSnapshot, setWorkspaceSnapshot] = useState(initialWorkspaceSnapshot);
   const [snapshotHistory, setSnapshotHistory] = useState<SnapshotHistoryEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(remoteStore ? "syncing" : "local-only");
@@ -96,7 +103,7 @@ export function useOutlineWorkspace({
   nowRef.current = now;
 
   const saveSnapshot = useCallback(
-    (next: OutlineSnapshot) => {
+    (next: WorkspaceSnapshot) => {
       saveChainRef.current = saveChainRef.current.then(
         () => persistence.save(next),
         () => persistence.save(next)
@@ -111,12 +118,12 @@ export function useOutlineWorkspace({
   }, [persistence]);
 
   const saveHistorySnapshot = useCallback(
-    (next: OutlineSnapshot, createdAt: number, reason: SnapshotHistoryEntry["reason"] = "autosave") => {
+    (next: WorkspaceSnapshot, createdAt: number, reason: SnapshotHistoryEntry["reason"] = "autosave") => {
       const entry: SnapshotHistoryEntry = {
         id: `${createdAt}:${createIdRef.current()}`,
         createdAt,
         reason,
-        snapshot: cloneSnapshot(next)
+        snapshot: cloneWorkspaceSnapshot(next)
       };
       historyChainRef.current = historyChainRef.current
         .then(() => persistence.saveSnapshotHistory(entry))
@@ -128,7 +135,7 @@ export function useOutlineWorkspace({
   );
 
   const persistSnapshot = useCallback(
-    (next: OutlineSnapshot) => {
+    (next: WorkspaceSnapshot) => {
       if (loadedRef.current) {
         void saveSnapshot(next);
       }
@@ -141,12 +148,12 @@ export function useOutlineWorkspace({
     setSyncStatus(state.status);
   }, []);
 
-  const replaceSnapshot = useCallback(
-    (normalized: OutlineSnapshot) => {
+  const replaceWorkspaceSnapshot = useCallback(
+    (normalized: WorkspaceSnapshot) => {
       setYjsSnapshot(workspaceRef.current, normalized);
       workspaceRef.current.undoManager.stopCapturing();
       snapshotRef.current = normalized;
-      setSnapshot(normalized);
+      setWorkspaceSnapshot(normalized);
       persistSnapshot(normalized);
     },
     [persistSnapshot]
@@ -210,9 +217,9 @@ export function useOutlineWorkspace({
       if (!remoteSnapshot) {
         return;
       }
-      const normalized = normalizeSnapshot(remoteSnapshot, createIdRef.current, nowRef.current);
+      const normalized = normalizeWorkspaceSnapshot(remoteSnapshot, createIdRef.current, nowRef.current);
       snapshotRef.current = normalized;
-      setSnapshot(normalized);
+      setWorkspaceSnapshot(normalized);
       await saveSnapshot(normalized);
     },
     [saveSnapshot]
@@ -220,12 +227,12 @@ export function useOutlineWorkspace({
 
   const applyRemotePatchRecord = useCallback(
     async (record: RemoteSnapshotPatchRecord) => {
-      const patched = applySnapshotPatch(snapshotRef.current, record.patch);
-      const normalized = normalizeSnapshot(patched, createIdRef.current, nowRef.current);
+      const patched = applyActiveOutlinePatch(snapshotRef.current, record.patch);
+      const normalized = normalizeWorkspaceSnapshot(patched, createIdRef.current, nowRef.current);
       setYjsSnapshot(workspaceRef.current, normalized);
       workspaceRef.current.undoManager.stopCapturing();
       snapshotRef.current = normalized;
-      setSnapshot(normalized);
+      setWorkspaceSnapshot(normalized);
       await saveSnapshot(normalized);
     },
     [saveSnapshot]
@@ -245,7 +252,7 @@ export function useOutlineWorkspace({
         remoteWriteTokenRef.current += 1;
         const hadPendingLocalChanges = remoteStateRef.current.hasPendingLocalChanges || pendingRemoteRecordRef.current !== null;
         if (hadPendingLocalChanges) {
-          await persistence.saveConflictBackup(cloneSnapshot(snapshotRef.current));
+          await persistence.saveConflictBackup(cloneWorkspaceSnapshot(snapshotRef.current));
         }
         await applyRemotePatchRecord(patch);
         setRemoteState({
@@ -264,7 +271,7 @@ export function useOutlineWorkspace({
       remoteWriteTokenRef.current += 1;
       const hadPendingLocalChanges = remoteStateRef.current.hasPendingLocalChanges || pendingRemoteRecordRef.current !== null;
       if (hadPendingLocalChanges) {
-        await persistence.saveConflictBackup(cloneSnapshot(snapshotRef.current));
+        await persistence.saveConflictBackup(cloneWorkspaceSnapshot(snapshotRef.current));
       }
       await applyRemoteRecord(record);
       setRemoteState({
@@ -280,22 +287,26 @@ export function useOutlineWorkspace({
   }, [applyRemotePatchRecord, applyRemoteRecord, persistence, remoteStore, setRemoteState]);
   pullLatestRemoteSnapshotRef.current = pullLatestRemoteSnapshot;
 
-  const publishSnapshot = useCallback(
-    (next: OutlineSnapshot) => {
+  const publishWorkspaceSnapshot = useCallback(
+    (next: WorkspaceSnapshot, options: { undoable: boolean }) => {
       const previous = snapshotRef.current;
-      const normalized = normalizeSnapshot(next, createId, now);
-      if (!snapshotsEqual(previous, normalized)) {
+      const normalized = normalizeWorkspaceSnapshot(next, createId, now);
+      if (options.undoable && !snapshotsEqual(previous, normalized)) {
         undoStackRef.current = [...undoStackRef.current, previous];
         redoStackRef.current = [];
         if (loadedRef.current) {
           void saveHistorySnapshot(normalized, now());
         }
       }
-      replaceSnapshot(normalized);
+      replaceWorkspaceSnapshot(normalized);
       if (remoteStore && loadedRef.current) {
         const updatedAt = now();
         const baseVersion = remoteStateRef.current.version;
-        const canWritePatch = !!remoteStore.writeSnapshotPatch && !remoteStateRef.current.hasPendingLocalChanges && !pendingRemoteRecordRef.current;
+        const canWritePatch =
+          !!remoteStore.writeSnapshotPatch &&
+          !remoteStateRef.current.hasPendingLocalChanges &&
+          !pendingRemoteRecordRef.current &&
+          canCreateActiveOutlinePatch(previous, normalized);
         const version = Math.max(remoteStateRef.current.version, pendingRemoteRecordRef.current?.record.version ?? 0) + 1;
         remoteStateRef.current = {
           status: "syncing",
@@ -308,7 +319,6 @@ export function useOutlineWorkspace({
             remoteStore,
             previous,
             normalized,
-            workspaceRef.current,
             clientIdRef.current,
             baseVersion,
             version,
@@ -318,7 +328,21 @@ export function useOutlineWorkspace({
         );
       }
     },
-    [createId, now, remoteStore, replaceSnapshot, saveHistorySnapshot, scheduleRemoteSnapshot]
+    [createId, now, remoteStore, replaceWorkspaceSnapshot, saveHistorySnapshot, scheduleRemoteSnapshot]
+  );
+
+  const commitActiveOutline = useCallback(
+    (next: OutlineSnapshot) => {
+      publishWorkspaceSnapshot(replaceActiveOutlineSnapshot(snapshotRef.current, next), { undoable: true });
+    },
+    [publishWorkspaceSnapshot]
+  );
+
+  const commitWorkspaceCommand = useCallback(
+    (next: WorkspaceSnapshot) => {
+      publishWorkspaceSnapshot(next, { undoable: false });
+    },
+    [publishWorkspaceSnapshot]
   );
 
   const restoreSnapshot = useCallback(
@@ -327,9 +351,9 @@ export function useOutlineWorkspace({
       if (!entry) {
         return;
       }
-      publishSnapshot(cloneSnapshot(toActiveOutlineSnapshot(entry.snapshot)));
+      publishWorkspaceSnapshot(normalizeWorkspaceSnapshot(entry.snapshot, createIdRef.current, nowRef.current), { undoable: true });
     },
-    [publishSnapshot, snapshotHistory]
+    [publishWorkspaceSnapshot, snapshotHistory]
   );
 
   useEffect(() => {
@@ -340,12 +364,12 @@ export function useOutlineWorkspace({
         return;
       }
       if (persisted) {
-        const normalized = normalizeSnapshot(toActiveOutlineSnapshot(persisted), createIdRef.current, nowRef.current);
+        const normalized = normalizeWorkspaceSnapshot(persisted, createIdRef.current, nowRef.current);
         workspaceRef.current = createYjsWorkspace(normalized);
         snapshotRef.current = normalized;
         undoStackRef.current = [];
         redoStackRef.current = [];
-        setSnapshot(normalized);
+        setWorkspaceSnapshot(normalized);
       }
       loadedRef.current = true;
       setLoaded(true);
@@ -416,8 +440,8 @@ export function useOutlineWorkspace({
     }
     undoStackRef.current = undoStackRef.current.slice(0, -1);
     redoStackRef.current = [...redoStackRef.current, snapshotRef.current];
-    replaceSnapshot(previous);
-  }, [replaceSnapshot]);
+    replaceWorkspaceSnapshot(previous);
+  }, [replaceWorkspaceSnapshot]);
 
   const redo = useCallback(() => {
     const next = redoStackRef.current.at(-1);
@@ -426,13 +450,19 @@ export function useOutlineWorkspace({
     }
     redoStackRef.current = redoStackRef.current.slice(0, -1);
     undoStackRef.current = [...undoStackRef.current, snapshotRef.current];
-    replaceSnapshot(next);
-  }, [replaceSnapshot]);
+    replaceWorkspaceSnapshot(next);
+  }, [replaceWorkspaceSnapshot]);
+
+  const activeSnapshot = toActiveOutlineSnapshot(workspaceSnapshot);
 
   return {
-    snapshot,
+    workspaceSnapshot,
+    activeSnapshot,
+    snapshot: activeSnapshot,
     loaded,
-    commitSnapshot: publishSnapshot,
+    commitActiveOutline,
+    commitWorkspaceCommand,
+    commitSnapshot: commitActiveOutline,
     snapshotHistory,
     restoreSnapshot,
     refreshSnapshotHistory,
@@ -442,6 +472,10 @@ export function useOutlineWorkspace({
   };
 }
 
+function makeEmptyWorkspaceSnapshot(createId: IdGenerator, now: Clock): WorkspaceSnapshot {
+  return normalizeWorkspaceSnapshot(makeEmptySnapshot(createId, now), createId, now);
+}
+
 function makeEmptySnapshot(createId: IdGenerator, now: Clock): OutlineSnapshot {
   const result = ensureEditableNode(createEmptyDocument(now), createId, now);
   return {
@@ -449,6 +483,38 @@ function makeEmptySnapshot(createId: IdGenerator, now: Clock): OutlineSnapshot {
     view: {
       zoomNodeId: result.document.rootId,
       selectedNodeId: result.nodeId
+    }
+  };
+}
+
+function normalizeWorkspaceSnapshot(snapshot: StoredSnapshot, createId: IdGenerator, now: Clock): WorkspaceSnapshot {
+  const workspace = isWorkspaceSnapshot(snapshot) ? snapshot : toWorkspaceSnapshot(snapshot, createId, now);
+  const documents = { ...workspace.workspace.documents };
+  const perDocument = { ...workspace.workspace.view.perDocument };
+  for (const documentId of workspace.workspace.documentOrder) {
+    const document = documents[documentId];
+    if (!document) {
+      continue;
+    }
+    const view = perDocument[documentId] ?? createInitialView(document);
+    const normalized = normalizeSnapshot({ document, view }, createId, now);
+    documents[documentId] = normalized.document;
+    perDocument[documentId] = normalized.view;
+  }
+  const activeDocumentId = documents[workspace.workspace.activeDocumentId]
+    ? workspace.workspace.activeDocumentId
+    : workspace.workspace.documentOrder.find((documentId) => documents[documentId]) ?? workspace.workspace.activeDocumentId;
+  return {
+    ...workspace,
+    workspace: {
+      ...workspace.workspace,
+      activeDocumentId,
+      documents,
+      view: {
+        ...workspace.workspace.view,
+        activeDocumentId,
+        perDocument
+      }
     }
   };
 }
@@ -473,6 +539,58 @@ function normalizeSnapshot(snapshot: OutlineSnapshot, createId: IdGenerator, now
   };
 }
 
+function replaceActiveOutlineSnapshot(workspace: WorkspaceSnapshot, snapshot: OutlineSnapshot): WorkspaceSnapshot {
+  const activeDocumentId = workspace.workspace.activeDocumentId;
+  return {
+    ...workspace,
+    workspace: {
+      ...workspace.workspace,
+      documents: {
+        ...workspace.workspace.documents,
+        [activeDocumentId]: snapshot.document
+      },
+      view: {
+        ...workspace.workspace.view,
+        activeDocumentId,
+        perDocument: {
+          ...workspace.workspace.view.perDocument,
+          [activeDocumentId]: snapshot.view
+        }
+      },
+      updatedAt: snapshot.document.updatedAt ?? workspace.workspace.updatedAt
+    }
+  };
+}
+
+function applyActiveOutlinePatch(workspace: WorkspaceSnapshot, patch: RemoteSnapshotPatchRecord["patch"]): WorkspaceSnapshot {
+  return applySnapshotPatchToStored(workspace, patch) as WorkspaceSnapshot;
+}
+
+function canCreateActiveOutlinePatch(previous: WorkspaceSnapshot, next: WorkspaceSnapshot): boolean {
+  if (previous.workspace.activeDocumentId !== next.workspace.activeDocumentId) {
+    return false;
+  }
+  const documentId = previous.workspace.activeDocumentId;
+  const previousDocumentIds = Object.keys(previous.workspace.documents).sort();
+  const nextDocumentIds = Object.keys(next.workspace.documents).sort();
+  if (JSON.stringify(previousDocumentIds) !== JSON.stringify(nextDocumentIds)) {
+    return false;
+  }
+  for (const id of previousDocumentIds) {
+    if (id !== documentId && JSON.stringify(previous.workspace.documents[id]) !== JSON.stringify(next.workspace.documents[id])) {
+      return false;
+    }
+  }
+  const previousViews = previous.workspace.view.perDocument;
+  const nextViews = next.workspace.view.perDocument;
+  for (const id of previousDocumentIds) {
+    if (id !== documentId && JSON.stringify(previousViews[id]) !== JSON.stringify(nextViews[id])) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function resolveExistingNodeId(document: OutlineSnapshot["document"], nodeId: NodeId | undefined, fallback: NodeId): NodeId {
   return nodeId && document.nodes[nodeId] ? nodeId : fallback;
 }
@@ -493,7 +611,7 @@ function normalizeSnapshotCursors(
     }));
 }
 
-function snapshotsEqual(left: OutlineSnapshot, right: OutlineSnapshot): boolean {
+function snapshotsEqual(left: WorkspaceSnapshot, right: WorkspaceSnapshot): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
@@ -511,26 +629,25 @@ function isStateNewerThanRecord(state: RemoteSyncV2State, record: { version: num
   return state.updatedAt > record.updatedAt;
 }
 
-function cloneSnapshot(snapshot: OutlineSnapshot): OutlineSnapshot {
-  return JSON.parse(JSON.stringify(snapshot)) as OutlineSnapshot;
+function cloneWorkspaceSnapshot(snapshot: WorkspaceSnapshot): WorkspaceSnapshot {
+  return JSON.parse(JSON.stringify(snapshot)) as WorkspaceSnapshot;
 }
 
 function createPendingRemoteChange(
   remoteStore: RemoteStoreV2,
-  previous: OutlineSnapshot,
-  next: OutlineSnapshot,
-  workspace: YjsWorkspace,
+  previous: WorkspaceSnapshot,
+  next: WorkspaceSnapshot,
   clientId: string,
   baseVersion: number,
   version: number,
   updatedAt: number,
   canWritePatch: boolean
 ): PendingRemoteChange {
-  const snapshotRecord = createRemoteSnapshotRecord(workspace, clientId, version, updatedAt);
+  const snapshotRecord = createRemoteSnapshotRecord(createYjsWorkspace(next), clientId, version, updatedAt);
   if (!canWritePatch || baseVersion <= 0 || !remoteStore.writeSnapshotPatch) {
     return { kind: "snapshot", record: snapshotRecord };
   }
-  const patch = createSnapshotPatch(previous, next);
+  const patch = createSnapshotPatch(toActiveOutlineSnapshot(previous), toActiveOutlineSnapshot(next));
   if (isEmptySnapshotPatch(patch) || estimateEncodedPatchBytes(patch) >= snapshotRecord.state.byteLength) {
     return { kind: "snapshot", record: snapshotRecord };
   }

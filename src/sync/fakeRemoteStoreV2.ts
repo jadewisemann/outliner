@@ -1,7 +1,7 @@
 import type { RemoteSnapshotPatchRecord, RemoteSnapshotRecord, RemoteStoreMetering, RemoteStoreV2 } from "./syncTypes";
 import { canReplaceRemoteSnapshot } from "./remoteSyncV2";
 import { estimateEncodedSnapshotBytes } from "./remoteEncoding";
-import { applySnapshotPatch, estimateEncodedPatchBytes } from "./snapshotPatch";
+import { applySnapshotPatchToStored, estimateEncodedPatchBytes } from "./snapshotPatch";
 import {
   createYjsWorkspace,
   encodeState,
@@ -58,7 +58,7 @@ export class FakeRemoteStoreV2 implements RemoteStoreV2 {
     if (!currentSnapshot) {
       return "rejected";
     }
-    const nextSnapshot = applySnapshotPatch(currentSnapshot, record.patch);
+    const nextSnapshot = applySnapshotPatchToStored(currentSnapshot, record.patch);
     setYjsSnapshot(workspace, nextSnapshot);
     this.metering.writeBytes += estimateEncodedPatchBytes(record.patch);
     this.metering.storedBytes -= previousSnapshotBytes + previousPatchBytes;

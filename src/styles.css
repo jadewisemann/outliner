@@ -22,6 +22,7 @@
 :root[data-theme="dark"] .outliner-panel,
 :root[data-theme="dark"] .outline-list,
 :root[data-theme="dark"] .floating-app-controls,
+:root[data-theme="dark"] .workspace-sidebar,
 :root[data-theme="dark"] .workspace-menu,
 :root[data-theme="dark"] .workspace-menu-nav,
 :root[data-theme="dark"] .command-palette,
@@ -171,7 +172,7 @@ textarea {
 .floating-app-controls {
   position: fixed;
   top: 12px;
-  left: 12px;
+  left: 280px;
   z-index: 10;
   display: inline-flex;
   align-items: center;
@@ -182,6 +183,127 @@ textarea {
   padding: 6px;
   box-shadow: 0 10px 28px rgb(31 41 51 / 0.12);
   backdrop-filter: blur(12px);
+}
+
+.app-shell[data-sidebar="collapsed"] .floating-app-controls {
+  left: 64px;
+}
+
+.workspace-sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 9;
+  width: 252px;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid #d4dbe3;
+  background: #fbfcfd;
+  color: #314255;
+  padding: 14px 12px;
+  box-shadow: 1px 0 0 rgb(31 41 51 / 0.03);
+}
+
+.workspace-sidebar-collapsed {
+  width: 44px;
+  align-items: center;
+  padding: 12px 6px;
+}
+
+.workspace-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 36px;
+  margin-bottom: 10px;
+}
+
+.workspace-sidebar-header strong {
+  font-size: 13px;
+}
+
+.workspace-sidebar-header div,
+.workspace-document-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.workspace-sidebar button {
+  min-height: 28px;
+  border: 1px solid #c8d0da;
+  border-radius: 6px;
+  background: #ffffff;
+  color: inherit;
+  padding: 4px 7px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.workspace-sidebar button:hover {
+  border-color: #8fa2b8;
+  background: #f6f8fa;
+}
+
+.workspace-sidebar button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.workspace-document-list {
+  display: grid;
+  gap: 4px;
+  overflow: auto;
+}
+
+.workspace-document-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  padding: 4px;
+}
+
+.workspace-document-row[data-active="true"] {
+  border-color: #b9d5f2;
+  background: #eef6ff;
+}
+
+.workspace-document-switch {
+  width: 100%;
+  justify-content: flex-start;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-document-row input {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid #8fa2b8;
+  border-radius: 6px;
+  padding: 5px 7px;
+}
+
+.workspace-document-actions button {
+  padding: 4px 6px;
+}
+
+.app-shell[data-sidebar="expanded"] .outliner-panel,
+.app-shell[data-sidebar="expanded"] .history-panel,
+.app-shell[data-sidebar="expanded"] .word-count {
+  margin-left: calc(252px + max(0px, (100vw - 252px - var(--content-width, 1100px)) / 2));
+  margin-right: max(0px, (100vw - 252px - var(--content-width, 1100px)) / 2);
+}
+
+.app-shell[data-sidebar="collapsed"] .outliner-panel,
+.app-shell[data-sidebar="collapsed"] .history-panel,
+.app-shell[data-sidebar="collapsed"] .word-count {
+  margin-left: calc(44px + max(0px, (100vw - 44px - var(--content-width, 1100px)) / 2));
+  margin-right: max(0px, (100vw - 44px - var(--content-width, 1100px)) / 2);
 }
 
 .app-menu-button {
@@ -859,6 +981,12 @@ textarea {
   background: #ffffff;
   color: #205c9c;
   font-size: 14px;
+}
+
+.complete-placeholder {
+  width: 20px;
+  height: 20px;
+  margin-top: 3px;
 }
 
 .complete-button[aria-pressed="true"] {

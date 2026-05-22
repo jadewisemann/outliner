@@ -115,6 +115,7 @@ export function Outliner({
 }: OutlinerProps) {
   const listRef = useRef<HTMLDivElement | null>(null);
   const cursorHorizontalRef = useRef<number | undefined>();
+  const selectionExpansionStageRef = useRef<0 | 1 | 2 | 3>(0);
   const [viewport, setViewport] = useState({ scrollTop: 0, height: FALLBACK_VIEWPORT_HEIGHT });
   const [query, setQuery] = useState("");
   const [tagFilter, setTagFilter] = useState<string | undefined>();
@@ -201,6 +202,7 @@ export function Outliner({
 
   const selectNode = useStableCallback((nodeId: NodeId) => {
     cursorHorizontalRef.current = undefined;
+    selectionExpansionStageRef.current = 0;
     setNoteEditingNodeId(undefined);
     onViewChange({
       ...view,
@@ -247,15 +249,15 @@ export function Outliner({
       if (!node || nodeId === current.rootId) {
         return current;
       }
-      const markdownHeading = parseMarkdownHeadingSource(text);
+      const sourceMetadata = parseNodeTextInput(text);
+      const markdownHeading = parseMarkdownHeadingSource(sourceMetadata.text);
       if (!markdownHeading) {
-        const metadata = parseNodeTextInput(text);
-        const tags = mergeTags(node.tags, metadata.tags);
-        const completed = metadata.completed ?? node.completed;
-        if (node.text === metadata.text && !node.heading && sameTags(node.tags, tags) && node.completed === completed) {
+        const tags = mergeTags(node.tags, sourceMetadata.tags);
+        const completed = sourceMetadata.completed;
+        if (node.text === sourceMetadata.text && !node.heading && sameTags(node.tags, tags) && node.completed === completed) {
           return current;
         }
-        const next = updateNodeText(current, nodeId, metadata.text, now);
+        const next = updateNodeText(current, nodeId, sourceMetadata.text, now);
         const updated = next.nodes[nodeId];
         return updated?.heading
           ? {
@@ -274,8 +276,8 @@ export function Outliner({
             };
       }
       const metadata = parseNodeTextInput(markdownHeading.text);
-      const tags = mergeTags(node.tags, metadata.tags);
-      const completed = metadata.completed ?? node.completed;
+      const tags = mergeTags(node.tags, sourceMetadata.tags ?? metadata.tags);
+      const completed = sourceMetadata.completed;
       const timestamp = now();
       return {
         ...current,
@@ -500,6 +502,30 @@ export function Outliner({
     });
   });
 
+  const selectLine = useStableCallback((nodeId: NodeId) => {
+    selectionExpansionStageRef.current = 1;
+    onViewChange({
+      ...view,
+      selectedNodeId: nodeId,
+      selectionAnchorNodeId: nodeId,
+      selectionFocusNodeId: nodeId,
+      cursors: undefined
+    });
+  });
+
+  const deleteLine = useStableCallback((nodeId: NodeId) => {
+    const result = bulkDeleteNodes(document, [nodeId], now);
+    selectionExpansionStageRef.current = 0;
+    onDocumentChange(result.document);
+    onViewChange({
+      ...view,
+      selectedNodeId: result.selectedNodeId,
+      selectionAnchorNodeId: undefined,
+      selectionFocusNodeId: undefined,
+      cursors: undefined
+    });
+  });
+
   const moveSelectionAtOffset = useStableCallback((direction: "previous" | "next", nodeId: NodeId, offset?: number) => {
     const nextId =
       direction === "previous"
@@ -551,6 +577,7 @@ export function Outliner({
   });
 
   const extendSelection = useStableCallback((direction: "previous" | "next", nodeId: NodeId) => {
+    selectionExpansionStageRef.current = 0;
     const nextId =
       direction === "previous"
         ? getPreviousVisibleNode(document, view.zoomNodeId, nodeId)
@@ -564,6 +591,43 @@ export function Outliner({
       selectedNodeId: nextId,
       selectionAnchorNodeId: anchor,
       selectionFocusNodeId: nextId
+    });
+  });
+
+  const expandSelection = useStableCallback((nodeId: NodeId) => {
+    const parentId = findParentId(document, nodeId);
+    const siblingIds = parentId ? document.nodes[parentId]?.children.filter((id) => id !== document.rootId) ?? [] : [nodeId];
+    const stage = selectionExpansionStageRef.current;
+    if (stage <= 0 || !view.selectionAnchorNodeId || !view.selectionFocusNodeId) {
+      selectionExpansionStageRef.current = 1;
+      onViewChange({
+        ...view,
+        selectedNodeId: nodeId,
+        selectionAnchorNodeId: nodeId,
+        selectionFocusNodeId: nodeId,
+        cursors: undefined
+      });
+      return;
+    }
+    if (stage === 1 && siblingIds.length > 0) {
+      selectionExpansionStageRef.current = 2;
+      onViewChange({
+        ...view,
+        selectedNodeId: siblingIds.at(-1),
+        selectionAnchorNodeId: siblingIds[0],
+        selectionFocusNodeId: siblingIds.at(-1),
+        cursors: undefined
+      });
+      return;
+    }
+    const parentNodeId = parentId && parentId !== document.rootId ? parentId : nodeId;
+    selectionExpansionStageRef.current = 3;
+    onViewChange({
+      ...view,
+      selectedNodeId: parentNodeId,
+      selectionAnchorNodeId: parentNodeId,
+      selectionFocusNodeId: parentNodeId,
+      cursors: undefined
     });
   });
 
@@ -593,6 +657,7 @@ export function Outliner({
       selectionFocusNodeId: undefined,
       cursors
     });
+    selectionExpansionStageRef.current = 0;
   });
 
   const applyCursorEdit = useStableCallback((edit: CursorTextEdit) => {
@@ -814,6 +879,7 @@ export function Outliner({
                 highlighted={resultIds.has(item.id)}
                 hasCursor={(view.cursors ?? []).some((cursor) => cursor.nodeId === item.id)}
                 hasBulkSelection={hasBulkSelection}
+                hasOutlineSelection={selectedNodeIds.length > 0}
                 hasMultiCursor={hasMultiCursor}
                 spellcheck={spellcheck}
                 autoFocus={autoFocus && !(view.selectedNodeId === item.id && linkPickerFocusIndex !== undefined)}
@@ -851,6 +917,9 @@ export function Outliner({
                 onCursorHorizontalChange={(offset) => updateCursorHorizontal(item.id, offset)}
                 onMoveNode={(direction) => moveNode(direction, item.id)}
                 onExtendSelection={(direction) => extendSelection(direction, item.id)}
+                onExpandSelection={() => expandSelection(item.id)}
+                onSelectLine={() => selectLine(item.id)}
+                onDeleteLine={() => deleteLine(item.id)}
                 onAddCursor={(direction, offset) => addCursor(direction, item.id, offset)}
                 onApplyTextToCursors={applyCursorEdit}
                 onClearPowerSelection={clearPowerSelection}
@@ -952,6 +1021,10 @@ function calculateOffsetFromHorizontal(
     return 0;
   }
   return Math.min(relativeOffset, text.length);
+}
+
+function findParentId(document: OutlineDocument, nodeId: NodeId): NodeId | undefined {
+  return Object.values(document.nodes).find((node) => node.children.includes(nodeId))?.id;
 }
 
 function getEditableNodeText(node: { text: string; heading?: 1 | 2 | 3 }): string {

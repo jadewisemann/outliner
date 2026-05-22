@@ -1,17 +1,17 @@
 import * as Y from "yjs";
-import type { OutlineSnapshot } from "../domain/outlineTypes";
+import type { StoredSnapshot } from "../domain/outlineTypes";
 
 const SNAPSHOT_KEY = "snapshot";
 
 export type YjsWorkspace = {
   doc: Y.Doc;
-  state: Y.Map<OutlineSnapshot>;
+  state: Y.Map<StoredSnapshot>;
   undoManager: Y.UndoManager;
 };
 
-export function createYjsWorkspace(initial?: OutlineSnapshot): YjsWorkspace {
+export function createYjsWorkspace(initial?: StoredSnapshot): YjsWorkspace {
   const doc = new Y.Doc();
-  const state = doc.getMap<OutlineSnapshot>("outline");
+  const state = doc.getMap<StoredSnapshot>("outline");
   if (initial) {
     state.set(SNAPSHOT_KEY, initial);
   }
@@ -19,11 +19,11 @@ export function createYjsWorkspace(initial?: OutlineSnapshot): YjsWorkspace {
   return { doc, state, undoManager };
 }
 
-export function getYjsSnapshot(workspace: YjsWorkspace): OutlineSnapshot | undefined {
+export function getYjsSnapshot(workspace: YjsWorkspace): StoredSnapshot | undefined {
   return workspace.state.get(SNAPSHOT_KEY);
 }
 
-export function setYjsSnapshot(workspace: YjsWorkspace, snapshot: OutlineSnapshot): void {
+export function setYjsSnapshot(workspace: YjsWorkspace, snapshot: StoredSnapshot): void {
   workspace.state.set(SNAPSHOT_KEY, snapshot);
 }
 

@@ -4,7 +4,7 @@ import { base64ToBytes, bytesToBase64 } from "./remoteEncoding";
 import { applyUpdate, createYjsWorkspace, encodeState, encodeStateVector, getYjsSnapshot, mergeIntoNewWorkspace, setYjsSnapshot } from "./yjsAdapter";
 import { canReplaceRemoteSnapshot } from "./remoteSyncV2";
 import type { RemoteSnapshotPatchRecord, RemoteSnapshotRecord, RemoteStoreV2 } from "./syncTypes";
-import { applySnapshotPatch } from "./snapshotPatch";
+import { applySnapshotPatchToStored } from "./snapshotPatch";
 
 type FirebaseRemoteSnapshotV2 = {
   version: number;
@@ -203,7 +203,7 @@ function materializePatch(snapshot: RemoteSnapshotRecord, patch: RemoteSnapshotP
   if (!currentSnapshot) {
     return snapshot;
   }
-  const nextSnapshot = applySnapshotPatch(currentSnapshot, patch.patch);
+  const nextSnapshot = applySnapshotPatchToStored(currentSnapshot, patch.patch);
   const workspace = createYjsWorkspace();
   setYjsSnapshot(workspace, nextSnapshot);
   return {

@@ -1,7 +1,7 @@
 import type { RemoteSnapshotPatchRecord, RemoteSnapshotRecord, RemoteStoreMetering, RemoteStoreV2 } from "./syncTypes";
 import { base64ToBytes, bytesToBase64, estimateEncodedSnapshotBytes } from "./remoteEncoding";
 import { canReplaceRemoteSnapshot } from "./remoteSyncV2";
-import { applySnapshotPatch, estimateEncodedPatchBytes } from "./snapshotPatch";
+import { applySnapshotPatchToStored, estimateEncodedPatchBytes } from "./snapshotPatch";
 import {
   createYjsWorkspace,
   encodeState,
@@ -238,7 +238,7 @@ function materializePatch(snapshot: RemoteSnapshotRecord, patch: RemoteSnapshotP
   if (!currentSnapshot) {
     return snapshot;
   }
-  const nextSnapshot = applySnapshotPatch(currentSnapshot, patch.patch);
+  const nextSnapshot = applySnapshotPatchToStored(currentSnapshot, patch.patch);
   const workspace = createYjsWorkspace();
   setYjsSnapshot(workspace, nextSnapshot);
   return {

@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createInitialView } from "../domain/outline";
+import { toActiveOutlineSnapshot } from "../domain/workspace";
 import { makeDocumentWithTexts } from "../test/factories";
 import { BrowserRemoteStoreV2 } from "./browserRemoteStoreV2";
 import { createRemoteSnapshotRecord } from "./remoteSyncV2";
@@ -91,7 +92,7 @@ describe("BrowserRemoteStoreV2", () => {
     const latest = await second.readLatestSnapshot();
     expect(latest).not.toBeNull();
     const materialized = getYjsSnapshot(mergeIntoNewWorkspace(latest!.state));
-    expect(materialized?.document.nodes[nodeId].text).toBe("A changed");
+    expect(toActiveOutlineSnapshot(materialized!).document.nodes[nodeId].text).toBe("A changed");
     expect(listener).toHaveBeenCalled();
   });
 });

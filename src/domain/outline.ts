@@ -78,8 +78,8 @@ export function updateNodeText(
 }
 
 export function parseNodeTextInput(text: string): Pick<OutlineNode, "text" | "tags" | "completed"> {
-  const completedMatch = /^\s*\[([ xX])\]\s*/.exec(text);
-  const completed = completedMatch ? completedMatch[1].toLocaleLowerCase() === "x" : undefined;
+  const completedMatch = /^\s*\[([ xX*]?)\]\s*/.exec(text);
+  const completed = completedMatch ? ["x", "*"].includes(completedMatch[1].toLocaleLowerCase()) : undefined;
   const withoutCompletion = completedMatch ? text.slice(completedMatch[0].length) : text;
   const tags = extractTagRanges(withoutCompletion).map((tag) => tag.source);
   const parsedText = tags.length > 0 ? removeTagsFromText(withoutCompletion).trim() : withoutCompletion;

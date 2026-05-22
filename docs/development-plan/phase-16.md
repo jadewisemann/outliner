@@ -1,4 +1,4 @@
-# Phase 16: 다중 문서 워크스페이스 기반 - 진행 중
+# Phase 16: 다중 문서 워크스페이스 기반 - 완료
 
 Stage 1 Product Core의 첫 Phase다. 목표는 기존 단일 `OutlineSnapshot`을 다중 문서 `WorkspaceSnapshot`으로 올리되, 기존 사용자 데이터는 자동으로 단일 문서 workspace로 승격하는 것이다.
 
@@ -15,18 +15,18 @@ Stage 1 Product Core의 첫 Phase다. 목표는 기존 단일 `OutlineSnapshot`�
 - [x] v1 `OutlineSnapshot`을 읽으면 `WorkspaceSnapshot` v2로 자동 승격된다.
 - [x] workspace는 여러 문서를 보관하고 active document를 전환할 수 있다.
 - [x] 각 문서는 독립된 `rootId`, `nodes`, `ViewState`를 가진다.
-- [ ] document rename/delete/create가 preferences와 outline Undo/Redo 의미를 섞지 않는다.
+- [x] document rename/delete/create가 preferences와 outline Undo/Redo 의미를 섞지 않는다.
 - [x] local persistence, manual backup, JSON export/import가 schema version을 보존한다.
-- [ ] workspace sidebar는 문서 목록, active document 표시, 문서 생성/전환/이름 변경/삭제 진입점을 제공한다.
-- [ ] single-document workspace에서도 sidebar를 접거나 최소 폭으로 둘 수 있어 기존 단일 문서 편집 집중 흐름을 해치지 않는다.
+- [x] workspace sidebar는 문서 목록, active document 표시, 문서 생성/전환/이름 변경/삭제 진입점을 제공한다.
+- [x] single-document workspace에서도 sidebar를 접거나 최소 폭으로 둘 수 있어 기존 단일 문서 편집 집중 흐름을 해치지 않는다.
 
 ### 구현 항목
 
 - [x] `DocumentId`, `WorkspaceSnapshot`, `WorkspaceViewState` 타입 추가
 - [x] `OutlineDocument`에 `id`, `title`, `slug`, timestamps 추가
 - [x] v1 snapshot -> v2 workspace migration
-- [ ] active document switcher와 recent documents
-- [ ] workspace sidebar와 document list UI
+- [x] active document switcher와 recent documents
+- [x] workspace sidebar와 document list UI
 - [x] document create/rename/delete 기본 command
 - [x] local persistence/history/backup의 workspace snapshot 대응
 
@@ -49,3 +49,15 @@ Stage 1 Product Core의 첫 Phase다. 목표는 기존 단일 `OutlineSnapshot`�
 - 2026-05-22: `src/domain/workspace.ts`에 v1 `OutlineSnapshot` -> v2 `WorkspaceSnapshot` 승격과 문서 생성/전환/이름 변경/삭제 순수 도메인 명령을 추가했다.
 - 2026-05-22: `src/domain/workspace.test.ts`로 migration, active document 전환, 문서별 독립 view state, rename/delete의 outline data 보존을 검증했다.
 - 2026-05-22: local persistence/history/conflict backup/manual backup/JSON export-import가 v2 `WorkspaceSnapshot.schemaVersion`을 보존하도록 타입과 테스트를 확장했다.
+- 2026-05-22: `useOutlineWorkspace`와 Yjs snapshot runtime을 v2 `WorkspaceSnapshot` 기준으로 승격하고, outline edit undo/redo와 workspace document command를 분리했다.
+- 2026-05-22: 왼쪽 workspace sidebar에서 문서 목록, active 표시, 생성, 전환, inline rename, 삭제, collapse 흐름을 제공하도록 UI와 테스트를 추가했다.
+- 2026-05-22: todo checkbox는 항상 노출하지 않고, 텍스트가 `[]` 또는 `[*]` marker로 시작할 때만 todo 상태로 승격하도록 TDD로 구현했다. 편집 중에는 todo 상태가 `[]`/`[*]` source marker로 보인다.
+- 2026-05-22: `Ctrl+A` 확장 선택은 텍스트 선택 이후 현재 노드, 형제 범위, 부모 순서로 확장한다. `Ctrl+L`은 현재 줄 선택, `Ctrl+Shift+K`는 현재 줄 삭제로 추가했다.
+- 2026-05-22: 추가 단축키 후보였던 `Ctrl+Shift+L`, `Ctrl+Shift+A`, `Ctrl+Shift+Enter`는 이번 범위에서 구현하지 않았다.
+
+### 최종 확인
+
+- `npm run typecheck`
+- `npm test -- src/components/Outliner.test.tsx`
+- `npm test` (213 tests)
+- `npm run build`
