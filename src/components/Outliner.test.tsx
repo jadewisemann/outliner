@@ -1276,9 +1276,88 @@ describe("Outliner", () => {
       );
     }
     render(<Harness />);
-    await userEvent.click(screen.getByRole("button", { name: "Target" }));
+    await userEvent.click(screen.getByRole("option", { name: "Target" }));
     expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("Source [[Target]]");
     expect(screen.getByTestId("source-links")).toHaveTextContent('"targetNodeId":"n-2"');
+  });
+
+  it("moves focus into internal link candidates with ArrowDown and back to the node with ArrowUp", async () => {
+    const document = makeDocumentWithTexts(["Previous", "Source [[Tar", "Target Alpha", "Target Beta"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: "n-2" });
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+    textbox.focus();
+    fireEvent.keyDown(textbox, { key: "ArrowDown" });
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Target Alpha" })).toHaveFocus();
+    });
+
+    fireEvent.keyDown(screen.getByRole("option", { name: "Target Alpha" }), { key: "ArrowDown" });
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Target Beta" })).toHaveFocus();
+    });
+
+    fireEvent.keyDown(screen.getByRole("option", { name: "Target Beta" }), { key: "ArrowUp" });
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Target Alpha" })).toHaveFocus();
+    });
+
+    fireEvent.keyDown(screen.getByRole("option", { name: "Target Alpha" }), { key: "ArrowUp" });
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveFocus();
+    });
+
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Outline node text" }), { key: "ArrowUp" });
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("Previous");
+      expect(screen.queryByRole("listbox", { name: "Internal link candidates" })).not.toBeInTheDocument();
+    });
+  });
+
+  it("keeps typing into the node while an internal link candidate has focus", async () => {
+    const document = makeDocumentWithTexts(["Source [[Tar", "Tarot", "Targ Match"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>({ ...createInitialView(document), selectedNodeId: "n-1" });
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    const textbox = screen.getByRole("textbox", { name: "Outline node text" });
+    textbox.focus();
+    fireEvent.keyDown(textbox, { key: "ArrowDown" });
+    await waitFor(() => {
+      expect(screen.getByRole("option", { name: "Tarot" })).toHaveFocus();
+    });
+
+    fireEvent.keyDown(screen.getByRole("option", { name: "Tarot" }), { key: "g" });
+
+    await waitFor(() => {
+      expect(screen.getByRole("textbox", { name: "Outline node text" })).toHaveTextContent("Source [[Targ");
+      expect(screen.getByRole("option", { name: "Targ Match" })).toBeInTheDocument();
+      expect(screen.queryByRole("option", { name: "Tarot" })).not.toBeInTheDocument();
+    });
   });
 
   it("inserts the first internal link candidate with Enter", async () => {

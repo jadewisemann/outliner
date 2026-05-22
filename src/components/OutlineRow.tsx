@@ -23,10 +23,19 @@ import {
   COPY_COMMAND,
   type EditorState
 } from "lexical";
-import { memo, useEffect, useLayoutEffect, useRef, type CSSProperties, type MutableRefObject, type ReactNode } from "react";
+import {
+  memo,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  type CSSProperties,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type MutableRefObject,
+  type ReactNode
+} from "react";
 import type { NodeId, OutlineNode } from "../domain/outlineTypes";
 import type { CursorTextEdit } from "../domain/multiCursor";
-import { extractTags, getNodeTagSources } from "../domain/searchSelectors";
+import { extractTags, getNodeTagSources, type LinkCandidate } from "../domain/searchSelectors";
 import { renderInlineMarkdown, renderMarkdownLikeText } from "../domain/richText";
 import { matchesKeyBinding, type PreferenceSettings } from "../app/preferences";
 
@@ -46,6 +55,7 @@ type OutlineRowProps = {
   focusOffset?: number;
   focusRequestKey?: number;
   keymap: PreferenceSettings["keymap"];
+  linkPicker?: LinkPickerProps;
   onSelect: () => void;
   onSelectTag: (tag: string) => void;
   onOpenInternalLink: (targetNodeId: NodeId) => void;
@@ -71,6 +81,17 @@ type OutlineRowProps = {
   onFocusNote: () => void;
   onFocusText: () => void;
   onRender?: (nodeId: string) => void;
+};
+
+type LinkPickerProps = {
+  query: string;
+  candidates: LinkCandidate[];
+  activeIndex?: number;
+  getPath: (candidate: LinkCandidate) => string;
+  onPick: (candidate: LinkCandidate) => void;
+  onFocusIndex: (index: number | undefined) => void;
+  onReturnToEditor: () => void;
+  onForwardKeyToEditor: (event: ReactKeyboardEvent) => void;
 };
 
 function OutlineRowComponent(props: OutlineRowProps) {
@@ -136,6 +157,7 @@ function OutlineRowComponent(props: OutlineRowProps) {
         {active ? (
           <>
             <ActiveRowEditor {...props} />
+            {props.linkPicker ? <InternalLinkPicker {...props.linkPicker} /> : null}
             {noteEditing ? (
               <div className="node-note-row">
                 <SharedTextEditor
@@ -186,9 +208,100 @@ export const OutlineRow = memo(OutlineRowComponent, (previous, next) => {
     previous.focusOffset === next.focusOffset &&
     previous.focusRequestKey === next.focusRequestKey &&
     previous.showNotes === next.showNotes &&
-    previous.noteEditing === next.noteEditing
+    previous.noteEditing === next.noteEditing &&
+    previous.linkPicker === next.linkPicker
   );
 });
+
+function InternalLinkPicker({
+  query,
+  candidates,
+  activeIndex,
+  getPath,
+  onPick,
+  onFocusIndex,
+  onReturnToEditor,
+  onForwardKeyToEditor
+}: LinkPickerProps) {
+  const buttonRefs = useRef<Array<HTMLButtonElement | null>>([]);
+  useLayoutEffect(() => {
+    if (activeIndex === undefined) {
+      return;
+    }
+    buttonRefs.current[activeIndex]?.focus();
+  }, [activeIndex]);
+  return (
+    <div className="link-candidates" aria-label="Internal link candidates">
+      <div className="link-candidates-header">
+        <span>Link to</span>
+        <strong>{query || "Search notes"}</strong>
+      </div>
+      {candidates.length > 0 ? (
+        <div className="link-candidates-list" role="listbox" aria-label="Internal link candidates">
+          {candidates.map((candidate, index) => (
+            <button
+              key={candidate.nodeId}
+              ref={(element) => {
+                buttonRefs.current[index] = element;
+              }}
+              className={index === activeIndex ? "link-candidate-active" : ""}
+              type="button"
+              role="option"
+              aria-selected={index === activeIndex}
+              onMouseDown={(event) => event.preventDefault()}
+              onFocus={() => onFocusIndex(index)}
+              onClick={() => onPick(candidate)}
+              onKeyDown={(event) => {
+                if (event.key === "ArrowDown") {
+                  event.preventDefault();
+                  onFocusIndex(Math.min(candidates.length - 1, index + 1));
+                  return;
+                }
+                if (event.key === "ArrowUp") {
+                  event.preventDefault();
+                  if (index === 0) {
+                    onReturnToEditor();
+                    return;
+                  }
+                  onFocusIndex(index - 1);
+                  return;
+                }
+                if (event.key === "Enter" || event.key === "Tab") {
+                  event.preventDefault();
+                  onPick(candidate);
+                  return;
+                }
+                if (event.key === "Escape") {
+                  event.preventDefault();
+                  onReturnToEditor();
+                  return;
+                }
+                if (shouldForwardKeyToEditor(event)) {
+                  event.preventDefault();
+                  onForwardKeyToEditor(event);
+                }
+              }}
+            >
+              <span className="link-candidate-title">{candidate.label}</span>
+              <span className="link-candidate-path" aria-hidden="true">
+                {getPath(candidate)}
+              </span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="link-candidates-empty">No matching node</div>
+      )}
+    </div>
+  );
+}
+
+function shouldForwardKeyToEditor(event: ReactKeyboardEvent): boolean {
+  if (event.altKey || event.ctrlKey || event.metaKey) {
+    return false;
+  }
+  return event.key.length === 1 || ["Backspace", "Delete", "Space"].includes(event.key);
+}
 
 function PlainRowText({
   node,

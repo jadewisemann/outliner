@@ -595,10 +595,14 @@ textarea {
 
 .link-candidates {
   width: min(420px, 100%);
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 6px;
+  z-index: 10;
   display: flex;
   flex-direction: column;
   gap: 6px;
-  margin-bottom: 8px;
+  margin: 0;
   border: 1px solid #c8d0da;
   border-radius: 8px;
   background: #ffffff;
@@ -606,6 +610,10 @@ textarea {
   padding: 8px;
   color: #526173;
   font-size: 12px;
+}
+
+.row-editor > .link-candidates {
+  max-width: calc(100% - 12px);
 }
 
 .link-candidates-header {
@@ -722,6 +730,7 @@ textarea {
   min-height: 340px;
   max-height: calc(100vh - 126px);
   overflow-y: auto;
+  overflow-x: visible;
   border: 1px solid #d8e0e8;
   border-radius: 6px;
   background: #ffffff;

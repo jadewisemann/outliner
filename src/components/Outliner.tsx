@@ -1,10 +1,12 @@
 import {
   useCallback,
+  useEffect,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
   type Dispatch,
+  type KeyboardEvent as ReactKeyboardEvent,
   type SetStateAction
 } from "react";
 import { Breadcrumb } from "./Breadcrumb";
@@ -57,6 +59,7 @@ import {
   getNodeTagSources,
   getBacklinks,
   searchOutline,
+  type LinkCandidate,
   type SearchResult
 } from "../domain/searchSelectors";
 import type { Clock, IdGenerator, NodeId, OutlineDocument, OutlineNodeMetadata, ViewState } from "../domain/outlineTypes";
@@ -119,6 +122,7 @@ export function Outliner({
   const [activeResultIndex, setActiveResultIndex] = useState(-1);
   const [noteEditingNodeId, setNoteEditingNodeId] = useState<NodeId>();
   const [focusRequest, setFocusRequest] = useState<{ nodeId: NodeId; offset: number; key: number }>();
+  const [linkPickerFocusIndex, setLinkPickerFocusIndex] = useState<number | undefined>();
   const visibleNodes = useMemo(() => getVisibleNodes(document, view.zoomNodeId), [document, view.zoomNodeId]);
   const searchResults = useMemo(() => {
     if (tagFilter) {
@@ -190,6 +194,10 @@ export function Outliner({
         : [],
     [document, linkQuery, view.selectedNodeId, view.zoomNodeId]
   );
+
+  useEffect(() => {
+    setLinkPickerFocusIndex(undefined);
+  }, [activeNodeText, view.selectedNodeId]);
 
   const selectNode = useStableCallback((nodeId: NodeId) => {
     cursorHorizontalRef.current = undefined;
@@ -394,6 +402,7 @@ export function Outliner({
       ];
       return updateNodeLinks(updateNodeText(current, sourceNodeId, nextText, now), sourceNodeId, nextLinks, now);
     });
+    setLinkPickerFocusIndex(undefined);
   });
 
   const openInternalLink = useStableCallback((targetNodeId: NodeId) => {
@@ -408,6 +417,49 @@ export function Outliner({
       selectionFocusNodeId: undefined,
       cursors: undefined
     });
+  });
+
+  const pickInternalLinkCandidate = useStableCallback((candidate: LinkCandidate) => {
+    insertInternalLink(candidate.nodeId, candidate.label);
+  });
+
+  const returnFocusToActiveNode = useStableCallback(() => {
+    setLinkPickerFocusIndex(undefined);
+    const selectedNodeId = view.selectedNodeId;
+    if (!selectedNodeId) {
+      return;
+    }
+    focusNodeText(selectedNodeId, linkQuery?.end);
+  });
+
+  const forwardLinkPickerKeyToEditor = useStableCallback((event: ReactKeyboardEvent) => {
+    const selectedNodeId = view.selectedNodeId;
+    if (!selectedNodeId) {
+      return;
+    }
+    setLinkPickerFocusIndex(undefined);
+    const node = document.nodes[selectedNodeId];
+    const openLink = node ? parseOpenLinkQuery(node.text) : undefined;
+    if (!node || !openLink) {
+      focusNodeText(selectedNodeId);
+      return;
+    }
+    const key = event.key === "Space" ? " " : event.key;
+    let nextText = node.text;
+    let nextOffset = openLink.end;
+    if (key.length === 1) {
+      nextText = `${node.text.slice(0, openLink.end)}${key}${node.text.slice(openLink.end)}`;
+      nextOffset = openLink.end + key.length;
+    } else if (key === "Backspace" && openLink.end > openLink.start + 2) {
+      nextText = `${node.text.slice(0, openLink.end - 1)}${node.text.slice(openLink.end)}`;
+      nextOffset = openLink.end - 1;
+    } else if (key === "Delete" && openLink.end < node.text.length) {
+      nextText = `${node.text.slice(0, openLink.end)}${node.text.slice(openLink.end + 1)}`;
+    }
+    if (nextText !== node.text) {
+      updateText(selectedNodeId, nextText);
+    }
+    focusNodeText(selectedNodeId, nextOffset);
   });
 
   const indent = useStableCallback((nodeId: NodeId) => {
@@ -586,6 +638,12 @@ export function Outliner({
         focusSelectedText();
         return;
       }
+      if (linkQuery && linkCandidates[0] && event.key === "ArrowDown") {
+        event.preventDefault();
+        event.stopPropagation();
+        setLinkPickerFocusIndex(0);
+        return;
+      }
       if (linkQuery && linkCandidates[0] && (event.key === "Enter" || event.key === "Tab")) {
         event.preventDefault();
         event.stopPropagation();
@@ -711,34 +769,6 @@ export function Outliner({
           ))}
         </div>
       ) : null}
-      {linkQuery ? (
-        <div className="link-candidates" aria-label="Internal link candidates">
-          <div className="link-candidates-header">
-            <span>Link to</span>
-            <strong>{linkQuery.query || "Search notes"}</strong>
-          </div>
-          {linkCandidates.length > 0 ? (
-            <div className="link-candidates-list">
-              {linkCandidates.map((candidate, index) => (
-                <button
-                  key={candidate.nodeId}
-                  className={index === 0 ? "link-candidate-active" : ""}
-                  type="button"
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => insertInternalLink(candidate.nodeId, candidate.label)}
-                >
-                  <span className="link-candidate-title">{candidate.label}</span>
-                  <span className="link-candidate-path" aria-hidden="true">
-                    {formatCandidatePath(document, candidate.breadcrumbIds, candidate.nodeId)}
-                  </span>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="link-candidates-empty">No matching node</div>
-          )}
-        </div>
-      ) : null}
       <Breadcrumb document={document} zoomNodeId={view.zoomNodeId} onNavigate={navigate} />
       {selectedNode ? <FormatToolbar node={selectedNode} onChange={updateMetadata} /> : null}
       {searchMode === "flat" && searchResults.length > 0 ? (
@@ -786,11 +816,25 @@ export function Outliner({
                 hasBulkSelection={hasBulkSelection}
                 hasMultiCursor={hasMultiCursor}
                 spellcheck={spellcheck}
-                autoFocus={autoFocus}
+                autoFocus={autoFocus && !(view.selectedNodeId === item.id && linkPickerFocusIndex !== undefined)}
                 showNotes={showNotes}
                 noteEditing={noteEditingNodeId === item.id}
                 focusOffset={focusRequest?.nodeId === item.id ? focusRequest.offset : undefined}
                 focusRequestKey={focusRequest?.nodeId === item.id ? focusRequest.key : undefined}
+                linkPicker={
+                  view.selectedNodeId === item.id && linkQuery
+                    ? {
+                        query: linkQuery.query,
+                        candidates: linkCandidates,
+                        activeIndex: linkPickerFocusIndex,
+                        getPath: (candidate) => formatCandidatePath(document, candidate.breadcrumbIds, candidate.nodeId),
+                        onPick: pickInternalLinkCandidate,
+                        onFocusIndex: setLinkPickerFocusIndex,
+                        onReturnToEditor: returnFocusToActiveNode,
+                        onForwardKeyToEditor: forwardLinkPickerKeyToEditor
+                      }
+                    : undefined
+                }
                 onSelect={() => selectNode(item.id)}
                 onSelectTag={selectTagFilter}
                 onOpenInternalLink={openInternalLink}
