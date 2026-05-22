@@ -450,6 +450,36 @@ describe("Outliner", () => {
     });
   });
 
+  it("renders the first internal line break immediately after alt enter", async () => {
+    const document = makeDocumentWithTexts(["Line"]);
+    function Harness() {
+      const [currentDocument, setCurrentDocument] = useState<OutlineDocument>(document);
+      const [view, setView] = useState<ViewState>(createInitialView(document));
+      return (
+        <Outliner
+          document={currentDocument}
+          view={view}
+          createId={() => "new"}
+          now={() => 1}
+          onDocumentChange={setCurrentDocument}
+          onViewChange={setView}
+        />
+      );
+    }
+    render(<Harness />);
+    const editor = screen.getByRole("textbox", { name: "Outline node text" });
+    fireEvent.keyDown(editor, {
+      key: "Enter",
+      code: "Enter",
+      altKey: true
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText("Line").closest(".outline-row")).toHaveAttribute("data-node-text", "Line\n");
+      expect(editor.querySelector("br")).not.toBeNull();
+    });
+  });
+
   it("persists the first alt enter line break without a second keypress", async () => {
     const document = makeDocumentWithTexts(["Line"]);
     const onDocumentChange = vi.fn();

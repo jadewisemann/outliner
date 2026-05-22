@@ -2,7 +2,7 @@
 
 ### 목표
 
-작성 중에는 Markdown-like source를 유지하고, inactive row에서는 읽기 좋은 렌더링을 제공한다. TODO/checkbox, date, recurring date, calendar sync는 이 Phase에서도 제외한다.
+작성 중에는 Markdown-like source를 유지하고, inactive row에서는 읽기 좋은 렌더링을 제공한다. TODO list, date, recurring date, calendar sync는 이 Phase에서도 제외한다. `[]`/`[*]` source marker 기반 완료 표시는 task metadata 없이 다룬다.
 
 ### 먼저 작성할 테스트
 

@@ -51,9 +51,10 @@ Stage 1 Product Core의 첫 Phase다. 목표는 기존 단일 `OutlineSnapshot`�
 - 2026-05-22: local persistence/history/conflict backup/manual backup/JSON export-import가 v2 `WorkspaceSnapshot.schemaVersion`을 보존하도록 타입과 테스트를 확장했다.
 - 2026-05-22: `useOutlineWorkspace`와 Yjs snapshot runtime을 v2 `WorkspaceSnapshot` 기준으로 승격하고, outline edit undo/redo와 workspace document command를 분리했다.
 - 2026-05-22: 왼쪽 workspace sidebar에서 문서 목록, active 표시, 생성, 전환, inline rename, 삭제, collapse 흐름을 제공하도록 UI와 테스트를 추가했다.
-- 2026-05-22: todo checkbox는 항상 노출하지 않고, 텍스트가 `[]` 또는 `[*]` marker로 시작할 때만 todo 상태로 승격하도록 TDD로 구현했다. 편집 중에는 todo 상태가 `[]`/`[*]` source marker로 보인다.
+- 2026-05-22: 완료 체크 UI는 항상 노출하지 않고, 텍스트가 `[]` 또는 `[*]` marker로 시작할 때만 lightweight 완료 상태로 승격하도록 TDD로 구현했다. 편집 중에는 완료 상태가 `[]`/`[*]` source marker로 보이며, TODO list나 task metadata로 확장하지 않는다.
 - 2026-05-22: `Ctrl+A` 확장 선택은 텍스트 선택 이후 현재 노드, 형제 범위, 부모 순서로 확장한다. `Ctrl+L`은 현재 줄 선택, `Ctrl+Shift+K`는 현재 줄 삭제로 추가했다.
 - 2026-05-22: 추가 단축키 후보였던 `Ctrl+Shift+L`, `Ctrl+Shift+A`, `Ctrl+Shift+Enter`는 이번 범위에서 구현하지 않았다.
+- 2026-05-22: 노드 row 조작 표면은 불렛 왼쪽의 전체 메뉴 버튼과 퀵 버튼을 기본으로 한다. 퀵 버튼과 불렛 클릭은 `깊이 들어가기`/`완료로 표시`를 나눠 맡고, 설정에서 불렛 클릭을 금지하면 퀵 버튼 두 개를 모두 노출한다.
 
 ### 최종 확인
 

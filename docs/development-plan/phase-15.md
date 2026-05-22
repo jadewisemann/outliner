@@ -10,7 +10,7 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
 - Rich text format 확장
 - Command palette와 전역 검색
 - 노드 메모 작성
-- 줄바꿈과 멀티라인 편집
+- 노드 본문 줄바꿈과 멀티라인 편집
 - 멀티 커서 편집 고도화
 - LaTeX 지원
 - 단축키 커스터마이징 확장
@@ -71,7 +71,7 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
   - [x] strikethrough
   - [x] text color
   - [x] inline code
-  - [x] code block
+  - [x] code block source 표시. code block 내부 전용 줄바꿈 편집기는 제품 표면에서 제외한다.
   - [x] 기존 bold/italic/link 등과 함께 command registry에 통합한다.
 - [x] Command palette와 전역 검색
   - [x] `Ctrl+P` 기본 단축키를 추가한다.

@@ -13,6 +13,7 @@ import {
   $isRangeSelection,
   $isTextNode,
   COMMAND_PRIORITY_HIGH,
+  INSERT_LINE_BREAK_COMMAND,
   KEY_ARROW_DOWN_COMMAND,
   KEY_ARROW_UP_COMMAND,
   KEY_BACKSPACE_COMMAND,
@@ -777,12 +778,7 @@ function KeyboardPlugin({
 
   useEffect(() => {
     const insertLineBreak = () => {
-      editor.update(() => {
-        const selection = $getSelection();
-        if ($isRangeSelection(selection)) {
-          selection.insertText("\n");
-        }
-      });
+      editor.dispatchCommand(INSERT_LINE_BREAK_COMMAND, false);
     };
     const readOffset = () => {
       let offset = editorText.length;

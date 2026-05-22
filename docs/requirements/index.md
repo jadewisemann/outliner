@@ -16,6 +16,6 @@
 ## TODO / 확인 포인트
 
 - [x] Phase 12-C에서 원격 sync full snapshot bandwidth 비용을 patch 경로로 해소했다.
-- [ ] TODO/checkbox, due date, 공유/협업은 제품 핵심에 다시 넣지 않는다.
+- [ ] TODO list, due date, 공유/협업은 제품 핵심에 다시 넣지 않는다. `[]`/`[*]` 완료 표시는 source marker 예외로만 유지한다.
 - [ ] 다중 문서는 Stage 1 Product Core 범위로 전환하되, 파일/폴더 pane은 추후 확장으로 둔다.
 - [ ] 요구사항을 바꾸면 관련 테스트 스키마도 함께 업데이트한다.

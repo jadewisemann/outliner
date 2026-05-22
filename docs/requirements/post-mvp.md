@@ -44,7 +44,8 @@ Stage 0에서 Dynalist와의 기능 차이는 아래 순서로 줄였다.
    - Markdown-like source를 유지하되 inactive row에서는 bold, italic, inline code, strikethrough, link, image link preview, LaTeX 표시를 단계적으로 지원한다.
    - heading, color label은 노드 속성으로 분리해 구조 편집과 충돌하지 않게 한다. numbered list는 현재 제품 범위에서 제외한다.
    - 본문 `text`와 별도 `note` 필드를 추가해 아이템 설명을 접거나 보일 수 있게 한다.
-   - TODO/checkbox와 date 계열은 리치 포맷 단계에서도 제외한다.
+   - TODO list와 date 계열은 리치 포맷 단계에서도 제외한다. 단, `[]`/`[*]`로 시작하는 텍스트는 source marker 기반 완료 상태로만 표시/토글할 수 있다.
+   - code block 내부 전용 줄바꿈 편집 기능은 제외한다. 코드 표시는 source text 보존과 inactive row 렌더링에 머문다.
 4. 원격 sync 비용 안정화
    - Firebase 원격 sync는 명시적 opt-in으로만 활성화한다.
    - 정상적인 텍스트 입력이 매 keypress마다 전체 문서 update를 원격에 append하지 않게 batching/debounce한다. - 완료됨
@@ -66,3 +67,4 @@ Stage 0에서 Dynalist와의 기능 차이는 아래 순서로 줄였다.
    - 키보드 shortcut 커스터마이즈를 command registry 기반으로 제공한다.
    - theme, font size, spellcheck, word count, auto-focus, bullet click 동작 같은 개인 설정을 저장한다.
    - 설정은 문서 데이터와 분리된 local/user preference로 저장한다.
+   - bullet click 금지 설정을 제공한다. 이 설정이 켜지면 bullet은 클릭 대상이 아니며, 노드 row 왼쪽에 전체 메뉴 버튼과 `깊이 들어가기`, `완료로 표시` 퀵 버튼을 모두 노출한다.

@@ -21,6 +21,7 @@ describe("rich formatting and notes", () => {
   it("keeps active row editing in source text", () => {}); // 완료됨
   it("stores note text separately from node text", () => {}); // 완료됨
   it("applies heading, color, and numbered metadata without changing children order", () => {}); // 완료됨
+  it("does not expose a code-block-specific multiline editor", () => {});
 });
 
 describe("input stability", () => {
@@ -57,5 +58,12 @@ describe("history and preferences", () => {
   it("stores restorable local snapshot history", () => {});
   it("restores a selected snapshot as one undoable action", () => {});
   it("keeps user preferences outside the outline undo stack", () => {});
+});
+
+describe("node row actions", () => {
+  it("shows a full menu button and one quick action next to the bullet by default", () => {});
+  it("assigns the other quick action to the bullet click target", () => {});
+  it("shows both quick action buttons when bullet clicks are disabled", () => {});
+  it("toggles completion only by editing the [] or [*] source marker", () => {});
 });
 ```

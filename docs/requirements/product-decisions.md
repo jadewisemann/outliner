@@ -3,9 +3,10 @@
 - Phase 0~6은 로그인 없는 로컬 단일 문서, Yjs-backed local runtime, optional RemoteStore sync를 우선한다.
 - 원격 동기화는 optional `RemoteStoreV2` adapter로 연결한다. Firebase Realtime Database는 v2 adapter를 제공하고, full snapshot bandwidth 비용은 optional patch capability로 줄인다. realtime subscription은 개인 sync의 필수 요구사항이 아니다.
 - MVP 텍스트는 플레인 텍스트 중심이다.
-- TODO/checkbox 노드는 MVP에서 제외한다.
+- TODO list 기능은 제품 핵심에서 제외한다. 예외적으로 텍스트가 `[]` 또는 `[*]`로 시작하는 노드는 lightweight 완료 상태로 취급할 수 있지만, 이는 source marker 토글일 뿐 task metadata가 아니다.
 - 자식 있는 빈 노드에서 `Backspace`를 누르면 자식을 같은 레벨로 승격한다.
-- bullet 클릭은 줌인이다.
+- bullet 클릭은 기본적으로 줌인 또는 완료 토글 중 하나를 담당한다. 설정에서 bullet 클릭을 금지하면 bullet은 순수 표시 요소가 되고, 불렛 왼쪽에 전체 메뉴 버튼과 퀵 버튼 2개를 노출한다.
+- 노드 row의 전체 메뉴는 해당 노드에서 가능한 모든 조작을 담고, 퀵 버튼은 깊이 들어가기와 완료 표시 중 빠른 조작을 제공한다.
 - 모바일 앱은 Stage 3 이후로 분리하고, Stage 1 다중 문서 workspace와 Stage 2 데스크톱/계정/sync 제품화 이후에 진행한다.
 - Stage 1 Product Core는 Obsidian식 다중 문서 workspace를 도입한다. 기본 링크는 `[[Document]]`, 문서 내부 노드 링크는 `[[Document^Node]]`다.
 - 협업 범위는 개인 다기기 동기화다.
