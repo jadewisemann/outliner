@@ -7,6 +7,7 @@ Stage 1 Product Core의 첫 Phase다. 목표는 기존 단일 `OutlineSnapshot`�
 - `Workspace -> Documents -> Nodes` 모델을 도입한다.
 - 기존 v1 `{ document, view }` 데이터를 v2 single-document workspace로 migration한다.
 - 문서 생성, 전환, 이름 변경, 삭제, 최근 문서 이동을 최소 제품 표면으로 제공한다.
+- 다중 문서 워크스페이스에서는 왼쪽 사이드바를 기본 탐색 표면으로 제공한다.
 - 단일 문서 편집 경험은 깨지지 않게 유지한다.
 
 ### 먼저 작성할 테스트
@@ -16,6 +17,8 @@ Stage 1 Product Core의 첫 Phase다. 목표는 기존 단일 `OutlineSnapshot`�
 - [x] 각 문서는 독립된 `rootId`, `nodes`, `ViewState`를 가진다.
 - [ ] document rename/delete/create가 preferences와 outline Undo/Redo 의미를 섞지 않는다.
 - [x] local persistence, manual backup, JSON export/import가 schema version을 보존한다.
+- [ ] workspace sidebar는 문서 목록, active document 표시, 문서 생성/전환/이름 변경/삭제 진입점을 제공한다.
+- [ ] single-document workspace에서도 sidebar를 접거나 최소 폭으로 둘 수 있어 기존 단일 문서 편집 집중 흐름을 해치지 않는다.
 
 ### 구현 항목
 
@@ -23,12 +26,16 @@ Stage 1 Product Core의 첫 Phase다. 목표는 기존 단일 `OutlineSnapshot`�
 - [x] `OutlineDocument`에 `id`, `title`, `slug`, timestamps 추가
 - [x] v1 snapshot -> v2 workspace migration
 - [ ] active document switcher와 recent documents
+- [ ] workspace sidebar와 document list UI
 - [x] document create/rename/delete 기본 command
 - [x] local persistence/history/backup의 workspace snapshot 대응
 
 ### 완료 기준
 
 - 사용자는 하나의 workspace 안에서 여러 outline document를 만들고 오갈 수 있다.
+- 사용자는 사이드바에서 현재 workspace의 문서 목록을 보고 active document를 전환할 수 있다.
+- 사용자는 사이드바에서 새 문서를 만들고, 문서 이름 변경과 삭제 흐름에 진입할 수 있다.
+- 사이드바는 접을 수 있어 단일 문서 작성 화면의 집중감을 유지한다.
 - 기존 단일 문서 데이터는 별도 수동 조치 없이 열린다.
 - 문서 단위 상태와 노드 단위 상태가 타입과 selector에서 구분된다.
 

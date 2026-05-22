@@ -96,3 +96,18 @@
 - 멀티 커서 텍스트 편집은 아래 visible row부터 위 visible row 순서로 적용해 offset shift가 다른 커서에 영향을 주지 않게 한다.
 - 멀티 커서 구조 명령은 `normalizeTopLevelSelection`과 같은 중복 subtree 제거 규칙을 사용한다.
 - Undo/Redo에서 노드 이동, 범위 이동, 멀티 커서 편집은 각각 하나의 사용자 action으로 되돌아가야 한다.
+
+### 4.9 워크스페이스와 문서 사이드바
+
+- Stage 1부터 앱의 최상위 작업 단위는 workspace이며, workspace는 1개 이상의 outline document를 가진다.
+- 여러 문서가 있는 workspace에서는 왼쪽 사이드바가 문서 탐색의 기본 UI다.
+- 사이드바는 현재 workspace의 문서 목록을 `documentOrder` 순서로 보여준다.
+- 사이드바는 active document를 명확히 표시한다.
+- 사용자는 사이드바에서 문서를 클릭해 active document를 전환할 수 있다.
+- 사용자는 사이드바에서 새 문서를 만들 수 있다.
+- 사용자는 사이드바 또는 문서 항목 메뉴에서 문서 이름 변경과 삭제 흐름에 진입할 수 있다.
+- 문서 삭제는 active document가 사라지는 경우 남은 문서 중 하나로 안전하게 전환해야 한다.
+- 마지막 남은 문서는 삭제할 수 없거나, 삭제 대신 빈 기본 문서로 대체되어 workspace가 항상 최소 1개 문서를 유지해야 한다.
+- 단일 문서 workspace에서도 사이드바는 접을 수 있어야 하며, 기존 단일 문서 편집 화면의 집중감을 해치지 않아야 한다.
+- 사이드바의 열림/닫힘, 폭, 최근 접근 문서 같은 UI 상태는 outline node Undo/Redo stack과 분리한다.
+- 사이드바의 문서 생성, 이름 변경, 삭제, 전환은 문서 내부 노드 편집 Undo/Redo에 섞이지 않아야 한다.

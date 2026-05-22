@@ -98,7 +98,14 @@ type OutlineDocument = {
 type WorkspaceViewState = {
   activeDocumentId: DocumentId;
   perDocument: Record<DocumentId, ViewState>;
+  sidebar: WorkspaceSidebarState;
   recentTargets?: LinkTarget[];
+};
+
+type WorkspaceSidebarState = {
+  collapsed: boolean;
+  width?: number;
+  selectedDocumentId?: DocumentId;
 };
 
 type LinkTarget =
@@ -126,4 +133,6 @@ type OutlineLink = {
 - 리치 포맷은 구조 편집 command와 분리한다. heading, color, note처럼 노드 속성인 것은 metadata에 저장하고, inline bold/code/link처럼 텍스트 안에 남는 것은 source text를 기준으로 렌더링한다. `numbered`는 과거 metadata 실험 필드로 남아 있을 수 있지만 현재 제품 표면, export/import, 편집 UI에서는 제외한다.
 - TODO/checkbox, date, recurring date, calendar sync는 metadata 확장 대상이 아니다.
 - 사용자 설정은 outline document와 분리된 preference store에 저장한다. 설정 변경은 outline Undo/Redo stack에 들어가지 않는다.
+- workspace sidebar는 문서 간 탐색을 위한 workspace-level UI다. 열림/닫힘, 폭, 선택 문서, 최근 문서 같은 상태는 `WorkspaceViewState`에 속하고, 개별 `OutlineDocument`나 노드 Undo/Redo stack에 섞지 않는다.
+- 다중 문서 workspace에서 sidebar는 문서 목록의 기본 탐색 표면이다. active document switcher만으로 문서 탐색을 숨기지 않는다.
 - import/export adapter는 domain model 바깥에 두고, Stage 1 이후 가져오기 결과는 검증된 `WorkspaceSnapshot` 또는 삽입 가능한 document/node draft로 변환한 뒤 command를 통해 적용한다.
