@@ -32,6 +32,7 @@
 
 ### 제품 방향상 제외
 
-- Dynalist식 파일/폴더/다중 문서 시스템은 만들지 않는다. 이 앱의 문서는 앱 안의 파일 pane이 아니라 로컬/동기화 저장소의 단일 workspace 또는 추후 외부 파일 기반 저장 전략으로 다룬다.
+- Stage 0 MVC에서는 Dynalist식 파일/폴더/다중 문서 시스템을 만들지 않는다.
+- Stage 1 Product Core에서는 Obsidian식 다중 문서 workspace를 도입한다. 단, 전통적인 파일/폴더 pane을 먼저 만들지 않고 `Workspace -> Documents -> Nodes` 모델과 `[[Document]]`, `[[Document^Node]]` 링크 경험을 우선한다.
 - 태스크 관리 기능은 제품 핵심에서 제외한다. TODO/checkbox, 완료 상태, due date, recurring date, calendar sync, overdue highlight는 구현하지 않는다.
 - 공유와 협업 기능은 제외한다. 개인 다기기 동기화는 유지하지만, public share, collaborator, 권한 모델, 댓글/알림은 만들지 않는다.

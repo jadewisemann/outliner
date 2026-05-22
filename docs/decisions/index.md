@@ -21,8 +21,10 @@
 - [ADR-015: Dynalist 격차 축소 범위](./adr-015.md)
 - [ADR-016: 원격 sync 비용 안정화를 import/export보다 우선한다](./adr-016.md)
 - [ADR-017: 원격 저장소는 realtime보다 저비용 개인 sync를 우선한다](./adr-017.md)
+- [ADR-018: Stage 1은 Obsidian식 다중 문서 워크스페이스로 전환한다](./adr-018.md)
 
 ## TODO / 확인 포인트
 
 - [x] Phase 12-C sync protocol 결정은 ADR-017에 반영했다.
+- [x] ADR-018은 ADR-015의 다중 문서 제외 결정을 supersede한다.
 - [ ] 기존 ADR을 뒤집는 경우 새 ADR에서 supersedes 관계를 명시한다.

@@ -117,7 +117,7 @@ Dynalist의 실질적인 대안이 되기 위해 웹 버전의 편집 깊이, �
 - 웹 앱에서 장시간 outline 작성, 탐색, 서식화, 검색, 개인화가 키보드 중심으로 가능하다.
 - 사용자는 Dynalist에서 기대하는 핵심 파워 기능을 큰 마찰 없이 사용할 수 있다.
 - Custom CSS와 keymap 변경이 문서 데이터와 분리되어 저장되고, 백업/복원 정책이 명확하다.
-- Phase 16 데스크톱 앱과 Phase 17 모바일 패키징 전에 editor command/settings 구조가 안정화된다.
+- Stage 1 다중 문서 제품 코어로 넘어가기 전에 editor command/settings 구조가 안정화된다.
 
 ### 구현 메모
 

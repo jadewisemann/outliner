@@ -1,10 +1,19 @@
-# 개발 단계 Index
+# 개발 계획 Index
 
-현재 구현 상태와 다음 작업 순서를 확인하는 입구다. Phase별 상세는 필요한 파일만 열어본다.
+현재 구현 상태와 다음 작업 순서를 확인하는 입구다. 이제 계획은 큰 단위인 Stage를 먼저 보고, 필요한 Phase만 연다.
 
 ## 먼저 볼 것
 
 - [overview.md](./overview.md): 현재 상태 요약과 최우선 과제
+
+## Stage 구조
+
+- Stage 0: MVC / 단일 문서 아웃라이너 완성 - Phase 0~15.5 완료
+- Stage 1: Product Core / Obsidian식 다중 문서 워크스페이스 - Phase 16~17
+- Stage 2: Distribution / 데스크톱, 계정, sync 제품화 - Phase 18
+- Stage 3: Future Expansion / 모바일과 고급 확장 - Phase 19 이후
+
+Stage는 방향과 제품 경계를 정하고, Phase는 구현 가능한 짧은 묶음만 담는다.
 
 ## Phase 파일
 
@@ -25,8 +34,10 @@
 - [Phase 14: 히스토리, 백업, 설정 - 완료됨](./phase-14.md)
 - [Phase 15: 웹 버전 고도화와 파워 유저 기능 - 완료됨](./phase-15.md)
 - [Phase 15.5: 아웃라이닝 앱 폴리시와 타입라이터 스크롤 - 완료됨](./phase-15-5.md)
-- [Phase 16: 데스크톱 앱과 계정 기능 - 예정](./phase-16.md)
-- [Phase 17: 모바일 패키징 - 웹/데스크톱 이후](./phase-17.md)
+- [Phase 16: 다중 문서 워크스페이스 기반 - 예정](./phase-16.md)
+- [Phase 17: Obsidian식 링크와 전역 탐색 - 예정](./phase-17.md)
+- [Phase 18: 데스크톱 앱, 계정, sync 제품화 - 예정](./phase-18.md)
+- [Phase 19: 모바일 패키징과 고급 확장 - 추후 확장](./phase-19.md)
 
 ## TODO / 현재 작업 큐
 
@@ -35,5 +46,7 @@
 - [x] Phase 14 히스토리, 백업, 사용자 설정
 - [x] Phase 15 웹 버전 고도화와 Dynalist 대안 기능
 - [x] Phase 15.5 아웃라이닝 앱 폴리시와 타입라이터 스크롤
-- [ ] Phase 16 데스크톱 앱과 계정 기능 명세 구체화
-- [ ] Phase 17 모바일 패키징
+- [ ] Stage 1 / Phase 16 다중 문서 워크스페이스 기반
+- [ ] Stage 1 / Phase 17 Obsidian식 링크와 전역 탐색
+- [ ] Stage 2 / Phase 18 데스크톱 앱, 계정, sync 제품화
+- [ ] Stage 3 / Phase 19 모바일 패키징과 고급 확장

@@ -1,6 +1,34 @@
-# 2.1 MVP 이후 기능 후보
+# 2.1 MVC 이후 제품화 후보
 
-MVP 이후 Dynalist와의 기능 차이는 아래 순서로 줄인다. 단, 제품 방향상 제외한 파일 시스템, 태스크 관리, 공유/협업은 이 목록에 포함하지 않는다.
+Stage 0 MVC 이후에는 Dynalist 격차 축소가 아니라 Obsidian식 다중 문서 outliner 제품화로 방향을 전환한다. 이미 완료된 Phase 9~15.5는 단일 문서 MVC 기능으로 유지하고, 다음 우선순위는 Stage 단위로 관리한다.
+
+## Stage 1 Product Core
+
+1. 다중 문서 워크스페이스
+   - `Workspace -> Documents -> Nodes` 모델을 도입한다.
+   - 기존 단일 문서 데이터는 single-document workspace로 자동 승격한다.
+   - 문서 생성, 전환, rename, delete, recent documents를 제공한다.
+2. Obsidian식 링크와 전역 탐색
+   - `[[Document]]`는 문서 링크로, `[[Document^Node]]`는 문서 내부 노드 링크로 해석한다.
+   - 없는 문서는 picker의 명시적 create action으로 만든다.
+   - 문서 backlinks와 block backlinks를 분리한다.
+   - command palette는 문서와 노드를 함께 검색한다.
+
+## Stage 2 Distribution
+
+3. 데스크톱 앱, 계정, sync 제품화
+   - 다중 문서 workspace 모델이 안정된 뒤 desktop packaging과 account flow를 붙인다.
+   - remote sync는 workspace manifest와 per-document snapshot/patch 구조를 검토한다.
+
+## Stage 3 Future Expansion
+
+4. 모바일 패키징과 고급 확장
+   - 모바일 persistence, 작은 화면 link picker, graph view, aliases, transclusion, attachments는 추후 확장으로 둔다.
+   - 공유/협업과 태스크 관리 기능은 계속 제품 핵심에서 제외한다.
+
+## 완료된 Stage 0 기능 기록
+
+Stage 0에서 Dynalist와의 기능 차이는 아래 순서로 줄였다.
 
 1. 검색과 필터
    - 현재 zoom root 안에서 빠르게 텍스트를 찾는다.
