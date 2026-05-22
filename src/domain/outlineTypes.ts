@@ -1,4 +1,5 @@
 export type NodeId = string;
+export type DocumentId = string;
 
 export type OutlineNode = {
   id: NodeId;
@@ -26,8 +27,13 @@ export type OutlineLink = {
 };
 
 export type OutlineDocument = {
+  id?: DocumentId;
+  title?: string;
+  slug?: string;
   rootId: NodeId;
   nodes: Record<NodeId, OutlineNode>;
+  createdAt?: number;
+  updatedAt?: number;
 };
 
 export type ViewState = {
@@ -56,3 +62,27 @@ export type OutlineSnapshot = {
   document: OutlineDocument;
   view: ViewState;
 };
+
+export type WorkspaceSnapshot = {
+  schemaVersion: 2;
+  workspace: {
+    id: string;
+    title?: string;
+    documentOrder: DocumentId[];
+    activeDocumentId: DocumentId;
+    documents: Record<DocumentId, OutlineDocument>;
+    view: WorkspaceViewState;
+    createdAt: number;
+    updatedAt: number;
+  };
+};
+
+export type WorkspaceViewState = {
+  activeDocumentId: DocumentId;
+  perDocument: Record<DocumentId, ViewState>;
+  recentTargets?: LinkTarget[];
+};
+
+export type LinkTarget =
+  | { kind: "document"; documentId: DocumentId }
+  | { kind: "node"; documentId: DocumentId; nodeId: NodeId };

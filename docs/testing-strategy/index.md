@@ -14,6 +14,7 @@ TDD 루프와 테스트 스키마를 찾는 입구다. 구현할 기능과 가�
 ## 테스트 스키마
 
 - [도메인 테스트](./schema-domain.md)
+- [Workspace 테스트](./schema-workspace.md)
 - [벌크 편집 테스트](./schema-bulk-editing.md)
 - [멀티 커서 테스트](./schema-multi-cursor.md)
 - [Visible node 테스트](./schema-visible-nodes.md)
@@ -28,5 +29,6 @@ TDD 루프와 테스트 스키마를 찾는 입구다. 구현할 기능과 가�
 - [x] Remote sync Phase 12-C: full-snapshot write/read bandwidth budget 테스트
 - [x] OPML import/export round-trip
 - [ ] 50,000 node 병목 profiling
+- [ ] Phase 16 persistence/history/backup workspace schema 보존 테스트
 - [ ] 히스토리/설정 E2E smoke
 - [ ] 모바일 persistence adapter 계약 테스트
