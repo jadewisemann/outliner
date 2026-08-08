@@ -299,6 +299,37 @@ export function useStore() {
           return { ...current, docs: remaining, graves: { ...current.graves, [id]: stamp() }, views };
         });
       },
+      /**
+       * Puts a past version of a document back.
+       *
+       * Every node is re-stamped, for the same reason undo re-stamps rather
+       * than restoring a snapshot: an old stamp loses the next merge, and the
+       * restore would be quietly undone by the first sync. Gravestones for the
+       * rows coming back are dropped, or they would bury them again.
+       */
+      restoreVersion(past: Doc) {
+        editWorkspace((current) => {
+          const live = current.docs[past.id];
+          if (!live) return current;
+          const now = stamp();
+          const nodes: Record<Id, Doc["nodes"][string]> = {};
+          for (const [id, node] of Object.entries(past.nodes)) nodes[id] = { ...node, edited: now, moved: now };
+
+          const graves = { ...live.graves };
+          for (const id of Object.keys(nodes)) delete graves[id];
+          // Rows the live document has that the past one did not are gone as
+          // of this restore, and need stones so other devices agree.
+          for (const id of Object.keys(live.nodes)) if (!nodes[id]) graves[id] = now;
+
+          return {
+            ...current,
+            docs: {
+              ...current.docs,
+              [past.id]: { ...live, rootId: past.rootId, nodes, graves, titleEdited: now, title: past.title }
+            }
+          };
+        });
+      },
       createSearch(title: string, query: string) {
         const current = live.current;
         const saved = makeSearch(title, query, { sort: keyBetween(current ? lastSort(current) : null, null) });
@@ -565,7 +596,14 @@ export function useStore() {
     undo,
     redo,
     docs,
-    sync: { status: syncStatus, config: syncConfig, setConfig: setSyncConfig, now: syncNow },
+    sync: {
+      status: syncStatus,
+      config: syncConfig,
+      setConfig: setSyncConfig,
+      now: syncNow,
+      /** Present only on a backend that keeps history — today, GitHub. */
+      history: backend?.history ?? null
+    },
     saveFailed
   };
 }

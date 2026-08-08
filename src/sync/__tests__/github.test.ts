@@ -13,12 +13,17 @@ function fakeGithub(seed: Record<string, string> = {}) {
   const files = new Map<string, { text: string; sha: string }>();
   const writes: string[] = [];
   const commits: string[] = [];
+  /** Every version a path has held, newest last — the repository's memory. */
+  const past = new Map<string, { sha: string; text: string; message: string }[]>();
+  let writtenMessage = "seed";
   let counter = 0;
   let blobReads = 0;
 
   const store = (path: string, text: string) => {
     counter += 1;
-    files.set(path, { text, sha: `sha-${counter}` });
+    const sha = `sha-${counter}`;
+    files.set(path, { text, sha });
+    past.set(path, [...(past.get(path) ?? []), { sha, text, message: writtenMessage }]);
   };
   for (const [path, text] of Object.entries(seed)) store(path, text);
 
@@ -45,12 +50,30 @@ function fakeGithub(seed: Record<string, string> = {}) {
       return reply(200, found.text);
     }
 
+    if (url.pathname === "/repos/tester/notes/commits") {
+      const path = url.searchParams.get("path") ?? "";
+      const versions = [...(past.get(path) ?? [])].reverse();
+      return reply(
+        200,
+        versions.map((version) => ({
+          sha: version.sha,
+          commit: { message: version.message, author: { date: "2026-01-02T03:04:05Z", name: "tester" } }
+        }))
+      );
+    }
+
     const prefix = "/repos/tester/notes/contents/";
     if (!url.pathname.startsWith(prefix)) return reply(404, {});
     const path = url.pathname.slice(prefix.length).split("/").map(decodeURIComponent).join("/");
     const held = files.get(path);
 
     if (method === "GET") {
+      const ref = url.searchParams.get("ref");
+      if (ref) {
+        const version = (past.get(path) ?? []).find((each) => each.sha === ref);
+        if (!version) return reply(404, {});
+        return reply(200, { content: Buffer.from(version.text, "utf8").toString("base64"), encoding: "base64", sha: ref });
+      }
       if (held) {
         if (ifNoneMatch === held.sha) return reply(304);
         return reply(
@@ -70,6 +93,7 @@ function fakeGithub(seed: Record<string, string> = {}) {
 
     if (method === "PUT") {
       if (held ? body.sha !== held.sha : Boolean(body.sha)) return reply(409, {});
+      writtenMessage = String(body.message);
       store(path, Buffer.from(String(body.content), "base64").toString("utf8"));
       writes.push(path);
       commits.push(String(body.message));
@@ -331,5 +355,29 @@ describe("the GitHub backend, one file per document", () => {
     // Offered destination-first, so only the ordering rule can save it.
     version = (await backend.push(payload([grafted, cut]), version)) ?? null;
     expect(repo.writes).toEqual([`outliner/docs/${cut.id}.json`, `outliner/docs/${grafted.id}.json`]);
+  });
+
+  it("reads a document's past out of the commit log, and opens it with the same key", async () => {
+    const repo = fakeGithub();
+    const backend = connect("hunter2");
+    const doc = makeDoc("history");
+    const row = Object.keys(doc.nodes).find((id) => id !== doc.rootId)!;
+
+    let version = (await backend.push(payload([{ ...doc, nodes: { ...doc.nodes, [row]: { ...doc.nodes[row], text: "first" } } }]), (await backend.pull()).version)) ?? null;
+    version = (await backend.push(payload([{ ...doc, nodes: { ...doc.nodes, [row]: { ...doc.nodes[row], text: "second" } } }]), version)) ?? null;
+
+    const revisions = await backend.history!.list(doc.id);
+    expect(revisions).toHaveLength(2);
+    expect(revisions[0].message).toBe("outliner: history");
+
+    // Newest first, so the older commit still holds the first wording — and it
+    // is encrypted on disk, so reading it back proves the key is applied.
+    expect(repo.files.get(`outliner/docs/${doc.id}.json`)!.text).not.toContain("second");
+    expect((await backend.history!.read(doc.id, revisions[1].id))!.nodes[row].text).toBe("first");
+    expect((await backend.history!.read(doc.id, revisions[0].id))!.nodes[row].text).toBe("second");
+  });
+
+  it("has no history to offer on a plain REST endpoint", () => {
+    expect(createBackend({ kind: "rest", url: "https://example.test/notes", token: "" }).history).toBeUndefined();
   });
 });

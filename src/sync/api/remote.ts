@@ -49,8 +49,22 @@ export type Version = string | GithubVersion | null;
 
 export type Stored = { payload: SyncPayload; version: Version };
 
+/** One past version of one document, as the remote remembers it. */
+export type Revision = { id: string; message: string; at: string; author: string };
+
+/**
+ * Reading the past. Only a backend that keeps history can offer this — a plain
+ * `GET`/`PUT` URL has no memory, which is exactly the difference between the
+ * two backends and why this is optional rather than part of the contract.
+ */
+export type History = {
+  list(docId: Id): Promise<Revision[]>;
+  read(docId: Id, revision: string): Promise<Doc | null>;
+};
+
 export type Backend = {
   pull(): Promise<Stored>;
+  history?: History;
   /** Resolves to `null` when the remote moved on and the caller should re-merge. */
   push(payload: SyncPayload, version: Version): Promise<Version | undefined>;
   /**
@@ -309,6 +323,47 @@ function createGithubBackend(config: Extract<SyncConfig, { kind: "github" }>, ke
 
   return {
     cadence: { pullMs: 30_000, pushMs: 10_000 },
+
+    /**
+     * Every push was a commit, so the repository has been keeping a version
+     * archive all along — this is only the part that reads it back. Encrypted
+     * workspaces work too: an old file is opened with the same key as a new one.
+     */
+    history: {
+      async list(docId) {
+        const name = fileNameOf(docId);
+        if (!name) return [];
+        const path = [...folder, "docs", name].join("/");
+        const response = await api(
+          `https://api.github.com/repos/${config.repo}/commits?per_page=40&path=${encodeURIComponent(path)}`
+        );
+        if (!response.ok) return [];
+        const body = (await response.json()) as unknown;
+        if (!Array.isArray(body)) return [];
+        return body.flatMap((entry) => {
+          const commit = entry as { sha?: unknown; commit?: { message?: unknown; author?: { date?: unknown; name?: unknown } } };
+          if (typeof commit.sha !== "string") return [];
+          return [
+            {
+              id: commit.sha,
+              message: String(commit.commit?.message ?? ""),
+              at: String(commit.commit?.author?.date ?? ""),
+              author: String(commit.commit?.author?.name ?? "")
+            }
+          ];
+        });
+      },
+
+      async read(docId, revision) {
+        const name = fileNameOf(docId);
+        if (!name) return null;
+        const response = await api(`${contents([...folder, "docs", name])}?ref=${encodeURIComponent(revision)}`);
+        if (!response.ok) return null;
+        const body = (await response.json()) as { content?: string; encoding?: string };
+        if (body.encoding !== "base64" || typeof body.content !== "string") return null;
+        return readDoc(docId, parse(await keys.open(fromBase64(body.content))));
+      }
+    },
 
     async pull() {
       const entries = await list();

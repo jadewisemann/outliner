@@ -8,6 +8,7 @@ import { Palette } from "../palette/components/Palette";
 import { buildCommands } from "../palette/commands";
 import { SearchPanel } from "../search/components/SearchPanel";
 import { completeGithubLogin, fetchGithubLogin } from "../sync/api/githubAuth";
+import { HistoryPanel } from "../sync/components/HistoryPanel";
 import { SyncBadge, SyncSettings, type OauthPrefill } from "../sync/components/SyncSettings";
 import { useTransfer } from "../transfer/useTransfer";
 import { Backlinks } from "./Backlinks";
@@ -18,6 +19,7 @@ type Overlay =
   | { kind: "palette"; query: string }
   | { kind: "search"; query: string }
   | { kind: "shortcuts" }
+  | { kind: "history" }
   | { kind: "sync"; oauth?: OauthPrefill }
   | null;
 
@@ -57,6 +59,7 @@ export function App() {
             toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
             toggleSidebar: () => setSidebarOpen((open) => !open),
             openSync: () => setOverlay({ kind: "sync" }),
+            openHistory: () => setOverlay({ kind: "history" }),
             openShortcuts: () => setOverlay({ kind: "shortcuts" })
           })
         : [],
@@ -289,6 +292,7 @@ export function App() {
         <SearchPanel store={store} initialQuery={overlay.query} onClose={() => setOverlay(null)} />
       ) : null}
       {overlay?.kind === "shortcuts" ? <Shortcuts onClose={() => setOverlay(null)} /> : null}
+      {overlay?.kind === "history" ? <HistoryPanel store={store} onClose={() => setOverlay(null)} /> : null}
       {overlay?.kind === "sync" ? (
         <SyncSettings store={store} oauth={overlay.oauth} onClose={() => setOverlay(null)} />
       ) : null}
