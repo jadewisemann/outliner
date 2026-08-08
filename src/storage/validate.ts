@@ -45,27 +45,36 @@ export function readWorkspace(value: unknown, now = Date.now()): Workspace | nul
   return { version: 4, ...payload, activeDocId, views };
 }
 
+/**
+ * A single document, as stored in its own file. The id comes from outside the
+ * document — the file name — so it is passed in rather than read.
+ */
+export function readDoc(id: Id, value: unknown, now = Date.now()): Doc | null {
+  if (id === "" || UNSAFE_KEYS.has(id) || !isRecord(value)) return null;
+  const rootId = str(value.rootId);
+  const nodes = readNodes(value.nodes, now);
+  // Without a reachable root there is no document to show.
+  if (!rootId || !nodes || !nodes[rootId]) return null;
+
+  return {
+    id,
+    rootId,
+    title: str(value.title) ?? "Untitled",
+    nodes,
+    graves: readGraves(value.graves, now),
+    sort: str(value.sort) ?? "V",
+    titleEdited: readStamp(value.titleEdited, now),
+    moved: readStamp(value.moved, now)
+  };
+}
+
 function readDocs(value: unknown, now: number): Record<Id, Doc> | null {
   if (!isRecord(value)) return null;
   const docs: Record<Id, Doc> = {};
 
   for (const [id, raw] of entries(value)) {
-    if (!isRecord(raw)) continue;
-    const rootId = str(raw.rootId);
-    const nodes = readNodes(raw.nodes, now);
-    // Without a reachable root there is no document to show.
-    if (!rootId || !nodes || !nodes[rootId]) continue;
-
-    docs[id] = {
-      id,
-      rootId,
-      title: str(raw.title) ?? "Untitled",
-      nodes,
-      graves: readGraves(raw.graves, now),
-      sort: str(raw.sort) ?? "V",
-      titleEdited: readStamp(raw.titleEdited, now),
-      moved: readStamp(raw.moved, now)
-    };
+    const doc = readDoc(id, raw, now);
+    if (doc) docs[id] = doc;
   }
   return docs;
 }
@@ -100,7 +109,7 @@ function readNodes(value: unknown, now: number): Record<Id, Node> | null {
   return nodes;
 }
 
-function readGraves(value: unknown, now: number): Record<Id, Stamp> {
+export function readGraves(value: unknown, now = Date.now()): Record<Id, Stamp> {
   const graves: Record<Id, Stamp> = {};
   if (!isRecord(value)) return graves;
   for (const [id, raw] of entries(value)) graves[id] = readStamp(raw, now);

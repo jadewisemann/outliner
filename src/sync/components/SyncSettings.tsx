@@ -32,7 +32,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
   const [repo, setRepo] = useState(
     config?.kind === "github" ? config.repo : oauth?.login ? `${oauth.login}/outliner` : ""
   );
-  const [path, setPath] = useState(config?.kind === "github" ? config.path : "outliner.json");
+  const [path, setPath] = useState(config?.kind === "github" ? config.path : "outliner");
   const [token, setToken] = useState(oauth?.token ?? config?.token ?? "");
 
   // The login button only appears when this deployment has the OAuth function.
@@ -45,7 +45,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
   const built: SyncConfig | null =
     mode === "github"
       ? /^[^\s/]+\/[^\s/]+$/.test(repo.trim()) && token.trim() !== ""
-        ? { kind: "github", repo: repo.trim(), path: path.trim() || "outliner.json", token: token.trim() }
+        ? { kind: "github", repo: repo.trim(), path: path.trim() || "outliner", token: token.trim() }
         : null
       : url.trim() !== ""
         ? { kind: "rest", url: url.trim(), token: token.trim() }
@@ -110,8 +110,8 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
         ) : (
           <>
             <p className="sync-note">
-              지정한 저장소의 파일 하나에 워크스페이스를 커밋합니다 — 커밋 히스토리가 곧 버전 백업입니다.
-              개인 노트라면 비공개 저장소를 쓰세요.
+              지정한 저장소의 폴더에 문서 하나당 파일 하나로 커밋합니다 — 고친 문서만 커밋되고, 커밋
+              히스토리가 곧 버전 백업입니다. 개인 노트라면 비공개 저장소를 쓰세요.
             </p>
 
             {clientId && !token ? (
@@ -130,10 +130,10 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
               />
             </label>
             <label className="field">
-              <span>파일 경로</span>
+              <span>폴더 경로</span>
               <input
                 className="field-input"
-                placeholder="outliner.json"
+                placeholder="outliner"
                 value={path}
                 onChange={(event) => setPath(event.target.value)}
               />

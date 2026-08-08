@@ -38,6 +38,93 @@ async function serveSharedDocument(contexts: BrowserContext[]) {
   };
 }
 
+/**
+ * The GitHub contents API for one repository, in memory: GET a file or a
+ * folder, read a blob by sha, PUT and DELETE with a sha that has to be current
+ * — the same compare-and-swap the real thing enforces. Shared across contexts,
+ * so two browsers are two devices talking to one repository.
+ */
+async function serveRepository(contexts: BrowserContext[], repo: string) {
+  const files = new Map<string, { text: string; sha: string }>();
+  const writes: string[] = [];
+  let counter = 0;
+
+  const store = (path: string, text: string) => {
+    counter += 1;
+    files.set(path, { text, sha: `sha-${counter}` });
+    return files.get(path)!.sha;
+  };
+
+  await Promise.all(
+    contexts.map((context) =>
+      context.route(new RegExp(`^https://api\\.github\\.com/repos/${repo}/`), async (route) => {
+        const url = new URL(route.request().url());
+        const method = route.request().method();
+        const posted = route.request().postData();
+        const body = posted ? JSON.parse(posted) : {};
+        const json = (status: number, value: unknown) =>
+          route.fulfill({ status, contentType: "application/json", body: JSON.stringify(value) });
+
+        const blob = new RegExp(`^/repos/${repo}/git/blobs/(.+)$`).exec(url.pathname);
+        if (blob) {
+          const found = [...files.values()].find((file) => file.sha === decodeURIComponent(blob[1]));
+          return found ? route.fulfill({ status: 200, contentType: "text/plain", body: found.text }) : json(404, {});
+        }
+
+        const prefix = `/repos/${repo}/contents/`;
+        if (!url.pathname.startsWith(prefix)) return json(404, {});
+        const path = url.pathname.slice(prefix.length).split("/").map(decodeURIComponent).join("/");
+        const held = files.get(path);
+
+        if (method === "GET") {
+          if (held) {
+            return json(200, {
+              // GitHub wraps base64 at 60 columns; the client has to cope.
+              content: Buffer.from(held.text, "utf8").toString("base64").replace(/(.{60})/g, "$1\n"),
+              encoding: "base64",
+              sha: held.sha
+            });
+          }
+          const children = [...files.entries()]
+            .filter(([at]) => at.startsWith(`${path}/`) && !at.slice(path.length + 1).includes("/"))
+            .map(([at, file]) => ({ name: at.slice(path.length + 1), path: at, sha: file.sha, type: "file" }));
+          return children.length > 0 ? json(200, children) : json(404, {});
+        }
+
+        if (method === "PUT") {
+          if (held ? body.sha !== held.sha : Boolean(body.sha)) return json(409, {});
+          const sha = store(path, Buffer.from(String(body.content).replace(/\s/g, ""), "base64").toString("utf8"));
+          writes.push(path);
+          return json(200, { content: { sha } });
+        }
+
+        if (method === "DELETE") {
+          if (!held) return json(404, {});
+          if (body.sha !== held.sha) return json(409, {});
+          files.delete(path);
+          writes.push(path);
+          return json(200, {});
+        }
+        return json(405, {});
+      })
+    )
+  );
+
+  return {
+    writes,
+    documents: () => [...files.keys()].filter((path) => path.includes("/docs/")),
+    text: (path: string) => files.get(path)?.text ?? "",
+    async uploaded(text: string) {
+      await expect
+        .poll(() => [...files.values()].some((file) => file.text.includes(text)), {
+          timeout: 40_000,
+          message: `the repository never received "${text}"`
+        })
+        .toBe(true);
+    }
+  };
+}
+
 async function openSynced(context: BrowserContext, url: string): Promise<Page> {
   const page = await context.newPage();
   await page.addInitScript(
@@ -169,54 +256,16 @@ test("a GitHub repository works as the backend, sha CAS and Korean text included
   // GitHub cadence is deliberately slow (push 10s, pull 30s), so this test
   // cannot fit Playwright's default 30s budget.
   test.setTimeout(120_000);
-  const GH = "https://api.github.com/repos/tester/notes/contents/outline.json";
   const laptop = await browser.newContext();
   const phone = await browser.newContext();
-
-  // A minimal stand-in for the contents API: GET returns content + sha, PUT
-  // demands the current sha and refuses a stale one, like the real thing.
-  let file: { content: string; sha: string } | null = null;
-  let commits = 0;
-  let conflicts = 0;
-  const decoded = () => (file ? Buffer.from(file.content, "base64").toString("utf8") : "");
-  await Promise.all(
-    [laptop, phone].map((context) =>
-      context.route(`${GH}*`, async (route) => {
-        if (route.request().method() === "PUT") {
-          const body = JSON.parse(route.request().postData() ?? "{}");
-          if (file && body.sha !== file.sha) {
-            conflicts += 1;
-            return route.fulfill({ status: 409, contentType: "application/json", body: "{}" });
-          }
-          commits += 1;
-          file = { content: String(body.content).replace(/\s/g, ""), sha: `sha-${commits}` };
-          return route.fulfill({
-            status: 200,
-            contentType: "application/json",
-            body: JSON.stringify({ content: { sha: file.sha } })
-          });
-        }
-        if (!file) return route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
-        return route.fulfill({
-          status: 200,
-          contentType: "application/json",
-          // GitHub wraps base64 at 60 columns; the client has to cope.
-          body: JSON.stringify({
-            content: file.content.replace(/(.{60})/g, "$1\n"),
-            encoding: "base64",
-            sha: file.sha
-          })
-        });
-      })
-    )
-  );
+  const repo = await serveRepository([laptop, phone], "tester/notes");
 
   const open = async (context: BrowserContext) => {
     const page = await context.newPage();
     await page.addInitScript(() =>
       localStorage.setItem(
         "outliner:sync",
-        JSON.stringify({ kind: "github", repo: "tester/notes", path: "outline.json", token: "test-pat" })
+        JSON.stringify({ kind: "github", repo: "tester/notes", path: "outliner", token: "test-pat" })
       )
     );
     await page.goto(baseURL!);
@@ -226,7 +275,8 @@ test("a GitHub repository works as the backend, sha CAS and Korean text included
 
   const one = await open(laptop);
   await one.keyboard.type("깃허브에 저장된 한글 노트");
-  await expect.poll(() => decoded().includes("깃허브에 저장된 한글 노트"), { timeout: 30_000 }).toBe(true);
+  await repo.uploaded("깃허브에 저장된 한글 노트");
+  expect(repo.documents()).toHaveLength(1);
 
   const two = await open(phone);
   await expect(two.getByText("깃허브에 저장된 한글 노트")).toBeVisible({ timeout: 15_000 });
@@ -235,22 +285,52 @@ test("a GitHub repository works as the backend, sha CAS and Korean text included
   await two.keyboard.press("End");
   await two.keyboard.press("Enter");
   await two.keyboard.type("폰에서 덧붙인 줄");
-  await expect.poll(() => decoded().includes("폰에서 덧붙인 줄"), { timeout: 30_000 }).toBe(true);
+  await repo.uploaded("폰에서 덧붙인 줄");
 
   // Bring the laptop back to the front; visibility wake pulls, the 30s timer
   // is the fallback either way.
   await one.bringToFront();
   await expect(one.getByText("폰에서 덧붙인 줄")).toBeVisible({ timeout: 45_000 });
 
-  expect(commits).toBeGreaterThanOrEqual(2);
   await laptop.close();
   await phone.close();
 });
 
+test("editing one document commits only that document's file", async ({ browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const context = await browser.newContext();
+  const repo = await serveRepository([context], "tester/notes");
+
+  const page = await context.newPage();
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      "outliner:sync",
+      JSON.stringify({ kind: "github", repo: "tester/notes", path: "outliner", token: "test-pat" })
+    )
+  );
+  await page.goto(baseURL!);
+
+  await page.locator(".row").first().click();
+  await page.keyboard.type("first document");
+  await page.locator('[title="새 문서"]').click();
+  await page.keyboard.type("second document");
+  await repo.uploaded("second document");
+  expect(repo.documents()).toHaveLength(2);
+
+  const before = repo.writes.length;
+  await page.keyboard.type(", extended");
+  await repo.uploaded("second document, extended");
+
+  // One file moved: the one holding the document that was typed into.
+  const touched = [...new Set(repo.writes.slice(before))];
+  expect(touched).toHaveLength(1);
+  expect(repo.text(touched[0])).toContain("second document, extended");
+  expect(repo.text(touched[0])).not.toContain("first document");
+  await context.close();
+});
+
 test("signing in with GitHub lands in settings with the token in place, then syncs", async ({ browser, baseURL }) => {
   const context = await browser.newContext();
-  let file: { content: string; sha: string } | null = null;
-  let commits = 0;
 
   // The serverless exchange, GitHub's user endpoint, and the contents API.
   await context.route("**/api/github-oauth", (route) =>
@@ -261,25 +341,7 @@ test("signing in with GitHub lands in settings with the token in place, then syn
   await context.route("https://api.github.com/user", (route) =>
     route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ login: "tester" }) })
   );
-  await context.route("https://api.github.com/repos/tester/outliner/contents/*", async (route) => {
-    if (route.request().method() === "PUT") {
-      const body = JSON.parse(route.request().postData() ?? "{}");
-      if (file && body.sha !== file.sha) return route.fulfill({ status: 409, body: "{}" });
-      commits += 1;
-      file = { content: String(body.content), sha: `sha-${commits}` };
-      return route.fulfill({
-        status: 200,
-        contentType: "application/json",
-        body: JSON.stringify({ content: { sha: file.sha } })
-      });
-    }
-    if (!file) return route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
-    return route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({ content: file.content, encoding: "base64", sha: file.sha })
-    });
-  });
+  const repo = await serveRepository([context], "tester/outliner");
 
   const page = await context.newPage();
   // The state parameter must match what "this tab" stored before redirecting.
@@ -298,11 +360,7 @@ test("signing in with GitHub lands in settings with the token in place, then syn
   await page.locator(".row").first().click();
   await page.keyboard.type("로그인으로 연결된 노트");
 
-  await expect
-    .poll(() => (file ? Buffer.from(file.content, "base64").toString("utf8").includes("로그인으로 연결된 노트") : false), {
-      timeout: 30_000
-    })
-    .toBe(true);
+  await repo.uploaded("로그인으로 연결된 노트");
   await context.close();
 });
 
