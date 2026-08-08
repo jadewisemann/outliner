@@ -1,7 +1,8 @@
 import type { Doc, Id, Stamp, SyncPayload } from "../../types";
 import { readDoc, readGraves, readPayload } from "../../storage/validate";
+import { createKeyring, plainKeyring, type Keyring } from "./cipher";
 
-export type SyncStatus = "off" | "idle" | "syncing" | "offline" | "error";
+export type SyncStatus = "off" | "idle" | "syncing" | "offline" | "error" | "locked";
 
 /** A request that never answers would otherwise wedge the sync loop for good. */
 const TIMEOUT_MS = 15_000;
@@ -21,6 +22,8 @@ export type SyncConfig =
       url: string;
       /** Sent as `Authorization: Bearer …` when present. */
       token: string;
+      /** Set to keep the remote from being able to read any of it. */
+      passphrase?: string;
     }
   | {
       kind: "github";
@@ -30,6 +33,8 @@ export type SyncConfig =
       path: string;
       /** A fine-grained PAT with contents read/write on this one repository. */
       token: string;
+      /** Set to keep the remote from being able to read any of it. */
+      passphrase?: string;
     };
 
 /** Per-file shas of the split GitHub layout — one token covering many files. */
@@ -57,7 +62,8 @@ export type Backend = {
 };
 
 export function createBackend(config: SyncConfig): Backend {
-  return config.kind === "github" ? createGithubBackend(config) : createRestBackend(config);
+  const keys = config.passphrase ? createKeyring(config.passphrase) : plainKeyring();
+  return config.kind === "github" ? createGithubBackend(config, keys) : createRestBackend(config, keys);
 }
 
 /** Stable identity of a remote, for the has-ever-synced marker. */
@@ -75,7 +81,7 @@ export function configKey(config: SyncConfig): string {
  * the next round. `ETag`/`If-Match` is used when the server offers it, purely
  * to make that round happen sooner.
  */
-function createRestBackend(config: Extract<SyncConfig, { kind: "rest" }>): Backend {
+function createRestBackend(config: Extract<SyncConfig, { kind: "rest" }>, keys: Keyring): Backend {
   const headers = (extra: Record<string, string> = {}) => ({
     "content-type": "application/json",
     ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
@@ -96,7 +102,7 @@ function createRestBackend(config: Extract<SyncConfig, { kind: "rest" }>): Backe
 
       // Whatever is at the other end is untrusted, even when it is the user's
       // own server: a malformed body must not be able to damage the workspace.
-      const payload = readPayload(await response.json().catch(() => null));
+      const payload = readPayload(parse(await keys.open(await response.text())));
       return { payload: payload ?? emptyPayload(), version: response.headers.get("etag") };
     },
 
@@ -105,7 +111,7 @@ function createRestBackend(config: Extract<SyncConfig, { kind: "rest" }>): Backe
       const response = await fetch(config.url, {
         method: "PUT",
         headers: headers(etag ? { "if-match": etag } : {}),
-        body: JSON.stringify(payload),
+        body: await keys.seal(JSON.stringify(payload)),
         signal: AbortSignal.timeout(TIMEOUT_MS)
       });
       if (response.status === 412 || response.status === 409) return null;
@@ -144,7 +150,7 @@ function createRestBackend(config: Extract<SyncConfig, { kind: "rest" }>): Backe
  * matters is gravestones before deletions — a reader that saw the missing file
  * without the gravestone would upload its own copy straight back.
  */
-function createGithubBackend(config: Extract<SyncConfig, { kind: "github" }>): Backend {
+function createGithubBackend(config: Extract<SyncConfig, { kind: "github" }>, keys: Keyring): Backend {
   const folder = repoFolder(config.path).split("/");
   const contents = (segments: string[]) =>
     `https://api.github.com/repos/${config.repo}/contents/${segments.map(encodeURIComponent).join("/")}`;
@@ -218,7 +224,7 @@ function createGithubBackend(config: Extract<SyncConfig, { kind: "github" }>): B
       "application/vnd.github.raw"
     );
     if (!response.ok) throw new Error(`github pull failed: ${response.status}`);
-    const text = await response.text();
+    const text = await keys.open(await response.text());
     // A file this device cannot read is left alone rather than deleted: it may
     // be written by a build that knows more than this one.
     return { sha, text, doc: readDoc(id, parse(text)) };
@@ -233,7 +239,8 @@ function createGithubBackend(config: Extract<SyncConfig, { kind: "github" }>): B
     }
     if (!response.ok) throw new Error(`github pull failed: ${response.status}`);
     const body = (await response.json()) as { content?: string; encoding?: string; sha?: string };
-    const text = body.encoding === "base64" && typeof body.content === "string" ? fromBase64(body.content) : "{}";
+    const stored = body.encoding === "base64" && typeof body.content === "string" ? fromBase64(body.content) : "{}";
+    const text = await keys.open(stored);
     graves = {
       etag: response.headers.get("etag"),
       sha: body.sha ?? null,
@@ -256,7 +263,7 @@ function createGithubBackend(config: Extract<SyncConfig, { kind: "github" }>): B
     if (!response.ok) throw new Error(`github pull failed: ${response.status}`);
     const body = (await response.json()) as { content?: string; encoding?: string; sha?: string };
     if (body.encoding !== "base64" || typeof body.content !== "string") return null;
-    const payload = readPayload(parse(fromBase64(body.content)));
+    const payload = readPayload(parse(await keys.open(fromBase64(body.content))));
     if (!payload) return null;
     legacySha = body.sha ?? null;
     return { payload, version: null };
@@ -267,7 +274,7 @@ function createGithubBackend(config: Extract<SyncConfig, { kind: "github" }>): B
     const response = await api(url, {
       method: "PUT",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ message, content: toBase64(text), ...(sha ? { sha } : {}) })
+      body: JSON.stringify({ message, content: toBase64(await keys.seal(text)), ...(sha ? { sha } : {}) })
     });
     // 422 is what a missing sha for an existing file looks like: same story as
     // a stale one, and the same cure — pull, merge, try again.
@@ -485,17 +492,26 @@ export function loadSyncConfig(): SyncConfig | null {
     const raw = localStorage.getItem(CONFIG_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as Record<string, unknown>;
+    // Sits beside the token, and is worth exactly what the token is worth: it
+    // keeps the remote from reading the notes, not someone holding this browser.
+    const passphrase = typeof parsed?.passphrase === "string" && parsed.passphrase !== "" ? parsed.passphrase : undefined;
     if (parsed?.kind === "github" && typeof parsed.repo === "string" && typeof parsed.token === "string") {
       return {
         kind: "github",
         repo: parsed.repo,
         path: typeof parsed.path === "string" && parsed.path !== "" ? parsed.path : "outliner",
-        token: parsed.token
+        token: parsed.token,
+        passphrase
       };
     }
     // Configs saved before backends had a `kind` were always plain REST.
     if (typeof parsed?.url === "string" && parsed.url !== "") {
-      return { kind: "rest", url: parsed.url, token: typeof parsed.token === "string" ? parsed.token : "" };
+      return {
+        kind: "rest",
+        url: parsed.url,
+        token: typeof parsed.token === "string" ? parsed.token : "",
+        passphrase
+      };
     }
     return null;
   } catch {

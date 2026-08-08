@@ -750,7 +750,8 @@ button {
 }
 
 .sync-error .sync-dot,
-.sync-offline .sync-dot {
+.sync-offline .sync-dot,
+.sync-locked .sync-dot {
   background: #c2703f;
 }
 

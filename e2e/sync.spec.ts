@@ -329,6 +329,87 @@ test("editing one document commits only that document's file", async ({ browser,
   await context.close();
 });
 
+test("with a passphrase the repository never sees the words, and both devices do", async ({ browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const laptop = await browser.newContext();
+  const phone = await browser.newContext();
+  const repo = await serveRepository([laptop, phone], "tester/notes");
+
+  const open = async (context: BrowserContext, passphrase: string) => {
+    const page = await context.newPage();
+    await page.addInitScript(
+      ([secret]) =>
+        localStorage.setItem(
+          "outliner:sync",
+          JSON.stringify({ kind: "github", repo: "tester/notes", path: "outliner", token: "test-pat", passphrase: secret })
+        ),
+      [passphrase]
+    );
+    await page.goto(baseURL!);
+    await page.locator(".row").first().click();
+    return page;
+  };
+
+  const one = await open(laptop, "우리 집 고양이 이름");
+  await one.keyboard.type("암호를 건 노트");
+  // Two writes: the empty document on load, then the typed one.
+  await expect.poll(() => repo.writes.length, { timeout: 40_000 }).toBeGreaterThan(1);
+
+  // The words are on both devices and in neither of the files.
+  expect(repo.documents()).toHaveLength(1);
+  expect(repo.text(repo.documents()[0])).not.toContain("암호를 건 노트");
+  const two = await open(phone, "우리 집 고양이 이름");
+  await expect(two.getByText("암호를 건 노트")).toBeVisible({ timeout: 45_000 });
+
+  await laptop.close();
+  await phone.close();
+});
+
+test("a device without the passphrase stops instead of overwriting the notes", async ({ browser, baseURL }) => {
+  test.setTimeout(120_000);
+  const owner = await browser.newContext();
+  const stranger = await browser.newContext();
+  const repo = await serveRepository([owner, stranger], "tester/notes");
+
+  const open = async (context: BrowserContext, passphrase?: string) => {
+    const page = await context.newPage();
+    await page.addInitScript(
+      ([secret]) =>
+        localStorage.setItem(
+          "outliner:sync",
+          JSON.stringify({ kind: "github", repo: "tester/notes", path: "outliner", token: "test-pat", passphrase: secret })
+        ),
+      [passphrase]
+    );
+    await page.goto(baseURL!);
+    await page.locator(".row").first().click();
+    return page;
+  };
+
+  const first = await open(owner, "우리 집 고양이 이름");
+  await first.keyboard.type("이 노트는 남아 있어야 한다");
+  await expect.poll(() => repo.writes.length, { timeout: 40_000 }).toBeGreaterThan(1);
+  // Let the owner settle, so a late push of its own cannot be mistaken later
+  // for the other device having written something.
+  await first.waitForTimeout(12_000);
+  const before = [...repo.writes];
+  const sealed = repo.text(repo.documents()[0]);
+
+  // Same token, no passphrase. Unreadable is not the same as absent, so this
+  // device must stop rather than push its own empty workspace over the top.
+  const second = await open(stranger, undefined);
+  await second.keyboard.type("이 기기가 쓴 다른 내용");
+  await expect(second.locator(".sync-badge.sync-locked")).toBeVisible({ timeout: 30_000 });
+
+  await second.waitForTimeout(15_000);
+  expect(repo.writes).toEqual(before);
+  expect(repo.text(repo.documents()[0])).toBe(sealed);
+  await expect(first.getByText("이 노트는 남아 있어야 한다")).toBeVisible();
+
+  await owner.close();
+  await stranger.close();
+});
+
 test("signing in with GitHub lands in settings with the token in place, then syncs", async ({ browser, baseURL }) => {
   const context = await browser.newContext();
 

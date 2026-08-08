@@ -9,7 +9,8 @@ const STATUS_LABEL: Record<string, string> = {
   idle: "동기화됨",
   syncing: "동기화 중…",
   offline: "오프라인",
-  error: "동기화 실패"
+  error: "동기화 실패",
+  locked: "암호가 맞지 않음"
 };
 
 /** Token and prefill handed over after a completed GitHub login. */
@@ -20,7 +21,7 @@ export function SyncBadge({ store, onClick }: { store: Store; onClick: () => voi
   return (
     <button type="button" className={`sync-badge sync-${status}`} title={STATUS_LABEL[status]} onClick={onClick}>
       <span className="sync-dot" />
-      {status === "syncing" || status === "error" || status === "offline" ? STATUS_LABEL[status] : null}
+      {status === "idle" || status === "off" ? null : STATUS_LABEL[status]}
     </button>
   );
 }
@@ -34,6 +35,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
   );
   const [path, setPath] = useState(config?.kind === "github" ? config.path : "outliner");
   const [token, setToken] = useState(oauth?.token ?? config?.token ?? "");
+  const [passphrase, setPassphrase] = useState(config?.passphrase ?? "");
 
   // The login button only appears when this deployment has the OAuth function.
   const [clientId, setClientId] = useState<string | null>(null);
@@ -42,13 +44,14 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
     void fetchOauthClientId().then(setClientId);
   }, []);
 
+  const secret = passphrase === "" ? undefined : passphrase;
   const built: SyncConfig | null =
     mode === "github"
       ? /^[^\s/]+\/[^\s/]+$/.test(repo.trim()) && token.trim() !== ""
-        ? { kind: "github", repo: repo.trim(), path: path.trim() || "outliner", token: token.trim() }
+        ? { kind: "github", repo: repo.trim(), path: path.trim() || "outliner", token: token.trim(), passphrase: secret }
         : null
       : url.trim() !== ""
-        ? { kind: "rest", url: url.trim(), token: token.trim() }
+        ? { kind: "rest", url: url.trim(), token: token.trim(), passphrase: secret }
         : null;
 
   return (
@@ -173,9 +176,32 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
           </>
         )}
 
+        <label className="field">
+          <span>암호 (선택)</span>
+          <input
+            className="field-input"
+            type="password"
+            placeholder="비우면 평문으로 저장됩니다"
+            value={passphrase}
+            onChange={(event) => setPassphrase(event.target.value)}
+          />
+        </label>
+        <p className="sync-note">
+          암호를 넣으면 기기를 떠나기 전에 내용이 암호화됩니다 — 저장소를 가진 쪽은 크기와 시각만 볼 수
+          있습니다. 병합이 기기에서 일어나기 때문에 가능한 일입니다. 모든 기기에 <strong>같은 암호</strong>를
+          넣어야 하고, <strong>잃어버리면 복구할 방법이 없습니다</strong>. 암호를 걸면 커밋 diff는 더 이상
+          읽을 수 없게 됩니다.
+        </p>
+
         <p className="sync-status-line">
           현재 상태: <strong>{STATUS_LABEL[store.sync.status]}</strong>
         </p>
+        {store.sync.status === "locked" ? (
+          <p className="sync-note">
+            원격에 이 기기가 읽을 수 없는 내용이 있습니다. 암호가 맞을 때까지 아무것도 올리지 않습니다 —
+            읽지 못한 것을 없는 것으로 보고 덮어쓰면 노트가 사라지기 때문입니다.
+          </p>
+        ) : null}
       </div>
 
       <footer className="panel-foot sync-actions">

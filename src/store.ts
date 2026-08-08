@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createHistory } from "./history";
 import { changedBy, mergeWorkspace } from "./sync/merge";
+import { isLocked } from "./sync/api/cipher";
 import { keyBetween } from "./shared/order";
 import { loadWorkspace, saveWorkspace } from "./storage/persist";
 import {
@@ -320,7 +321,15 @@ export function useStore() {
       markSynced(configKey(syncConfig!));
       setSyncStatus("idle");
       void saveWorkspace(live.current!);
-    } catch {
+    } catch (error) {
+      if (isLocked(error)) {
+        // The remote holds bytes this device cannot read. Retrying is pointless
+        // until the passphrase changes — and pushing would be worse than
+        // pointless, since it would write over notes nobody here can recover.
+        retryAfter.current = Date.now() + MAX_BACKOFF_MS;
+        setSyncStatus("locked");
+        return;
+      }
       // Back off, or a dead endpoint means a failing request every 1.5s forever.
       failures.current += 1;
       retryAfter.current = Date.now() + Math.min(2 ** failures.current * 1000, MAX_BACKOFF_MS);

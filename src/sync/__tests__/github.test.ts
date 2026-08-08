@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createBackend, type Backend, type Version } from "../api/remote";
+import { isLocked } from "../api/cipher";
 import { makeDoc, stamp, type Doc, type SyncPayload } from "../../types";
 
 /**
@@ -97,8 +98,8 @@ function fakeGithub(seed: Record<string, string> = {}) {
   };
 }
 
-const connect = (): Backend =>
-  createBackend({ kind: "github", repo: "tester/notes", path: "outliner", token: "pat" });
+const connect = (passphrase?: string): Backend =>
+  createBackend({ kind: "github", repo: "tester/notes", path: "outliner", token: "pat", passphrase });
 
 const payload = (docs: Doc[], graves: SyncPayload["graves"] = {}): SyncPayload => ({
   docs: Object.fromEntries(docs.map((doc) => [doc.id, doc])),
@@ -234,6 +235,58 @@ describe("the GitHub backend, one file per document", () => {
     await backend.push(stored.payload, stored.version);
     expect(docFiles(repo)).toEqual([`outliner/docs/${doc.id}.json`]);
     expect(repo.files.has("outliner.json")).toBe(false);
+  });
+
+  it("puts nothing readable in the repository when a passphrase is set", async () => {
+    const repo = fakeGithub();
+    const laptop = connect("hunter2");
+    const doc = makeDoc("사업 계획");
+
+    await laptop.push(payload([doc]), (await laptop.pull()).version);
+    const file = repo.files.get(`outliner/docs/${doc.id}.json`)!.text;
+    expect(file).not.toContain("사업 계획");
+    expect(file).toContain("PBKDF2-SHA256");
+
+    // A second device with the same passphrase learns the salt from the file.
+    const phone = connect("hunter2");
+    expect((await phone.pull()).payload.docs[doc.id].title).toBe("사업 계획");
+  });
+
+  it("still commits nothing for an untouched document when encrypted", async () => {
+    // The initialisation vector is fresh every time, so the ciphertext always
+    // differs — only the plaintext may decide whether a file is rewritten.
+    const repo = fakeGithub();
+    const backend = connect("hunter2");
+    const doc = makeDoc("stable");
+    const version = await backend.push(payload([doc]), (await backend.pull()).version);
+    repo.writes.length = 0;
+
+    await backend.push(payload([reread(doc)]), version as Version);
+    expect(repo.writes).toEqual([]);
+  });
+
+  it("stops rather than overwriting a workspace it cannot read", async () => {
+    const repo = fakeGithub();
+    const doc = makeDoc("locked away");
+    await connect("hunter2").push(payload([doc]), { docs: {}, graves: null } as unknown as Version);
+    const files = [...repo.files.keys()];
+
+    // No passphrase, or the wrong one: unreadable is not the same as absent.
+    await expect(connect().pull()).rejects.toSatisfy(isLocked);
+    await expect(connect("wrong").pull()).rejects.toSatisfy(isLocked);
+    expect([...repo.files.keys()]).toEqual(files);
+  });
+
+  it("encrypts a workspace that was already there in plaintext", async () => {
+    const doc = makeDoc("plain to begin with");
+    const repo = fakeGithub({ [`outliner/docs/${doc.id}.json`]: JSON.stringify(doc) });
+    const backend = connect("hunter2");
+
+    const stored = await backend.pull();
+    expect(stored.payload.docs[doc.id].title).toBe("plain to begin with");
+
+    await backend.push({ ...stored.payload, docs: { [doc.id]: { ...doc, title: "sealed now" } } }, stored.version);
+    expect(repo.files.get(`outliner/docs/${doc.id}.json`)!.text).not.toContain("sealed now");
   });
 
   it("reads a folder path left over from the single-file layout as the same folder", async () => {
