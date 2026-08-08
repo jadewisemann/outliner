@@ -20,6 +20,7 @@ export type AppActions = {
   openSync(): void;
   openHistory(): void;
   openSettings(): void;
+  openKeys(): void;
   openShortcuts(): void;
 };
 
@@ -125,6 +126,7 @@ export function buildCommands(store: Store, actions: AppActions): Command[] {
     { id: "app.sync", label: "동기화 설정", run: actions.openSync },
     { id: "app.history", label: "문서 히스토리", hint: doc.title, run: actions.openHistory },
     { id: "app.shortcuts", label: "단축키", hint: "⌘/", run: actions.openShortcuts },
+    { id: "app.keys", label: "단축키 바꾸기", run: actions.openKeys },
 
     /* undo lives here too, so the palette is a complete answer to "how do I…" */
     { id: "edit.undo", label: "실행 취소", hint: "⌘Z", run: store.undo },

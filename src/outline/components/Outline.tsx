@@ -1,5 +1,6 @@
 import type { RefObject } from "react";
 import type { Store } from "../../store";
+import type { Keymap } from "../../app/keymap";
 import { useOutline } from "../useOutline";
 import { useTouchBar } from "../useTouchBar";
 import { Row } from "./Row";
@@ -14,11 +15,12 @@ type Props = {
   onDocLinkClick: (title: string) => void;
   onItemLinkClick: (id: string) => void;
   onMoveRequest: () => void;
+  keymap: Keymap;
 };
 
 /** Pure rendering; every behaviour lives in `useOutline`. */
-export function Outline({ store, scrollRef, onTagClick, onDocLinkClick, onItemLinkClick, onMoveRequest }: Props) {
-  const outline = useOutline(store, scrollRef, onTagClick, onDocLinkClick, onItemLinkClick);
+export function Outline({ store, scrollRef, onTagClick, onDocLinkClick, onItemLinkClick, onMoveRequest, keymap }: Props) {
+  const outline = useOutline(store, scrollRef, onTagClick, onDocLinkClick, onItemLinkClick, keymap);
   const { rows, window, focus, noteFocus, completion, dropSpot } = outline;
   const touch = useTouchBar();
 

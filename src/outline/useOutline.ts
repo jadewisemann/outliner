@@ -10,6 +10,7 @@ import {
   type RefObject
 } from "react";
 import type { Store } from "../store";
+import { matches, type Action, type Keymap } from "../app/keymap";
 import { labelOf } from "../search/links";
 import { allTags } from "../search/search";
 import { docList, type Color, type Id, type Node, type Row as RowModel } from "../types";
@@ -62,8 +63,13 @@ export type Completion = { rowId: Id; trigger: Trigger; items: Choice[]; index: 
 /** Enough to put back a markdown prefix the editor swallowed one keystroke ago. */
 type AutoUndo = { rowId: Id; prefix: string; node?: Partial<Node>; parentId?: Id; parent?: Partial<Node> };
 
-const WRAP_KEYS: Record<string, WrapKind> = { b: "bold", i: "italic", e: "code" };
-const SHIFT_WRAP_KEYS: Record<string, WrapKind> = { x: "strike", h: "highlight" };
+const WRAP_ACTIONS: [Action, WrapKind][] = [
+  ["bold", "bold"],
+  ["italic", "italic"],
+  ["code", "code"],
+  ["strike", "strike"],
+  ["highlight", "highlight"]
+];
 const COMPLETION_LIMIT = 8;
 
 /** The edits a phone cannot reach, since it has no Tab key and no ⌘⇧↑↓. */
@@ -108,7 +114,8 @@ export function useOutline(
   scrollRef: RefObject<HTMLElement>,
   onTagClick: (tag: string) => void,
   onDocLinkClick: (title: string) => void,
-  onItemLinkClick: (id: Id) => void
+  onItemLinkClick: (id: Id) => void,
+  keymap: Keymap
 ): OutlineView {
   const { doc, view, rows, focus, edit, setView, requestFocus } = store;
 
@@ -137,6 +144,8 @@ export function useOutline(
   workspaceRef.current = store.workspace;
   const completionRef = useRef(completion);
   completionRef.current = completion;
+  const keys = useRef(keymap);
+  keys.current = keymap;
 
   /* ---------------------------------------------------------------- */
   /* writing into the focused field                                    */
@@ -314,33 +323,30 @@ export function useOutline(
       }
       if (event.key !== "Backspace") autoUndo.current = null;
 
-      if (mod && !event.shiftKey && WRAP_KEYS[event.key.toLowerCase()]) {
-        format(toggleWrap(element.value, element.selectionStart, element.selectionEnd, WRAP_KEYS[event.key.toLowerCase()]));
+      const bound = (action: Action) => matches(event, keys.current[action]);
+
+      for (const [action, wrap] of WRAP_ACTIONS) {
+        if (!bound(action)) continue;
+        format(toggleWrap(element.value, element.selectionStart, element.selectionEnd, wrap));
         return;
       }
-      if (mod && event.shiftKey && SHIFT_WRAP_KEYS[event.key.toLowerCase()]) {
-        format(
-          toggleWrap(element.value, element.selectionStart, element.selectionEnd, SHIFT_WRAP_KEYS[event.key.toLowerCase()])
-        );
-        return;
-      }
-      if (mod && !event.shiftKey && event.key.toLowerCase() === "k") {
+      if (bound("link")) {
         format(toggleLink(element.value, element.selectionStart, element.selectionEnd));
         return;
       }
-      if (mod && !event.shiftKey && event.key.toLowerCase() === "d") {
+      if (bound("duplicate")) {
         stop();
         edit((current) => duplicate(current, row.id));
         return;
       }
-      if (mod && event.shiftKey && event.key.toLowerCase() === "k") {
+      if (bound("delete")) {
         stop();
         edit((current) => bulkRemove(current, zoomId, [row.id]));
         return;
       }
-      if (mod && (event.key === "]" || event.key === "[")) {
+      if (bound("indent") || bound("outdent")) {
         stop();
-        edit((current) => (event.key === "[" ? outdent(current, row.id, zoomId) : indent(current, row.id)));
+        edit((current) => (bound("outdent") ? outdent(current, row.id, zoomId) : indent(current, row.id)));
         return;
       }
 
@@ -371,24 +377,24 @@ export function useOutline(
         }
       }
 
-      if (mod && event.shiftKey && event.code === "Period") {
+      if (bound("zoomIn")) {
         stop();
         zoom(row.id);
         return;
       }
-      if (mod && event.shiftKey && event.code === "Comma") {
+      if (bound("zoomOut")) {
         stop();
         zoomOut();
         return;
       }
-      if (mod && event.code === "Period") {
+      if (bound("collapse")) {
         stop();
         edit((current) => patchNode(current, row.id, { collapsed: !row.node.collapsed }), { transient: true });
         return;
       }
-      if (mod && (event.key === "ArrowUp" || event.key === "ArrowDown") && event.shiftKey) {
+      if (bound("moveUp") || bound("moveDown")) {
         stop();
-        edit((current) => moveVertically(current, row.id, event.key === "ArrowUp" ? -1 : 1));
+        edit((current) => moveVertically(current, row.id, bound("moveUp") ? -1 : 1));
         return;
       }
       if (event.key === "Enter" && event.shiftKey) {
@@ -396,7 +402,7 @@ export function useOutline(
         focusNote(row.id);
         return;
       }
-      if (event.key === "Enter" && mod) {
+      if (bound("done")) {
         stop();
         edit((current) => patchNode(current, row.id, { done: !row.node.done }));
         return;

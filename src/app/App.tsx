@@ -13,6 +13,8 @@ import { SyncBadge, SyncSettings, type OauthPrefill } from "../sync/components/S
 import { useTransfer } from "../transfer/useTransfer";
 import { applyAppearance, forgetShare, loadAppearance, saveAppearance, sharedText, type Appearance } from "./appearance";
 import { Backlinks } from "./Backlinks";
+import { loadKeymap, matches, saveKeymap, type Keymap } from "./keymap";
+import { Keys } from "./Keys";
 import { Settings } from "./Settings";
 import { Shortcuts } from "./Shortcuts";
 import { Sidebar } from "./Sidebar";
@@ -23,6 +25,7 @@ type Overlay =
   | { kind: "shortcuts" }
   | { kind: "history" }
   | { kind: "settings" }
+  | { kind: "keys" }
   | { kind: "sync"; oauth?: OauthPrefill }
   | null;
 
@@ -34,6 +37,7 @@ export function App() {
     () => (localStorage.getItem("outliner:theme") as "light" | "dark") ?? "light"
   );
   const [appearance, setAppearance] = useState<Appearance>(loadAppearance);
+  const [keymap, setKeymap] = useState<Keymap>(loadKeymap);
   const fileInput = useRef<HTMLInputElement>(null);
   const filterInput = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLElement>(null);
@@ -47,6 +51,8 @@ export function App() {
     applyAppearance(appearance);
     saveAppearance(appearance);
   }, [appearance]);
+
+  useEffect(() => saveKeymap(keymap), [keymap]);
 
   // Stable identities: these reach every row and the window listener, and a
   // new function each render would defeat the memo on Row.
@@ -70,6 +76,7 @@ export function App() {
             openSync: () => setOverlay({ kind: "sync" }),
             openHistory: () => setOverlay({ kind: "history" }),
             openSettings: () => setOverlay({ kind: "settings" }),
+            openKeys: () => setOverlay({ kind: "keys" }),
             openShortcuts: () => setOverlay({ kind: "shortcuts" })
           })
         : [],
@@ -107,48 +114,49 @@ export function App() {
     const onKeyDown = (event: KeyboardEvent) => {
       // The IME owns the keyboard while a syllable is being composed.
       if (event.isComposing) return;
-      const mod = event.metaKey || event.ctrlKey;
+      const bound = (action: keyof Keymap) => matches(event, keymap[action]);
+
       // ⌘K belongs to "link" inside a row, the way it does in every markdown
       // editor, so the palette takes the editor's keys instead.
-      if (mod && event.key.toLowerCase() === "p") {
+      if (bound("palette") || bound("commands")) {
         event.preventDefault();
-        openPalette(event.shiftKey ? ">" : "");
+        openPalette(bound("commands") ? ">" : "");
         return;
       }
-      if (mod && event.shiftKey && event.key.toLowerCase() === "f") {
+      if (bound("search")) {
         event.preventDefault();
         openSearch();
         return;
       }
-      // ⌘F filters the document in place rather than opening a result list:
-      // the rows stay where they are and stay editable.
-      if (mod && !event.shiftKey && event.key.toLowerCase() === "f") {
+      // The filter narrows the document in place rather than opening a result
+      // list: the rows stay where they are and stay editable.
+      if (bound("filter")) {
         event.preventDefault();
         filterInput.current?.focus();
         filterInput.current?.select();
         return;
       }
-      if (mod && event.key === "/") {
+      if (bound("help")) {
         event.preventDefault();
         setOverlay({ kind: "shortcuts" });
         return;
       }
-      if (mod && event.key === "z") {
+      if (bound("undo") || bound("redo")) {
         // Plain inputs (search, rename) keep their native undo.
         if ((event.target as HTMLElement).tagName === "INPUT") return;
         event.preventDefault();
-        if (event.shiftKey) storeRef.current.redo();
+        if (bound("redo")) storeRef.current.redo();
         else storeRef.current.undo();
         return;
       }
-      if (mod && event.key === "\\") {
+      if (bound("sidebar")) {
         event.preventDefault();
         setSidebarOpen((open) => !open);
       }
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openSearch, openPalette]);
+  }, [openSearch, openPalette, keymap]);
 
   if (!store.ready) return <div className="booting">불러오는 중…</div>;
 
@@ -288,6 +296,7 @@ export function App() {
           onDocLinkClick={openDoc}
           onItemLinkClick={openItem}
           onMoveRequest={() => openPalette(">>")}
+          keymap={keymap}
         />
         <Backlinks store={store} onOpen={openItem} />
       </main>
@@ -321,6 +330,9 @@ export function App() {
       {overlay?.kind === "history" ? <HistoryPanel store={store} onClose={() => setOverlay(null)} /> : null}
       {overlay?.kind === "settings" ? (
         <Settings appearance={appearance} onChange={setAppearance} onClose={() => setOverlay(null)} />
+      ) : null}
+      {overlay?.kind === "keys" ? (
+        <Keys keymap={keymap} onChange={setKeymap} onClose={() => setOverlay(null)} />
       ) : null}
       {overlay?.kind === "sync" ? (
         <SyncSettings store={store} oauth={overlay.oauth} onClose={() => setOverlay(null)} />

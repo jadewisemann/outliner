@@ -1597,3 +1597,72 @@ button {
   border-color: var(--accent);
   background: var(--selection);
 }
+
+/* ------------------------------------------------------------------ */
+/* rebinding                                                           */
+/* ------------------------------------------------------------------ */
+
+.keys-panel {
+  width: min(720px, 94vw);
+}
+
+.keys-body {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.keys-body h3 {
+  margin: 0 0 8px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.keys-body dl {
+  margin: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.keys-body dl > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.keys-body dt {
+  font-size: 13px;
+}
+
+.keys-body dd {
+  margin: 0;
+}
+
+.keys-bind {
+  min-width: 92px;
+  padding: 3px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--faint);
+  border-radius: 5px;
+}
+
+.keys-bind:hover {
+  color: var(--text);
+}
+
+.keys-bind-recording {
+  color: var(--accent);
+  background: var(--selection);
+}
+
+/* Two actions on one chord: the second one simply never fires. */
+.keys-bind-clash {
+  color: #c1543c;
+}
