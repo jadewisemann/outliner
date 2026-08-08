@@ -19,6 +19,7 @@ export type AppActions = {
   toggleSidebar(): void;
   openSync(): void;
   openHistory(): void;
+  openSettings(): void;
   openShortcuts(): void;
 };
 
@@ -113,6 +114,7 @@ export function buildCommands(store: Store, actions: AppActions): Command[] {
     },
     { id: "view.sidebar", label: "사이드바 열고 닫기", hint: "⌘\\", run: actions.toggleSidebar },
     { id: "view.theme", label: "테마 전환", run: actions.toggleTheme },
+    { id: "view.settings", label: "표시 설정 — 글꼴·간격·너비", run: actions.openSettings },
 
     /* files and settings */
     { id: "file.md", label: "Markdown 내보내기", run: () => actions.exportAs("markdown") },

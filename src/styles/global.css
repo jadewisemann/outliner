@@ -43,8 +43,8 @@ body {
   background: var(--bg);
   color: var(--text);
   font-family: var(--font);
-  font-size: 15px;
-  line-height: 1.55;
+  font-size: var(--body-size, 15px);
+  line-height: var(--body-leading, 1.55);
   -webkit-font-smoothing: antialiased;
 }
 
@@ -342,7 +342,7 @@ button {
 /* ------------------------------------------------------------------ */
 
 .outline {
-  max-width: 780px;
+  max-width: var(--measure, 780px);
   margin: 0 auto;
   /* The tail below already supplies the room to click into; a second screenful
      of padding only pushed the backlinks off the bottom of the world. */
@@ -1190,7 +1190,7 @@ button {
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: 780px;
+  max-width: var(--measure, 780px);
   margin: 0 auto;
   padding: 0 20px;
 }
@@ -1284,7 +1284,7 @@ button {
 }
 
 .backlinks {
-  max-width: 780px;
+  max-width: var(--measure, 780px);
   margin: 0 auto;
   padding: 0 20px 30vh;
 }
@@ -1552,4 +1552,48 @@ button {
   color: var(--surface);
   background: var(--accent);
   border-radius: 7px;
+}
+
+/* ------------------------------------------------------------------ */
+/* settings                                                            */
+/* ------------------------------------------------------------------ */
+
+.settings-body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+}
+
+.settings-body label {
+  display: grid;
+  grid-template-columns: 90px 1fr 56px;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.settings-body em {
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  text-align: right;
+}
+
+.settings-choices {
+  display: flex;
+  gap: 4px;
+}
+
+.settings-choice {
+  padding: 4px 10px;
+  font-size: 13px;
+  border: 1px solid var(--faint);
+  border-radius: 6px;
+}
+
+.settings-choice-on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--selection);
 }

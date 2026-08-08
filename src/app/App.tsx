@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
-import { ancestors, reveal, setCollapsedDeep } from "../outline/tree";
+import { ancestors, appendChild, patchNode, reveal, setCollapsedDeep } from "../outline/tree";
 import { findNode } from "../search/links";
 import { docList } from "../types";
 import { Outline } from "../outline/components/Outline";
@@ -11,7 +11,9 @@ import { completeGithubLogin, fetchGithubLogin } from "../sync/api/githubAuth";
 import { HistoryPanel } from "../sync/components/HistoryPanel";
 import { SyncBadge, SyncSettings, type OauthPrefill } from "../sync/components/SyncSettings";
 import { useTransfer } from "../transfer/useTransfer";
+import { applyAppearance, forgetShare, loadAppearance, saveAppearance, sharedText, type Appearance } from "./appearance";
 import { Backlinks } from "./Backlinks";
+import { Settings } from "./Settings";
 import { Shortcuts } from "./Shortcuts";
 import { Sidebar } from "./Sidebar";
 
@@ -20,6 +22,7 @@ type Overlay =
   | { kind: "search"; query: string }
   | { kind: "shortcuts" }
   | { kind: "history" }
+  | { kind: "settings" }
   | { kind: "sync"; oauth?: OauthPrefill }
   | null;
 
@@ -30,6 +33,7 @@ export function App() {
   const [theme, setTheme] = useState<"light" | "dark">(
     () => (localStorage.getItem("outliner:theme") as "light" | "dark") ?? "light"
   );
+  const [appearance, setAppearance] = useState<Appearance>(loadAppearance);
   const fileInput = useRef<HTMLInputElement>(null);
   const filterInput = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLElement>(null);
@@ -38,6 +42,11 @@ export function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("outliner:theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    applyAppearance(appearance);
+    saveAppearance(appearance);
+  }, [appearance]);
 
   // Stable identities: these reach every row and the window listener, and a
   // new function each render would defeat the memo on Row.
@@ -60,11 +69,28 @@ export function App() {
             toggleSidebar: () => setSidebarOpen((open) => !open),
             openSync: () => setOverlay({ kind: "sync" }),
             openHistory: () => setOverlay({ kind: "history" }),
+            openSettings: () => setOverlay({ kind: "settings" }),
             openShortcuts: () => setOverlay({ kind: "shortcuts" })
           })
         : [],
     [store, transfer.exportAs, openPalette]
   );
+
+  // Launched from a phone's share sheet: capture what was shared as a row at
+  // the end of the open document, once the workspace is actually loaded.
+  const captured = useRef(false);
+  useEffect(() => {
+    if (!store.ready || captured.current) return;
+    const shared = sharedText(window.location.search);
+    if (!shared) return;
+    captured.current = true;
+    forgetShare();
+    storeRef.current.edit((doc) => appendChild(doc, doc.rootId));
+    storeRef.current.edit((doc) => {
+      const last = doc.nodes[doc.rootId].children.at(-1);
+      return last ? patchNode(doc, last, { text: shared }) : doc;
+    });
+  }, [store.ready]);
 
   // Returning from GitHub's consent screen: finish the exchange and land the
   // user in the sync panel with the token already in place.
@@ -293,6 +319,9 @@ export function App() {
       ) : null}
       {overlay?.kind === "shortcuts" ? <Shortcuts onClose={() => setOverlay(null)} /> : null}
       {overlay?.kind === "history" ? <HistoryPanel store={store} onClose={() => setOverlay(null)} /> : null}
+      {overlay?.kind === "settings" ? (
+        <Settings appearance={appearance} onChange={setAppearance} onClose={() => setOverlay(null)} />
+      ) : null}
       {overlay?.kind === "sync" ? (
         <SyncSettings store={store} oauth={overlay.oauth} onClose={() => setOverlay(null)} />
       ) : null}
