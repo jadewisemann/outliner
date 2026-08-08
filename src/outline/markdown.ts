@@ -164,9 +164,13 @@ export function completionAt(text: string, caret: number): Trigger | null {
   return null;
 }
 
-/** Replaces the trigger and its query with the chosen value. */
-export function applyCompletion(text: string, caret: number, trigger: Trigger, value: string): Selection {
-  const inserted = trigger.kind === "doc" ? `[[${value}]]` : value;
+/**
+ * Replaces the trigger and its query with the literal text of the choice.
+ *
+ * The caller supplies that text rather than the label, because `[[` offers two
+ * different things: a document becomes `[[Title]]` and a row becomes `((id))`.
+ */
+export function applyCompletion(text: string, caret: number, trigger: Trigger, inserted: string): Selection {
   const next = text.slice(0, trigger.from) + inserted + text.slice(caret);
   const at = trigger.from + inserted.length;
   return { text: next, start: at, end: at };

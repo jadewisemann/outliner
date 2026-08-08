@@ -11,11 +11,12 @@ type Props = {
   scrollRef: RefObject<HTMLElement>;
   onTagClick: (tag: string) => void;
   onDocLinkClick: (title: string) => void;
+  onItemLinkClick: (id: string) => void;
 };
 
 /** Pure rendering; every behaviour lives in `useOutline`. */
-export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props) {
-  const outline = useOutline(store, scrollRef, onTagClick, onDocLinkClick);
+export function Outline({ store, scrollRef, onTagClick, onDocLinkClick, onItemLinkClick }: Props) {
+  const outline = useOutline(store, scrollRef, onTagClick, onDocLinkClick, onItemLinkClick);
   const { rows, window, focus, noteFocus, completion, dropSpot } = outline;
   const touch = useTouchBar();
 

@@ -10,6 +10,7 @@ import {
   type RefObject
 } from "react";
 import type { Store } from "../store";
+import { labelOf } from "../search/links";
 import { allTags } from "../search/search";
 import { docList, type Id, type Node, type Row as RowModel } from "../types";
 import type { DropPosition, RowApi } from "./components/Row";
@@ -51,8 +52,11 @@ import {
 } from "./tree";
 import { useVirtualRows } from "./useVirtualRows";
 
+/** One offer from `[[` or `#`: what it reads as, and what it writes. */
+export type Choice = { label: string; insert: string; hint?: string };
+
 /** What `[[` or `#` is offering right now, and where it will be inserted. */
-export type Completion = { rowId: Id; trigger: Trigger; items: string[]; index: number };
+export type Completion = { rowId: Id; trigger: Trigger; items: Choice[]; index: number };
 
 /** Enough to put back a markdown prefix the editor swallowed one keystroke ago. */
 type AutoUndo = { rowId: Id; prefix: string; node?: Partial<Node>; parentId?: Id; parent?: Partial<Node> };
@@ -100,7 +104,8 @@ export function useOutline(
   store: Store,
   scrollRef: RefObject<HTMLElement>,
   onTagClick: (tag: string) => void,
-  onDocLinkClick: (title: string) => void
+  onDocLinkClick: (title: string) => void,
+  onItemLinkClick: (id: Id) => void
 ): OutlineView {
   const { doc, view, rows, focus, edit, setView, requestFocus } = store;
 
@@ -150,21 +155,37 @@ export function useOutline(
   /* completion                                                        */
   /* ---------------------------------------------------------------- */
 
-  const candidates = useCallback((trigger: Trigger): string[] => {
+  /**
+   * `[[` offers documents *and* rows, because "link to the thing I mean" is
+   * one intent — but they are written differently, so each offer carries the
+   * literal text it will insert.
+   */
+  const candidates = useCallback((trigger: Trigger): Choice[] => {
     const workspace = workspaceRef.current;
-    const pool =
-      trigger.kind === "doc"
-        ? docList(workspace)
-            .filter((entry) => entry.kind === "doc")
-            .map((entry) => entry.title)
-        : allTags(workspace).map((entry) => entry.tag);
+    const pool: Choice[] = [];
 
+    if (trigger.kind === "tag") {
+      for (const entry of allTags(workspace)) pool.push({ label: entry.tag, insert: entry.tag });
+    } else {
+      for (const entry of docList(workspace)) {
+        if (entry.kind === "doc") pool.push({ label: entry.title, insert: `[[${entry.title}]]`, hint: "문서" });
+      }
+      for (const entry of docList(workspace)) {
+        if (entry.kind === "folder") continue;
+        for (const node of Object.values(entry.nodes)) {
+          if (node.id === entry.rootId || node.text.trim() === "") continue;
+          pool.push({ label: node.text, insert: `((${node.id}))`, hint: entry.title });
+        }
+      }
+    }
+
+    const term = trigger.kind === "tag" ? `#${trigger.query}` : trigger.query;
     return pool
-      .map((value) => ({ value, match: fuzzy(value, trigger.kind === "tag" ? `#${trigger.query}` : trigger.query) }))
+      .map((choice) => ({ choice, match: fuzzy(choice.label, term) }))
       .filter((entry) => entry.match !== null)
       .sort((a, b) => b.match!.score - a.match!.score)
       .slice(0, COMPLETION_LIMIT)
-      .map((entry) => entry.value);
+      .map((entry) => entry.choice);
   }, []);
 
   /**
@@ -186,10 +207,10 @@ export function useOutline(
   );
 
   const acceptCompletion = useCallback(
-    (element: HTMLTextAreaElement, rowId: Id, value: string) => {
+    (element: HTMLTextAreaElement, rowId: Id, choice: Choice) => {
       const open = completionRef.current;
       if (!open) return;
-      applyText(element, rowId, applyCompletion(element.value, element.selectionStart, open.trigger, value));
+      applyText(element, rowId, applyCompletion(element.value, element.selectionStart, open.trigger, choice.insert));
       setCompletion(null);
     },
     [applyText]
@@ -563,9 +584,9 @@ export function useOutline(
         event.preventDefault();
         edit((current) => insertOutlineText(current, row.id, text));
       },
-      pickCompletion(id, value) {
+      pickCompletion(id, choice) {
         const element = document.activeElement;
-        if (element instanceof HTMLTextAreaElement) acceptCompletion(element, id, value);
+        if (element instanceof HTMLTextAreaElement) acceptCompletion(element, id, choice);
       },
       hoverCompletion(index) {
         setCompletion((open) => (open ? { ...open, index } : open));
@@ -596,6 +617,8 @@ export function useOutline(
       },
       openTag: onTagClick,
       openDocByTitle: onDocLinkClick,
+      openItem: onItemLinkClick,
+      resolveItem: (id) => labelOf(workspaceRef.current, id),
       dragStart(event: DragEvent, id) {
         dragId.current = id;
         event.dataTransfer.effectAllowed = "move";
@@ -639,6 +662,7 @@ export function useOutline(
       enterSelection,
       onTagClick,
       onDocLinkClick,
+      onItemLinkClick,
       applyText,
       refreshCompletion,
       acceptCompletion

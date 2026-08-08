@@ -97,10 +97,13 @@ describe("completionAt", () => {
     expect(completionAt("a#b", 3)).toBeNull();
   });
 
-  it("replaces the trigger with what was chosen", () => {
+  it("replaces the trigger with the literal text of the choice", () => {
+    // The caller decides the spelling, because `[[` offers two kinds of thing.
     const trigger = completionAt("see [[pro", 9)!;
-    const result = applyCompletion("see [[pro", 9, trigger, "Projects");
-    expect(result.text).toBe("see [[Projects]]");
+    expect(applyCompletion("see [[pro", 9, trigger, "[[Projects]]").text).toBe("see [[Projects]]");
+    expect(applyCompletion("see [[pro", 9, trigger, "((node-7))").text).toBe("see ((node-7))");
+
+    const result = applyCompletion("see [[pro", 9, trigger, "[[Projects]]");
     expect(result.start).toBe(result.text.length);
   });
 });

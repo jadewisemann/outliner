@@ -1,6 +1,7 @@
 import { memo, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { renderInline, sourceOffset } from "../inline";
 import type { Row as RowModel } from "../../types";
+import type { Choice } from "../useOutline";
 import { Editable, type FocusHint } from "./Editable";
 
 export type DropPosition = "before" | "after" | "child";
@@ -11,7 +12,7 @@ export type RowApi = {
   onTextKeyDown(event: KeyboardEvent<HTMLTextAreaElement>, element: HTMLTextAreaElement, row: RowModel): void;
   onNoteKeyDown(event: KeyboardEvent<HTMLTextAreaElement>, element: HTMLTextAreaElement, row: RowModel): void;
   onPaste(event: ClipboardEvent<HTMLTextAreaElement>, row: RowModel): void;
-  pickCompletion(id: string, value: string): void;
+  pickCompletion(id: string, choice: Choice): void;
   hoverCompletion(index: number): void;
   toggleCollapse(id: string): void;
   toggleDone(id: string): void;
@@ -21,6 +22,8 @@ export type RowApi = {
   clearSelection(): void;
   openTag(tag: string): void;
   openDocByTitle(title: string): void;
+  openItem(id: string): void;
+  resolveItem(id: string): string | null;
   dragStart(event: DragEvent, id: string): void;
   dragOver(event: DragEvent, row: RowModel): void;
   drop(event: DragEvent): void;
@@ -32,7 +35,7 @@ type Props = {
   selected: boolean;
   focusHint: FocusHint;
   noteFocusHint: FocusHint;
-  completion: { items: string[]; index: number } | null;
+  completion: { items: Choice[]; index: number } | null;
   hideNotes: boolean;
   drop: DropPosition | null;
   api: RowApi;
@@ -128,7 +131,13 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, completion, 
               {node.text === "" ? (
                 <span className="row-empty">&nbsp;</span>
               ) : (
-                renderInline(node.text, { onTagClick: api.openTag, onDocLinkClick: api.openDocByTitle })
+                renderInline(node.text, {
+                  onTagClick: api.openTag,
+                  onDocLinkClick: api.openDocByTitle,
+                  onItemLinkClick: api.openItem,
+                  resolveItem: api.resolveItem,
+                  showImages: true
+                })
               )}
             </div>
           )}
@@ -138,7 +147,7 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, completion, 
         {completion ? (
           <ul className="row-complete" role="listbox" aria-label="자동 완성">
             {completion.items.map((item, index) => (
-              <li key={item}>
+              <li key={item.insert}>
                 <button
                   type="button"
                   role="option"
@@ -153,7 +162,8 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, completion, 
                   }}
                   onMouseEnter={() => api.hoverCompletion(index)}
                 >
-                  {item}
+                  <span className="row-complete-label">{item.label}</span>
+                  {item.hint ? <span className="row-complete-hint">{item.hint}</span> : null}
                 </button>
               </li>
             ))}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
-import { ancestors, setCollapsedDeep } from "../outline/tree";
+import { ancestors, reveal, setCollapsedDeep } from "../outline/tree";
+import { findNode } from "../search/links";
 import { docList } from "../types";
 import { Outline } from "../outline/components/Outline";
 import { Palette } from "../palette/components/Palette";
@@ -9,6 +10,7 @@ import { SearchPanel } from "../search/components/SearchPanel";
 import { completeGithubLogin, fetchGithubLogin } from "../sync/api/githubAuth";
 import { SyncBadge, SyncSettings, type OauthPrefill } from "../sync/components/SyncSettings";
 import { useTransfer } from "../transfer/useTransfer";
+import { Backlinks } from "./Backlinks";
 import { Shortcuts } from "./Shortcuts";
 import { Sidebar } from "./Sidebar";
 
@@ -42,6 +44,7 @@ export function App() {
   const openSearch = useCallback((query = "") => setOverlay({ kind: "search", query }), []);
   const openPalette = useCallback((query = "") => setOverlay({ kind: "palette", query }), []);
   const openDoc = useCallback((title: string) => openDocByTitle(storeRef.current, title), []);
+  const openItem = useCallback((id: string) => jumpToNode(storeRef.current, id), []);
   const transfer = useTransfer(store);
 
   const commands = useMemo(
@@ -248,7 +251,14 @@ export function App() {
 
         {zoomed ? <h1 className="zoom-title">{doc.nodes[view.zoomId]?.text || "(빈 항목)"}</h1> : null}
 
-        <Outline store={store} scrollRef={scroller} onTagClick={openSearch} onDocLinkClick={openDoc} />
+        <Outline
+          store={store}
+          scrollRef={scroller}
+          onTagClick={openSearch}
+          onDocLinkClick={openDoc}
+          onItemLinkClick={openItem}
+        />
+        <Backlinks store={store} onOpen={openItem} />
       </main>
 
       <input
@@ -289,4 +299,13 @@ function openDocByTitle(store: ReturnType<typeof useStore>, title: string) {
   const match = docList(store.workspace).find((doc) => doc.title.toLowerCase() === title.toLowerCase());
   if (match) store.docs.select(match.id);
   else store.docs.create(title);
+}
+
+/** `((id))` and backlinks both land the caret on a row wherever it lives. */
+function jumpToNode(store: ReturnType<typeof useStore>, id: string) {
+  const found = findNode(store.workspace, id);
+  if (!found) return;
+  store.docs.select(found.docId, { zoomId: store.workspace.docs[found.docId].rootId });
+  store.edit((doc) => reveal(doc, id), { transient: true });
+  store.requestFocus(id);
 }

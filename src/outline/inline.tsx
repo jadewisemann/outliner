@@ -2,14 +2,26 @@ import type { ReactNode } from "react";
 
 /**
  * Inline markup understood in a row: **bold**, *italic*, `code`, ~~strike~~,
- * ==highlight==, [label](url), bare URLs, #tag, and [[document link]].
+ * ==highlight==, ![image](url), [label](url), bare URLs, #tag,
+ * [[document link]] and ((item link)).
  */
 const PATTERN =
-  /(\*\*(?!\s)[^*\n]+\*\*|(?<![\w*])\*(?!\s)(?:[^*\n]*[^\s*])?\*|`[^`\n]+`|~~(?!\s)[^~\n]+~~|==(?!\s)[^=\n]+==|\[\[[^\]\n]+\]\]|\[[^\]\n]*\]\([^)\s]+\)|https?:\/\/[^\s<>()]+|(?<![\w#])#[\p{L}\p{N}_/-]+)/gu;
+  /(\*\*(?!\s)[^*\n]+\*\*|(?<![\w*])\*(?!\s)(?:[^*\n]*[^\s*])?\*|`[^`\n]+`|~~(?!\s)[^~\n]+~~|==(?!\s)[^=\n]+==|\[\[[^\]\n]+\]\]|\(\([\w-]{1,64}\)\)|!\[[^\]\n]*\]\([^)\s]+\)|\[[^\]\n]*\]\([^)\s]+\)|https?:\/\/[^\s<>()]+|(?<![\w#])#[\p{L}\p{N}_/-]+)/gu;
 
 type InlineHandlers = {
   onTagClick?: (tag: string) => void;
   onDocLinkClick?: (title: string) => void;
+  onItemLinkClick?: (id: string) => void;
+  /** The target's current text, so a link never disagrees with the row it names. */
+  resolveItem?: (id: string) => string | null;
+  /** Images are only drawn where there is room; a picker list wants the text. */
+  showImages?: boolean;
+  /**
+   * Renders links and tags as plain spans. Set where the whole line is already
+   * a control — a backlink entry, a search hit — since a button inside a
+   * button is neither valid nor operable.
+   */
+  inert?: boolean;
 };
 
 export function renderInline(source: string, handlers: InlineHandlers = {}): ReactNode {
@@ -36,6 +48,7 @@ function renderToken(token: string, key: number, handlers: InlineHandlers): Reac
 
   if (token.startsWith("[[")) {
     const title = token.slice(2, -2);
+    if (handlers.inert) return <span key={key} className="inline-doclink">{title}</span>;
     return (
       <button
         key={key}
@@ -52,7 +65,36 @@ function renderToken(token: string, key: number, handlers: InlineHandlers): Reac
     );
   }
 
+  if (token.startsWith("((")) {
+    const id = token.slice(2, -2);
+    const label = handlers.resolveItem?.(id) ?? null;
+    if (handlers.inert) {
+      return (
+        <span key={key} className={`inline-itemlink${label === null ? " inline-itemlink-broken" : ""}`}>
+          {label ?? "(없는 항목)"}
+        </span>
+      );
+    }
+    // A target that is gone stays visible and stays broken. Quietly deleting
+    // the link would hide the fact that something it referred to went away.
+    return (
+      <button
+        key={key}
+        type="button"
+        className={`inline-itemlink${label === null ? " inline-itemlink-broken" : ""}`}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          if (label !== null) handlers.onItemLinkClick?.(id);
+        }}
+      >
+        {label ?? "(없는 항목)"}
+      </button>
+    );
+  }
+
   if (token.startsWith("#")) {
+    if (handlers.inert) return <span key={key} className="inline-tag">{token}</span>;
     return (
       <button
         key={key}
@@ -69,15 +111,26 @@ function renderToken(token: string, key: number, handlers: InlineHandlers): Reac
     );
   }
 
+  if (token.startsWith("![")) {
+    const split = token.indexOf("](");
+    const alt = token.slice(2, split);
+    const src = token.slice(split + 2, -1);
+    if (!handlers.showImages || !/^https?:\/\//i.test(src)) return `${alt || src}`;
+    return <img key={key} className="inline-image" src={src} alt={alt} loading="lazy" />;
+  }
+
   if (token.startsWith("[")) {
     const split = token.indexOf("](");
+    const label = token.slice(1, split);
+    if (handlers.inert) return label;
     return (
       <a key={key} href={safeHref(token.slice(split + 2, -1))} target="_blank" rel="noreferrer">
-        {token.slice(1, split)}
+        {label}
       </a>
     );
   }
 
+  if (handlers.inert) return token;
   return (
     <a key={key} href={safeHref(token)} target="_blank" rel="noreferrer">
       {token}
@@ -121,9 +174,9 @@ export function sourceOffset(source: string, renderedOffset: number): number {
 
 function visibleLength(token: string): number {
   if (token.startsWith("**") || token.startsWith("~~") || token.startsWith("==")) return token.length - 4;
-  if (token.startsWith("[[")) return token.length - 4;
+  if (token.startsWith("[[") || token.startsWith("((")) return token.length - 4;
   if (token.startsWith("`") || (token.startsWith("*") && !token.startsWith("**"))) return token.length - 2;
-  const label = token.match(/^\[([^\]]*)\]\(/);
+  const label = token.match(/^!?\[([^\]]*)\]\(/);
   if (label) return label[1].length;
   return token.length;
 }

@@ -344,7 +344,9 @@ button {
 .outline {
   max-width: 780px;
   margin: 0 auto;
-  padding: 18px 20px 40vh;
+  /* The tail below already supplies the room to click into; a second screenful
+     of padding only pushed the backlinks off the bottom of the world. */
+  padding: 18px 20px 0;
   outline: none;
 }
 
@@ -1234,4 +1236,105 @@ button {
   padding: 3px 8px;
   border-radius: 999px;
   background: var(--faint);
+}
+
+/* ------------------------------------------------------------------ */
+/* links between rows                                                  */
+/* ------------------------------------------------------------------ */
+
+.inline-itemlink {
+  padding: 0;
+  color: var(--accent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* A target that has gone stays visible and stays obviously broken. */
+.inline-itemlink-broken {
+  color: var(--muted);
+  border-bottom-style: dashed;
+  cursor: default;
+}
+
+.inline-image {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 4px 0;
+  border-radius: 6px;
+}
+
+.row-complete button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.row-complete-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-complete-hint {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.backlinks {
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 20px 30vh;
+}
+
+.backlinks h2 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.backlinks h2 em {
+  font-style: normal;
+  opacity: 0.7;
+}
+
+.backlinks ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--faint);
+}
+
+.backlinks button {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.backlinks button:hover {
+  background: var(--faint);
+}
+
+.backlink-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backlink-where {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
 }
