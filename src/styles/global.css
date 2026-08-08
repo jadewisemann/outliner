@@ -438,19 +438,88 @@ button {
   gap: 5px;
 }
 
-/* Its slot is always reserved, so appearing on hover never nudges the text. */
+/* Only lists that asked for checkboxes get them; a ticked row keeps its own. */
 .row-check {
   flex: none;
   width: 12px;
   height: 12px;
   margin: 7px 0 0;
   accent-color: var(--accent);
-  opacity: 0;
 }
 
-.row:hover .row-check,
-.row-check:checked {
-  opacity: 1;
+/* The number sits where the bullet would, and the bullet shrinks out of the
+   way — a numbered list still needs its bullet as the drag and zoom handle. */
+.row-number {
+  flex: none;
+  min-width: 18px;
+  padding-top: 3px;
+  font-variant-numeric: tabular-nums;
+  font-size: 13px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.row-bullet-numbered {
+  width: 10px;
+}
+
+.row-bullet-numbered::after {
+  left: 1px;
+  width: 4px;
+  height: 4px;
+  top: 11px;
+}
+
+/* Colour labels tint the row's text, not its background: a page of six
+   highlighter colours is unreadable, a page of six inks is a legend. */
+.row-c1 .row-text { color: #c1543c; }
+.row-c2 .row-text { color: #c08a2e; }
+.row-c3 .row-text { color: #4f8f3f; }
+.row-c4 .row-text { color: #2f7fa8; }
+.row-c5 .row-text { color: #7a5bb5; }
+.row-c6 .row-text { color: var(--muted); }
+
+:root[data-theme="dark"] .row-c1 .row-text { color: #e8836a; }
+:root[data-theme="dark"] .row-c2 .row-text { color: #dcb05a; }
+:root[data-theme="dark"] .row-c3 .row-text { color: #83c46f; }
+:root[data-theme="dark"] .row-c4 .row-text { color: #6cb6d9; }
+:root[data-theme="dark"] .row-c5 .row-text { color: #a891e0; }
+:root[data-theme="dark"] .row-c6 .row-text { color: var(--muted); }
+
+.row-bookmarked > .row-bullet::after {
+  box-shadow: 0 0 0 3px var(--selection);
+}
+
+/* Anchored under the row being typed in, so the caret and the list are in the
+   same place the eye already is. */
+.row-complete {
+  position: absolute;
+  z-index: 5;
+  margin: 2px 0 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 180px;
+  max-width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--faint);
+  border-radius: 8px;
+  box-shadow: var(--shadow);
+}
+
+.row-complete button {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  text-align: left;
+  border-radius: 5px;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-complete-active {
+  background: var(--selection);
 }
 
 /* The editor and its rendered twin must share metrics so swapping is invisible. */

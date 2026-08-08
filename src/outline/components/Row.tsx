@@ -11,6 +11,8 @@ export type RowApi = {
   onTextKeyDown(event: KeyboardEvent<HTMLTextAreaElement>, element: HTMLTextAreaElement, row: RowModel): void;
   onNoteKeyDown(event: KeyboardEvent<HTMLTextAreaElement>, element: HTMLTextAreaElement, row: RowModel): void;
   onPaste(event: ClipboardEvent<HTMLTextAreaElement>, row: RowModel): void;
+  pickCompletion(id: string, value: string): void;
+  hoverCompletion(index: number): void;
   toggleCollapse(id: string): void;
   toggleDone(id: string): void;
   zoom(id: string): void;
@@ -30,11 +32,13 @@ type Props = {
   selected: boolean;
   focusHint: FocusHint;
   noteFocusHint: FocusHint;
+  completion: { items: string[]; index: number } | null;
+  hideNotes: boolean;
   drop: DropPosition | null;
   api: RowApi;
 };
 
-function RowView({ row, active, selected, focusHint, noteFocusHint, drop, api }: Props) {
+function RowView({ row, active, selected, focusHint, noteFocusHint, completion, hideNotes, drop, api }: Props) {
   const { node } = row;
   const hasChildren = node.children.length > 0;
 
@@ -46,6 +50,8 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, drop, api }:
         active ? "row-active" : "",
         node.done ? "row-done" : "",
         node.heading > 0 ? `row-h${node.heading}` : "",
+        node.color > 0 ? `row-c${node.color}` : "",
+        node.bookmarked ? "row-bookmarked" : "",
         drop ? `row-drop-${drop}` : ""
       ]
         .filter(Boolean)
@@ -69,9 +75,12 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, drop, api }:
         ▸
       </button>
 
+      {row.numbered ? <span className="row-number">{row.index + 1}.</span> : null}
       <button
         type="button"
-        className={`row-bullet${node.collapsed && hasChildren ? " row-bullet-collapsed" : ""}`}
+        className={`row-bullet${node.collapsed && hasChildren ? " row-bullet-collapsed" : ""}${
+          row.numbered ? " row-bullet-numbered" : ""
+        }`}
         aria-label={`${node.text || "빈 항목"} 확대`}
         tabIndex={-1}
         draggable
@@ -84,15 +93,17 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, drop, api }:
 
       <div className="row-body">
         <div className="row-line">
-          <input
-            type="checkbox"
-            className="row-check"
-            checked={node.done}
-            tabIndex={-1}
-            aria-label="완료 표시"
-            onChange={() => api.toggleDone(row.id)}
-            onMouseDown={(event) => event.stopPropagation()}
-          />
+          {row.checklist ? (
+            <input
+              type="checkbox"
+              className="row-check"
+              checked={node.done}
+              tabIndex={-1}
+              aria-label="완료 표시"
+              onChange={() => api.toggleDone(row.id)}
+              onMouseDown={(event) => event.stopPropagation()}
+            />
+          ) : null}
           {active ? (
             <Editable
               value={node.text}
@@ -124,7 +135,32 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, drop, api }:
           {node.collapsed && hasChildren ? <span className="row-count">{node.children.length}</span> : null}
         </div>
 
-        {node.note !== "" || noteFocusHint ? (
+        {completion ? (
+          <ul className="row-complete" role="listbox" aria-label="자동 완성">
+            {completion.items.map((item, index) => (
+              <li key={item}>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={index === completion.index}
+                  className={index === completion.index ? "row-complete-active" : ""}
+                  tabIndex={-1}
+                  // Taking focus would close the keyboard and lose the caret,
+                  // so the choice is made before focus can move.
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    api.pickCompletion(row.id, item);
+                  }}
+                  onMouseEnter={() => api.hoverCompletion(index)}
+                >
+                  {item}
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        {!hideNotes && (node.note !== "" || noteFocusHint) ? (
           <Editable
             value={node.note}
             className="row-note"

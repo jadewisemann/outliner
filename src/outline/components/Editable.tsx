@@ -2,6 +2,25 @@ import { useEffect, useLayoutEffect, useRef, type KeyboardEvent } from "react";
 
 export type FocusHint = { caret: number | "end"; seq: number } | null;
 
+/**
+ * What each live field last handed to the store. Formatting shortcuts write
+ * straight to the DOM — they have to, since the field is uncontrolled while
+ * focused — and this is how they keep that bookkeeping honest. Without it the
+ * field would believe it had emitted the older text, and an incoming value
+ * equal to that older text would be skipped instead of overwriting.
+ */
+const emittedOf = new WeakMap<HTMLTextAreaElement, { current: string }>();
+
+/** Replaces a focused field's text and selection, as a shortcut would. */
+export function writeField(element: HTMLTextAreaElement, text: string, start: number, end = start): void {
+  element.value = text;
+  element.setSelectionRange(start, end);
+  const emitted = emittedOf.get(element);
+  if (emitted) emitted.current = text;
+  element.style.height = "0px";
+  element.style.height = `${element.scrollHeight}px`;
+}
+
 type Props = {
   value: string;
   className: string;
@@ -40,13 +59,14 @@ export function Editable({
   // The row unmounts as soon as focus moves elsewhere, which can happen in the
   // middle of an IME composition — and mid-composition input events are
   // deliberately not forwarded. Without this the half-typed syllable is lost.
-  useEffect(
-    () => () => {
-      const element = ref.current;
+  useEffect(() => {
+    const element = ref.current;
+    if (element) emittedOf.set(element, emitted);
+    return () => {
       if (element && element.value !== emitted.current) latest.current(element.value);
-    },
-    []
-  );
+      if (element) emittedOf.delete(element);
+    };
+  }, []);
 
   const resize = () => {
     const element = ref.current;

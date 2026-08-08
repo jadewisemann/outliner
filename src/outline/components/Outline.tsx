@@ -16,7 +16,7 @@ type Props = {
 /** Pure rendering; every behaviour lives in `useOutline`. */
 export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props) {
   const outline = useOutline(store, scrollRef, onTagClick, onDocLinkClick);
-  const { rows, window, focus, noteFocus, dropSpot } = outline;
+  const { rows, window, focus, noteFocus, completion, dropSpot } = outline;
   const touch = useTouchBar();
 
   return (
@@ -37,6 +37,8 @@ export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props)
           selected={outline.selected.has(row.id)}
           focusHint={row.id === focus?.id ? { caret: focus.caret, seq: focus.seq } : null}
           noteFocusHint={row.id === noteFocus?.id ? { caret: "end", seq: noteFocus.seq } : null}
+          completion={completion?.rowId === row.id ? completion : null}
+          hideNotes={store.view.hideNotes}
           drop={dropSpot?.id === row.id ? dropSpot.position : null}
           api={outline.api}
         />

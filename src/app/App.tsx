@@ -55,7 +55,14 @@ export function App() {
       // The IME owns the keyboard while a syllable is being composed.
       if (event.isComposing) return;
       const mod = event.metaKey || event.ctrlKey;
-      if (mod && (event.key === "k" || event.key === "f")) {
+      // ⌘K belongs to "link" inside a row, the way it does in every markdown
+      // editor, so the palette takes the editor's keys instead.
+      if (mod && (event.key.toLowerCase() === "p" || (event.shiftKey && event.key.toLowerCase() === "f"))) {
+        event.preventDefault();
+        openSearch();
+        return;
+      }
+      if (mod && !event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         openSearch();
         return;

@@ -391,6 +391,40 @@ export function moveVertically(doc: Doc, id: Id, direction: -1 | 1): Edit {
   return { doc: withNodes(doc, nodes), focusId: id };
 }
 
+/**
+ * Copies a row and everything under it, directly below the original.
+ *
+ * The copies are new nodes with new ids and fresh stamps — a duplicate is a
+ * thing that has just come into existence, not a second claim on the original.
+ * A bookmark is not copied for the same reason: it points at one row.
+ */
+export function duplicate(doc: Doc, id: Id): Edit {
+  const node = doc.nodes[id];
+  const parentId = node?.parent;
+  if (!node || !parentId) return { doc };
+
+  const nodes = draft(doc);
+  const copy = (sourceId: Id, ownerId: Id, index: number): Id => {
+    const source = doc.nodes[sourceId];
+    const fresh = makeNode({
+      text: source.text,
+      note: source.note,
+      collapsed: source.collapsed,
+      done: source.done,
+      heading: source.heading,
+      checklist: source.checklist,
+      numbered: source.numbered,
+      color: source.color
+    });
+    insert(nodes, ownerId, fresh, index);
+    source.children.forEach((child, at) => copy(child, fresh.id, at));
+    return fresh.id;
+  };
+
+  const at = doc.nodes[parentId].children.indexOf(id) + 1;
+  return { doc: withNodes(doc, nodes), focusId: copy(id, parentId, at), caret: node.text.length };
+}
+
 /** Moves `id` (with subtree) to position `index` under `newParentId`. Used by drag & drop. */
 export function reparent(doc: Doc, id: Id, newParentId: Id, index: number): Edit {
   if (id === newParentId || !doc.nodes[newParentId] || subtree(doc, id).includes(newParentId)) return { doc };

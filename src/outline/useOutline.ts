@@ -10,8 +10,23 @@ import {
   type RefObject
 } from "react";
 import type { Store } from "../store";
-import type { Id, Row as RowModel } from "../types";
+import { allTags } from "../search/search";
+import { docList, type Id, type Node, type Row as RowModel } from "../types";
 import type { DropPosition, RowApi } from "./components/Row";
+import { writeField } from "./components/Editable";
+import {
+  applyCompletion,
+  autoFormat,
+  completionAt,
+  fuzzy,
+  isUrl,
+  linkTo,
+  toggleLink,
+  toggleWrap,
+  type Selection,
+  type Trigger,
+  type WrapKind
+} from "./markdown";
 import {
   appendChild,
   bulkIndent,
@@ -19,6 +34,7 @@ import {
   bulkOutdent,
   bulkRemove,
   bulkSetCollapsed,
+  duplicate,
   indent,
   insertOutlineText,
   mergeIntoPrevious,
@@ -34,6 +50,16 @@ import {
   topLevel
 } from "./tree";
 import { useVirtualRows } from "./useVirtualRows";
+
+/** What `[[` or `#` is offering right now, and where it will be inserted. */
+export type Completion = { rowId: Id; trigger: Trigger; items: string[]; index: number };
+
+/** Enough to put back a markdown prefix the editor swallowed one keystroke ago. */
+type AutoUndo = { rowId: Id; prefix: string; node?: Partial<Node>; parentId?: Id; parent?: Partial<Node> };
+
+const WRAP_KEYS: Record<string, WrapKind> = { b: "bold", i: "italic", e: "code" };
+const SHIFT_WRAP_KEYS: Record<string, WrapKind> = { x: "strike", h: "highlight" };
+const COMPLETION_LIMIT = 8;
 
 /** The edits a phone cannot reach, since it has no Tab key and no ⌘⇧↑↓. */
 export type Nudge = {
@@ -51,6 +77,7 @@ export type OutlineView = {
   selected: Set<Id>;
   focus: Store["focus"];
   noteFocus: { id: Id; seq: number } | null;
+  completion: Completion | null;
   dropSpot: { id: Id; position: DropPosition } | null;
   api: RowApi;
   containerProps: {
@@ -79,6 +106,7 @@ export function useOutline(
 
   const [selection, setSelection] = useState<Id[]>([]);
   const [noteFocus, setNoteFocus] = useState<{ id: Id; seq: number } | null>(null);
+  const [completion, setCompletion] = useState<Completion | null>(null);
   const [dropSpot, setDropSpot] = useState<{ id: Id; position: DropPosition } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -86,6 +114,7 @@ export function useOutline(
   const dragId = useRef<Id | null>(null);
   const dropRef = useRef<{ id: Id; position: DropPosition } | null>(null);
   const noteSeq = useRef(0);
+  const autoUndo = useRef<AutoUndo | null>(null);
 
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -95,6 +124,76 @@ export function useOutline(
   zoomRef.current = view.zoomId;
   const docRef = useRef(doc);
   docRef.current = doc;
+  const workspaceRef = useRef(store.workspace);
+  workspaceRef.current = store.workspace;
+  const completionRef = useRef(completion);
+  completionRef.current = completion;
+
+  /* ---------------------------------------------------------------- */
+  /* writing into the focused field                                    */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * A formatting shortcut has to write the DOM itself: the field is
+   * uncontrolled while it has focus, so waiting for the store to come back
+   * round would lose the caret and fight the IME.
+   */
+  const applyText = useCallback(
+    (element: HTMLTextAreaElement, id: Id, next: Selection, coalesceKey?: string) => {
+      writeField(element, next.text, next.start, next.end);
+      edit((current) => patchNode(current, id, { text: next.text }), { coalesceKey });
+    },
+    [edit]
+  );
+
+  /* ---------------------------------------------------------------- */
+  /* completion                                                        */
+  /* ---------------------------------------------------------------- */
+
+  const candidates = useCallback((trigger: Trigger): string[] => {
+    const workspace = workspaceRef.current;
+    const pool =
+      trigger.kind === "doc"
+        ? docList(workspace)
+            .filter((entry) => entry.kind === "doc")
+            .map((entry) => entry.title)
+        : allTags(workspace).map((entry) => entry.tag);
+
+    return pool
+      .map((value) => ({ value, match: fuzzy(value, trigger.kind === "tag" ? `#${trigger.query}` : trigger.query) }))
+      .filter((entry) => entry.match !== null)
+      .sort((a, b) => b.match!.score - a.match!.score)
+      .slice(0, COMPLETION_LIMIT)
+      .map((entry) => entry.value);
+  }, []);
+
+  /**
+   * Recomputed from the live field rather than from the store: the store lags
+   * a keystroke behind and does not know where the caret is.
+   */
+  const refreshCompletion = useCallback(
+    (rowId: Id) => {
+      const element = document.activeElement;
+      if (!(element instanceof HTMLTextAreaElement) || element.selectionStart !== element.selectionEnd) {
+        setCompletion(null);
+        return;
+      }
+      const trigger = completionAt(element.value, element.selectionStart);
+      const items = trigger ? candidates(trigger) : [];
+      setCompletion(trigger && items.length > 0 ? { rowId, trigger, items, index: 0 } : null);
+    },
+    [candidates]
+  );
+
+  const acceptCompletion = useCallback(
+    (element: HTMLTextAreaElement, rowId: Id, value: string) => {
+      const open = completionRef.current;
+      if (!open) return;
+      applyText(element, rowId, applyCompletion(element.value, element.selectionStart, open.trigger, value));
+      setCompletion(null);
+    },
+    [applyText]
+  );
 
   /* ---------------------------------------------------------------- */
   /* selection                                                         */
@@ -144,6 +243,106 @@ export function useOutline(
       const noRange = element.selectionStart === element.selectionEnd;
       const zoomId = zoomRef.current;
       const stop = () => event.preventDefault();
+      const format = (next: Selection) => {
+        stop();
+        applyText(element, row.id, next);
+      };
+
+      // The completion list owns the arrows and Enter while it is open, the
+      // way it does in an editor. Everything below is unreachable until it
+      // closes, which is why this runs first.
+      const open = completionRef.current;
+      if (open && open.rowId === row.id) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          stop();
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          setCompletion({ ...open, index: (open.index + step + open.items.length) % open.items.length });
+          return;
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+          stop();
+          acceptCompletion(element, row.id, open.items[open.index]);
+          return;
+        }
+        if (event.key === "Escape") {
+          stop();
+          setCompletion(null);
+          return;
+        }
+      }
+
+      // One Backspace puts back a prefix the editor swallowed. Without it the
+      // only way out of an unwanted heading is to notice which key did it.
+      const swallowed = autoUndo.current;
+      if (event.key === "Backspace" && noRange && caret === 0 && swallowed?.rowId === row.id) {
+        stop();
+        autoUndo.current = null;
+        const restored = swallowed.prefix + element.value;
+        writeField(element, restored, swallowed.prefix.length);
+        edit((current) => {
+          const reverted = patchNode(current, row.id, { text: restored, ...swallowed.node });
+          return swallowed.parentId && swallowed.parent
+            ? patchNode(reverted, swallowed.parentId, swallowed.parent)
+            : reverted;
+        });
+        return;
+      }
+      if (event.key !== "Backspace") autoUndo.current = null;
+
+      if (mod && !event.shiftKey && WRAP_KEYS[event.key.toLowerCase()]) {
+        format(toggleWrap(element.value, element.selectionStart, element.selectionEnd, WRAP_KEYS[event.key.toLowerCase()]));
+        return;
+      }
+      if (mod && event.shiftKey && SHIFT_WRAP_KEYS[event.key.toLowerCase()]) {
+        format(
+          toggleWrap(element.value, element.selectionStart, element.selectionEnd, SHIFT_WRAP_KEYS[event.key.toLowerCase()])
+        );
+        return;
+      }
+      if (mod && !event.shiftKey && event.key.toLowerCase() === "k") {
+        format(toggleLink(element.value, element.selectionStart, element.selectionEnd));
+        return;
+      }
+      if (mod && !event.shiftKey && event.key.toLowerCase() === "d") {
+        stop();
+        edit((current) => duplicate(current, row.id));
+        return;
+      }
+      if (mod && event.shiftKey && event.key.toLowerCase() === "k") {
+        stop();
+        edit((current) => bulkRemove(current, zoomId, [row.id]));
+        return;
+      }
+      if (mod && (event.key === "]" || event.key === "[")) {
+        stop();
+        edit((current) => (event.key === "[" ? outdent(current, row.id, zoomId) : indent(current, row.id)));
+        return;
+      }
+
+      // Markdown as you type. Fires on the space that completes the prefix,
+      // and the space itself is never inserted — it was punctuation, not text.
+      if (event.key === " " && noRange) {
+        const applied = autoFormat(element.value, caret);
+        if (applied) {
+          stop();
+          const node = docRef.current.nodes[row.id];
+          const parentId = applied.parent ? node?.parent ?? undefined : undefined;
+          autoUndo.current = {
+            rowId: row.id,
+            prefix: applied.prefix,
+            node: applied.node ? { heading: node?.heading ?? 0 } : undefined,
+            parentId,
+            parent: parentId ? pick(docRef.current.nodes[parentId], applied.parent!) : undefined
+          };
+          writeField(element, applied.text, 0);
+          edit((current) => {
+            const patched = patchNode(current, row.id, { text: applied.text, ...applied.node });
+            return parentId ? patchNode(patched, parentId, applied.parent!) : patched;
+          });
+          setCompletion(null);
+          return;
+        }
+      }
 
       if (mod && event.shiftKey && event.code === "Period") {
         stop();
@@ -344,6 +543,7 @@ export function useOutline(
     () => ({
       setText(id, text) {
         edit((current) => patchNode(current, id, { text }), { coalesceKey: `text:${id}` });
+        refreshCompletion(id);
       },
       setNote(id, note) {
         edit((current) => patchNode(current, id, { note }), { coalesceKey: `note:${id}` });
@@ -352,9 +552,23 @@ export function useOutline(
       onNoteKeyDown,
       onPaste(event, row) {
         const text = event.clipboardData.getData("text/plain");
+        const element = event.currentTarget;
+        // A url dropped onto selected text links it instead of replacing it.
+        if (isUrl(text) && element.selectionStart !== element.selectionEnd) {
+          event.preventDefault();
+          applyText(element, row.id, linkTo(element.value, element.selectionStart, element.selectionEnd, text.trim()));
+          return;
+        }
         if (!text.includes("\n")) return;
         event.preventDefault();
         edit((current) => insertOutlineText(current, row.id, text));
+      },
+      pickCompletion(id, value) {
+        const element = document.activeElement;
+        if (element instanceof HTMLTextAreaElement) acceptCompletion(element, id, value);
+      },
+      hoverCompletion(index) {
+        setCompletion((open) => (open ? { ...open, index } : open));
       },
       toggleCollapse(id) {
         edit((current) => patchNode(current, id, { collapsed: !current.nodes[id]?.collapsed }), { transient: true });
@@ -365,6 +579,7 @@ export function useOutline(
       zoom,
       focusText(id, caret) {
         setNoteFocus(null);
+        setCompletion(null);
         requestFocus(id, caret);
       },
       pointerSelect(event: MouseEvent, row) {
@@ -415,7 +630,19 @@ export function useOutline(
         );
       }
     }),
-    [edit, onTextKeyDown, onNoteKeyDown, zoom, requestFocus, enterSelection, onTagClick, onDocLinkClick]
+    [
+      edit,
+      onTextKeyDown,
+      onNoteKeyDown,
+      zoom,
+      requestFocus,
+      enterSelection,
+      onTagClick,
+      onDocLinkClick,
+      applyText,
+      refreshCompletion,
+      acceptCompletion
+    ]
   );
 
   /* ---------------------------------------------------------------- */
@@ -434,6 +661,7 @@ export function useOutline(
     selected,
     focus,
     noteFocus,
+    completion,
     dropSpot,
     api,
     containerProps: {
@@ -457,6 +685,13 @@ export function useOutline(
       edit((current) => appendChild(current, zoomRef.current));
     }
   };
+}
+
+/** The values a patch is about to overwrite, so one Backspace can put them back. */
+function pick(node: Node | undefined, patch: Partial<Node>): Partial<Node> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(patch)) out[key] = node?.[key as keyof Node];
+  return out as Partial<Node>;
 }
 
 /** Inclusive visible-row range between two ids, in document order. */

@@ -51,7 +51,7 @@ test("keeps the DOM small and the whole document reachable", async ({ page }) =>
 });
 
 test("search jumps to a row far outside the rendered window", async ({ page }) => {
-  await page.keyboard.press("Control+k");
+  await page.keyboard.press("Control+p");
   await page.locator(".search-input").fill("line 1750");
   await page.locator(".search-hit").first().click();
 
