@@ -34,3 +34,22 @@ test("the built app can be installed to a home screen", async ({ page, request }
 
   expect(violations).toEqual([]);
 });
+
+test("the built app opens again with the network gone", async ({ page, context }) => {
+  await page.goto(BUILT);
+  await page.locator(".row").first().click();
+  await page.keyboard.type("written while online");
+
+  // The worker only helps once it controls the page.
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 10_000 });
+  // Let the shell and its assets reach the cache.
+  await page.reload();
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 10_000 });
+
+  await context.setOffline(true);
+  await page.reload();
+
+  // Opening at all is the point; the notes were never on the server.
+  await expect(page.getByText("written while online")).toBeVisible();
+  await context.setOffline(false);
+});
