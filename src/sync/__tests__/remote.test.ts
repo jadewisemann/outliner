@@ -17,7 +17,14 @@ describe("sync config", () => {
 
   it("fills in the default path for a GitHub config that lacks one", () => {
     localStorage.setItem("outliner:sync", JSON.stringify({ kind: "github", repo: "me/notes", token: "pat" }));
-    expect(loadSyncConfig()?.kind === "github" && loadSyncConfig()).toMatchObject({ path: "outliner.json" });
+    expect(loadSyncConfig()?.kind === "github" && loadSyncConfig()).toMatchObject({ path: "outliner" });
+  });
+
+  it("treats a path from the single-file layout as the folder beside it", () => {
+    // `outliner.json` and `outliner` name the same workspace, so a device that
+    // configured sync in an earlier build keeps its first-sync marker.
+    const folder = configKey({ kind: "github", repo: "me/notes", path: "outliner", token: "x" });
+    expect(configKey({ kind: "github", repo: "me/notes", path: "outliner.json", token: "x" })).toBe(folder);
   });
 
   it("rejects garbage instead of returning a half-config", () => {

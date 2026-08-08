@@ -2,9 +2,31 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      The sync token lives in localStorage, so the thing worth spending a policy
+      on is script injection: nothing runs that did not come from this origin.
+      `style-src-attr` is the one hole, and it is one this app digs itself — the
+      row indent and the virtualisation padding are style attributes.
+      `connect-src` cannot be narrowed honestly: the endpoint is whatever the
+      person configured. `frame-ancestors` is ignored in a meta tag; a host that
+      can send headers should add it there.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self'; manifest-src 'self'; connect-src *; base-uri 'none'; form-action 'none'"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Outliner</title>
     <meta name="color-scheme" content="light dark" />
+    <!-- Installed to a phone's home screen it opens as its own window. Offline
+         *launch* would need a service worker; the notes are already local. -->
+    <link rel="manifest" href="./manifest.webmanifest" />
+    <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="./apple-touch-icon.png" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" content="#f7f7f5" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#16181a" media="(prefers-color-scheme: dark)" />
   </head>
   <body>
     <div id="root"></div>

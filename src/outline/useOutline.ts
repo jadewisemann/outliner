@@ -35,8 +35,16 @@ import {
 } from "./tree";
 import { useVirtualRows } from "./useVirtualRows";
 
+/** The edits a phone cannot reach, since it has no Tab key and no ⌘⇧↑↓. */
+export type Nudge = {
+  indent(): void;
+  outdent(): void;
+  move(direction: -1 | 1): void;
+};
+
 export type OutlineView = {
   containerRef: RefObject<HTMLDivElement>;
+  nudge: Nudge;
   rows: RowModel[];
   window: { start: number; end: number; padTop: number; padBottom: number };
   activeId: Id | null;
@@ -302,6 +310,33 @@ export function useOutline(
   );
 
   /* ---------------------------------------------------------------- */
+  /* the same edits, without a keyboard                                */
+  /* ---------------------------------------------------------------- */
+
+  // Whichever row is being edited, read at press time — the bar is rendered
+  // once and must not close over a row that has since changed.
+  const focusRef = useRef(focus);
+  focusRef.current = focus;
+
+  const nudge = useMemo<Nudge>(() => {
+    const target = () => focusRef.current?.id ?? null;
+    return {
+      indent() {
+        const id = target();
+        if (id) edit((current) => indent(current, id));
+      },
+      outdent() {
+        const id = target();
+        if (id) edit((current) => outdent(current, id, zoomRef.current));
+      },
+      move(direction) {
+        const id = target();
+        if (id) edit((current) => moveVertically(current, id, direction));
+      }
+    };
+  }, [edit]);
+
+  /* ---------------------------------------------------------------- */
   /* the api handed to every row                                       */
   /* ---------------------------------------------------------------- */
 
@@ -386,11 +421,13 @@ export function useOutline(
   /* ---------------------------------------------------------------- */
 
   const selected = useMemo(() => new Set(selection), [selection]);
-  const activeId = selection.length > 0 ? null : focus?.id ?? null;
-  const window = useVirtualRows(rows, scrollRef, containerRef, activeId);
+  const pin = selection.length > 0 ? null : focus;
+  const activeId = pin?.id ?? null;
+  const window = useVirtualRows(rows, scrollRef, containerRef, pin);
 
   return {
     containerRef,
+    nudge,
     rows,
     window,
     activeId,

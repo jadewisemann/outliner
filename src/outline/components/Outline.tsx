@@ -1,7 +1,9 @@
 import type { RefObject } from "react";
 import type { Store } from "../../store";
 import { useOutline } from "../useOutline";
+import { useTouchBar } from "../useTouchBar";
 import { Row } from "./Row";
+import { TouchBar } from "./TouchBar";
 
 type Props = {
   store: Store;
@@ -15,6 +17,7 @@ type Props = {
 export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props) {
   const outline = useOutline(store, scrollRef, onTagClick, onDocLinkClick);
   const { rows, window, focus, noteFocus, dropSpot } = outline;
+  const touch = useTouchBar();
 
   return (
     <div
@@ -40,6 +43,7 @@ export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props)
       ))}
       {window.padBottom > 0 ? <div style={{ height: window.padBottom }} /> : null}
       <div className="outline-tail" onMouseDown={outline.onTailMouseDown} />
+      {touch.coarse ? <TouchBar activeId={outline.activeId} nudge={outline.nudge} inset={touch.inset} /> : null}
     </div>
   );
 }

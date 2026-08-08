@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Outliner">
+  <!--
+    The source the PNGs are rasterised from. Full bleed, and the mark sits well
+    inside the middle 80% so a maskable icon can crop to a circle without
+    clipping it.
+  -->
+  <rect width="512" height="512" fill="#3d7f6e" />
+  <g fill="#f7f7f5">
+    <circle cx="152" cy="160" r="20" />
+    <rect x="196" y="146" width="164" height="28" rx="14" />
+    <circle cx="216" cy="256" r="20" />
+    <rect x="260" y="242" width="100" height="28" rx="14" />
+    <circle cx="216" cy="352" r="20" />
+    <rect x="260" y="338" width="136" height="28" rx="14" />
+  </g>
+</svg>
