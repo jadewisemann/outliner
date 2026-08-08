@@ -1134,3 +1134,61 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ------------------------------------------------------------------ */
+/* filter bar                                                          */
+/* ------------------------------------------------------------------ */
+
+/* Always mounted so ⌘F has something to focus, but out of the way until it
+   is used: a permanent second toolbar would cost every reader a line. */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 780px;
+  margin: 0 auto;
+  padding: 0 20px;
+}
+
+.filter-input {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 8px;
+  font: inherit;
+  font-size: 13px;
+  color: inherit;
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  opacity: 0;
+  height: 0;
+  transition: opacity 0.1s ease;
+}
+
+.filter-input:focus,
+.filter-bar-on .filter-input {
+  height: auto;
+  opacity: 1;
+  outline: none;
+  margin-top: 12px;
+  background: var(--surface);
+  border-color: var(--faint);
+}
+
+.filter-input:focus {
+  border-color: var(--accent);
+}
+
+.filter-count,
+.filter-flag {
+  margin-top: 12px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.filter-flag {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--faint);
+}

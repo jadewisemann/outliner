@@ -17,7 +17,8 @@ import {
   type SyncConfig,
   type SyncStatus
 } from "./sync/api/remote";
-import { ensureEditable, visibleRows, type Edit } from "./outline/tree";
+import { ancestors, ensureEditable, visibleRows, type Edit } from "./outline/tree";
+import { parseQuery } from "./search/query";
 import {
   docList,
   makeDoc,
@@ -446,12 +447,33 @@ export function useStore() {
     filter: stored?.filter ?? ""
   };
   const zoomId = view.zoomId;
-  const rows = useMemo(() => (doc && zoomId ? visibleRows(doc, zoomId) : []), [doc, zoomId]);
+  const { filter, hideCompleted } = view;
+
+  const rows = useMemo(() => {
+    if (!doc || !zoomId) return [];
+    const predicate = parseQuery(filter);
+    return visibleRows(doc, zoomId, {
+      hideCompleted,
+      match: predicate
+        ? (node) =>
+            predicate({
+              node,
+              trail: ancestors(doc, node.id)
+                .filter((id) => id !== doc.rootId)
+                .map((id) => doc.nodes[id]?.text ?? "")
+            })
+        : undefined
+    });
+  }, [doc, zoomId, filter, hideCompleted]);
 
   // A zoomed node with nothing under it would be a dead end — give it a row.
+  // An empty *filter* result is not that: the rows are there, just not shown,
+  // and adding one would put a blank line into the document every keystroke.
   useEffect(() => {
-    if (doc && zoomId && rows.length === 0) edit((current) => ensureEditable(current, zoomId), { transient: true });
-  }, [doc, zoomId, rows.length, edit]);
+    if (doc && zoomId && rows.length === 0 && filter === "" && !hideCompleted) {
+      edit((current) => ensureEditable(current, zoomId), { transient: true });
+    }
+  }, [doc, zoomId, rows.length, filter, hideCompleted, edit]);
 
 
   return {

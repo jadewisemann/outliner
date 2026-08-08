@@ -27,6 +27,7 @@ export function App() {
     () => (localStorage.getItem("outliner:theme") as "light" | "dark") ?? "light"
   );
   const fileInput = useRef<HTMLInputElement>(null);
+  const filterInput = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLElement>(null);
 
   useEffect(() => {
@@ -86,9 +87,12 @@ export function App() {
         openSearch();
         return;
       }
+      // ⌘F filters the document in place rather than opening a result list:
+      // the rows stay where they are and stay editable.
       if (mod && !event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
-        openSearch();
+        filterInput.current?.focus();
+        filterInput.current?.select();
         return;
       }
       if (mod && event.key === "/") {
@@ -212,6 +216,35 @@ export function App() {
             </details>
           </div>
         </header>
+
+        <div className={`filter-bar${view.filter !== "" ? " filter-bar-on" : ""}`}>
+          <input
+            ref={filterInput}
+            className="filter-input"
+            placeholder="이 문서 안에서 거르기 (⌘F) — is:incomplete, #태그, -제외"
+            value={view.filter}
+            onChange={(event) => store.setView({ filter: event.target.value })}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              store.setView({ filter: "" });
+              event.currentTarget.blur();
+            }}
+          />
+          {view.filter !== "" ? (
+            <>
+              <span className="filter-count">{store.rows.length}행</span>
+              <button type="button" className="ghost" onClick={() => store.setView({ filter: "" })}>
+                ×
+              </button>
+            </>
+          ) : null}
+          {view.hideCompleted ? (
+            <button type="button" className="filter-flag" onClick={() => store.setView({ hideCompleted: false })}>
+              완료 숨김 ×
+            </button>
+          ) : null}
+        </div>
 
         {zoomed ? <h1 className="zoom-title">{doc.nodes[view.zoomId]?.text || "(빈 항목)"}</h1> : null}
 

@@ -1,5 +1,6 @@
 import { extractTags } from "../outline/inline";
 import { ancestors } from "../outline/tree";
+import { parseQuery } from "./query";
 import { docList, type Doc, type Id, type Workspace } from "../types";
 
 export type Hit = {
@@ -13,12 +14,15 @@ export type Hit = {
 };
 
 /**
- * Matches every whitespace-separated term (AND). A term starting with `#`
- * only matches tags; anything else matches text or note, case-insensitively.
+ * Every row in the workspace that the query accepts, active document first.
+ *
+ * The query language itself lives in `query.ts`, because the in-document
+ * filter has to understand exactly the same one — a query that meant two
+ * different things in two places would be worse than no operators at all.
  */
 export function search(workspace: Workspace, query: string, limit = 200): Hit[] {
-  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-  if (terms.length === 0) return [];
+  const accepts = parseQuery(query);
+  if (!accepts) return [];
 
   const hits: Hit[] = [];
   const ids = docList(workspace).map((doc) => doc.id);
@@ -26,30 +30,16 @@ export function search(workspace: Workspace, query: string, limit = 200): Hit[] 
 
   for (const docId of order) {
     const doc = workspace.docs[docId];
-    if (!doc) continue;
+    if (!doc || doc.kind === "folder") continue;
     for (const node of Object.values(doc.nodes)) {
       if (node.id === doc.rootId) continue;
-      if (!matches(node.text, node.note, terms)) continue;
-      hits.push({
-        docId,
-        docTitle: doc.title,
-        nodeId: node.id,
-        text: node.text,
-        note: node.note,
-        trail: trailOf(doc, node.id)
-      });
+      const trail = trailOf(doc, node.id);
+      if (!accepts({ node, trail })) continue;
+      hits.push({ docId, docTitle: doc.title, nodeId: node.id, text: node.text, note: node.note, trail });
       if (hits.length >= limit) return hits;
     }
   }
   return hits;
-}
-
-function matches(text: string, note: string, terms: string[]): boolean {
-  const haystack = `${text}\n${note}`.toLowerCase();
-  const tags = extractTags(text).map((tag) => tag.toLowerCase());
-  return terms.every((term) =>
-    term.startsWith("#") ? tags.some((tag) => tag === term || tag.startsWith(`${term}/`)) : haystack.includes(term)
-  );
 }
 
 function trailOf(doc: Doc, id: Id): string[] {

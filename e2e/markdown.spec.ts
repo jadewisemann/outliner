@@ -175,3 +175,46 @@ test("the palette jumps to a document and to an item", async ({ page }) => {
   await page.keyboard.press("Control+p");
   await expect(page.locator(".palette-hit").first()).toContainText("최근");
 });
+
+test("⌘F filters the document in place and the rows stay editable", async ({ page }) => {
+  await page.keyboard.type("Groceries");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("milk");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("bread");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.type("Hardware");
+
+  await page.keyboard.press("Control+f");
+  await page.locator(".filter-input").fill("milk");
+
+  // The match keeps the ancestor that places it; the unrelated branch goes.
+  expect(await rowTexts(page)).toEqual(["Groceries", "milk"]);
+
+  await page.locator(".row").last().click();
+  await page.keyboard.type(" 2L");
+  await expect(value(page)).toHaveValue("milk 2L");
+
+  await page.locator(".filter-input").click();
+  await page.keyboard.press("Escape");
+  expect(await rowTexts(page)).toEqual(["Groceries", "milk 2L", "bread", "Hardware"]);
+});
+
+test("filters with an operator, not just words", async ({ page }) => {
+  await page.keyboard.type("shopping");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("[] milk");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("bread");
+  await page.keyboard.press("Control+Enter");
+
+  await page.keyboard.press("Control+f");
+  await page.locator(".filter-input").fill("is:incomplete");
+  expect(await rowTexts(page)).toEqual(["shopping", "milk"]);
+
+  await page.locator(".filter-input").fill("is:completed");
+  expect(await rowTexts(page)).toEqual(["shopping", "bread"]);
+});

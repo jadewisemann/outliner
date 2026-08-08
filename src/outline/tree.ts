@@ -34,9 +34,23 @@ export function subtree(doc: Doc, id: Id): Id[] {
   return out;
 }
 
-/** Flattened rows under `zoomId`, skipping children of collapsed nodes. */
-export function visibleRows(doc: Doc, zoomId: Id): Row[] {
+export type RowFilter = {
+  /** Rows that fail this, and have no matching descendant, are hidden. */
+  match?: (node: Node) => boolean;
+  hideCompleted?: boolean;
+};
+
+/**
+ * Flattened rows under `zoomId`, skipping children of collapsed nodes.
+ *
+ * With a `match` the outline becomes a filtered view of itself: matching rows
+ * and the ancestors that place them, still editable where they sit. Collapse
+ * is ignored while filtering — a result hidden inside a folded parent is a
+ * result the reader was told about and cannot see.
+ */
+export function visibleRows(doc: Doc, zoomId: Id, filter: RowFilter = {}): Row[] {
   const rows: Row[] = [];
+  const keep = filter.match ? keepSet(doc, zoomId, filter.match) : null;
   // This runs during render, so a cycle in corrupt data must degrade to a
   // truncated outline rather than an infinite loop and a blank screen.
   const seen = new Set<Id>();
@@ -48,15 +62,33 @@ export function visibleRows(doc: Doc, zoomId: Id): Row[] {
     parent.children.forEach((id, index) => {
       const node = doc.nodes[id];
       if (!node || seen.has(id)) return;
+      // Hiding what is done hides its subtree too: a finished item's children
+      // are part of the finished item.
+      if (filter.hideCompleted && node.done) return;
+      if (keep && !keep.has(id)) return;
       // A row inherits its checkbox and its number from the list it is in, but
       // a row that is already ticked keeps its box whatever the list says —
       // otherwise turning a checklist off would silently hide the ticks.
       rows.push({ id, node, depth, index, parentId, checklist: checklist || node.done, numbered });
-      if (!node.collapsed) walk(id, depth + 1);
+      if (!node.collapsed || keep) walk(id, depth + 1);
     });
   };
   walk(zoomId, 0);
   return rows;
+}
+
+/** Matching nodes, plus every ancestor that places them under the zoom root. */
+function keepSet(doc: Doc, zoomId: Id, match: (node: Node) => boolean): Set<Id> {
+  const keep = new Set<Id>();
+  for (const id of subtree(doc, zoomId)) {
+    const node = doc.nodes[id];
+    if (id === zoomId || !node || !match(node)) continue;
+    keep.add(id);
+    for (const ancestor of ancestors(doc, id)) {
+      if (ancestor !== zoomId) keep.add(ancestor);
+    }
+  }
+  return keep;
 }
 
 export function rowBefore(rows: Row[], id: Id): Row | null {
