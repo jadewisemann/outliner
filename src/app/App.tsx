@@ -129,7 +129,7 @@ export function App() {
 
   return (
     <div className={`app${sidebarOpen ? " app-with-sidebar" : ""}`}>
-      {sidebarOpen ? <Sidebar store={store} onTagClick={openSearch} /> : null}
+      {sidebarOpen ? <Sidebar store={store} onTagClick={openSearch} onSearch={openSearch} /> : null}
 
       <main className="main" ref={scroller}>
         {store.saveFailed ? (

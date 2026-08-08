@@ -82,7 +82,9 @@ function lift(old: LegacyDoc, sort: string, now: ReturnType<typeof stamp>): Doc 
     sort,
     parent: null,
     kind: "doc",
+    query: "",
     bookmarked: false,
+    deleted: null,
     titleEdited: now,
     moved: now
   });

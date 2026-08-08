@@ -60,6 +60,10 @@ export function Palette({ store, commands, initialQuery, onClose, onSearch }: Pr
       onSearch(hit.tag);
       return;
     }
+    if (hit.kind === "saved") {
+      onSearch(hit.query);
+      return;
+    }
     if (hit.kind === "doc") {
       store.docs.select(hit.docId);
       return;
@@ -144,7 +148,8 @@ const KIND_LABEL: Record<Suggestion["kind"], string> = {
   doc: "문서",
   item: "항목",
   tag: "태그",
-  move: "이동"
+  move: "이동",
+  saved: "검색"
 };
 
 /** Marks the characters the fuzzy matcher actually landed on. */

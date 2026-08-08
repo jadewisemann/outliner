@@ -24,8 +24,10 @@ import {
   docList,
   makeDoc,
   makeFolder,
+  makeSearch,
   makeView,
   makeWorkspace,
+  realDocs,
   stamp,
   type Doc,
   type DocView,
@@ -262,30 +264,52 @@ export function useStore() {
             : current
         );
       },
+      /** Into the trash, where it stays restorable until the window runs out. */
       remove(id: Id) {
         editWorkspace((current) => {
-          const remaining = { ...current.docs };
-          delete remaining[id];
-          // The app always has to have a document open, so the last real one
-          // cannot go. Folders do not count towards that.
-          const survivors = Object.values(remaining).filter((doc) => doc.kind === "doc");
-          if (survivors.length === 0) return current;
-          const views = { ...current.views };
-          delete views[id];
+          const doomed = current.docs[id];
+          if (!doomed || doomed.deleted) return current;
+          // The app always has to have a document open, so the last live one
+          // cannot go. Folders and saved searches do not count towards that.
+          const survivors = realDocs(current).filter((doc) => doc.id !== id);
+          if (doomed.kind === "doc" && survivors.length === 0) return current;
+          const now = stamp();
           return {
             ...current,
-            docs: remaining,
-            graves: { ...current.graves, [id]: stamp() },
-            views,
+            docs: { ...current.docs, [id]: { ...doomed, deleted: now, titleEdited: now } },
             activeDocId: current.activeDocId === id ? survivors[0].id : current.activeDocId
           };
         });
+      },
+      restore(id: Id) {
+        editWorkspace((current) => {
+          const doc = current.docs[id];
+          if (!doc?.deleted) return current;
+          const now = stamp();
+          return { ...current, docs: { ...current.docs, [id]: { ...doc, deleted: null, titleEdited: now } } };
+        });
+      },
+      /** The one delete that cannot be undone; the file leaves the remote too. */
+      purge(id: Id) {
+        editWorkspace((current) => {
+          const remaining = { ...current.docs };
+          delete remaining[id];
+          const views = { ...current.views };
+          delete views[id];
+          return { ...current, docs: remaining, graves: { ...current.graves, [id]: stamp() }, views };
+        });
+      },
+      createSearch(title: string, query: string) {
+        const current = live.current;
+        const saved = makeSearch(title, query, { sort: keyBetween(current ? lastSort(current) : null, null) });
+        editWorkspace((now) => ({ ...now, docs: { ...now.docs, [saved.id]: saved } }));
+        return saved;
       },
       select(id: Id, options: { zoomId?: Id; focusId?: Id } = {}) {
         editWorkspace(
           (current) => {
             const target = current.docs[id];
-            if (!target || target.kind === "folder") return current;
+            if (!target || target.kind !== "doc" || target.deleted) return current;
             const existing = current.views[id] ?? makeView(target);
             return {
               ...current,

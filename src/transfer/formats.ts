@@ -109,7 +109,9 @@ export function importDoc(title: string, content: string, format: Format): Doc {
     sort: keyBetween(null, null),
     parent: null,
     kind: "doc",
+    query: "",
     bookmarked: false,
+    deleted: null,
     titleEdited: now,
     moved: now
   });

@@ -69,8 +69,10 @@ export function readDoc(id: Id, value: unknown, now = Date.now()): Doc | null {
     graves: readGraves(value.graves, now),
     sort: str(value.sort) ?? "V",
     parent: str(value.parent) ?? null,
-    kind: value.kind === "folder" ? "folder" : "doc",
+    kind: value.kind === "folder" || value.kind === "search" ? value.kind : "doc",
+    query: str(value.query) ?? "",
     bookmarked: value.bookmarked === true,
+    deleted: value.deleted === undefined || value.deleted === null ? null : readStamp(value.deleted, now),
     titleEdited: readStamp(value.titleEdited, now),
     moved: readStamp(value.moved, now)
   };

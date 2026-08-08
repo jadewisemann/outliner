@@ -1460,3 +1460,20 @@ button {
   text-align: center !important;
   line-height: 1;
 }
+
+.sidebar-toggle {
+  padding: 0;
+  cursor: pointer;
+}
+
+.doc-item-trashed .doc-open {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+.search-save {
+  float: right;
+  padding: 0;
+  font-size: 12px;
+  color: var(--accent);
+}

@@ -100,7 +100,9 @@ function mergeDoc(mine: Doc, theirs: Doc): Doc {
     rootId: mine.rootId,
     title: title.title,
     kind: title.kind,
+    query: title.query,
     bookmarked: title.bookmarked,
+    deleted: title.deleted,
     titleEdited: title.titleEdited,
     sort: position.sort,
     parent: position.parent,
@@ -181,6 +183,7 @@ function isUntouched(payload: SyncPayload): boolean {
   return (
     doc.title === "Inbox" &&
     doc.kind === "doc" &&
+    doc.deleted === null &&
     Object.keys(doc.graves).length === 0 &&
     Object.values(doc.nodes).every(
       (node) =>
@@ -206,7 +209,9 @@ function same(mine: Doc, merged: Doc): boolean {
     mine.sort !== merged.sort ||
     mine.parent !== merged.parent ||
     mine.kind !== merged.kind ||
+    mine.query !== merged.query ||
     mine.bookmarked !== merged.bookmarked ||
+    mine.deleted !== merged.deleted ||
     mine.titleEdited !== merged.titleEdited ||
     mine.moved !== merged.moved ||
     Object.keys(mine.nodes).length !== Object.keys(merged.nodes).length ||
@@ -276,11 +281,22 @@ export function pruneGraves(payload: SyncPayload, now: number): SyncPayload {
   };
 
   const docs: Record<Id, Doc> = {};
+  const graves = { ...payload.graves };
   for (const [id, doc] of Object.entries(payload.docs)) {
-    const graves = keep(doc.graves);
-    docs[id] = graves === doc.graves ? doc : { ...doc, graves };
+    // A document that has sat in the trash longer than the window becomes a
+    // real delete, on the same schedule and by the same rule everywhere — so
+    // no two devices disagree about whether it is still restorable.
+    if (doc.deleted && now - doc.deleted.at >= GRAVE_TTL_MS) {
+      // Stamped now, not when it was binned: a gravestone dated a month ago
+      // would be forgotten by the very next line, and a device that still has
+      // the file would then put the document back.
+      graves[id] = { at: now, by: doc.deleted.by };
+      continue;
+    }
+    const kept = keep(doc.graves);
+    docs[id] = kept === doc.graves ? doc : { ...doc, graves: kept };
   }
-  return { docs, graves: keep(payload.graves) };
+  return { docs, graves: keep(graves) };
 }
 
 /** True when the merge adopted anything the local side did not already have. */

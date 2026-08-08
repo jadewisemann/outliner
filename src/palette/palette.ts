@@ -1,7 +1,7 @@
 import { fuzzy } from "../outline/markdown";
 import { ancestors } from "../outline/tree";
 import { allTags } from "../search/search";
-import { docList, type Id, type Workspace } from "../types";
+import { docList, realDocs, type Id, type Workspace } from "../types";
 
 /**
  * What the palette offers, and how a query narrows it.
@@ -25,7 +25,8 @@ export type Suggestion =
   | { kind: "doc"; key: string; label: string; hint?: string; hits: number[]; docId: Id }
   | { kind: "item"; key: string; label: string; hint?: string; hits: number[]; docId: Id; nodeId: Id }
   | { kind: "tag"; key: string; label: string; hint?: string; hits: number[]; tag: string }
-  | { kind: "move"; key: string; label: string; hint?: string; hits: number[]; docId: Id };
+  | { kind: "move"; key: string; label: string; hint?: string; hits: number[]; docId: Id }
+  | { kind: "saved"; key: string; label: string; hint?: string; hits: number[]; query: string };
 
 export type Mode = "mixed" | "command" | "tag" | "move";
 
@@ -60,8 +61,7 @@ export function suggest(
   if (mode === "command") return rank(commands.map(asCommand), term);
   if (mode === "move") {
     return rank(
-      docList(workspace)
-        .filter((doc) => doc.kind === "doc")
+      realDocs(workspace)
         .map((doc) => ({
           kind: "move" as const,
           key: `move:${doc.id}`,
@@ -90,25 +90,32 @@ export function suggest(
   // Nothing typed: the documents most recently opened, the way quick-open
   // offers recent files before it offers a search.
   if (term === "") {
-    const byId = new Map(docList(workspace).map((doc) => [doc.id, doc]));
+    const byId = new Map(realDocs(workspace).map((doc) => [doc.id, doc]));
     const recent = recentDocIds.map((id) => byId.get(id)).filter((doc) => doc !== undefined);
-    const rest = docList(workspace).filter((doc) => !recentDocIds.includes(doc.id));
+    const rest = realDocs(workspace).filter((doc) => !recentDocIds.includes(doc.id));
     return [...recent, ...rest]
-      .filter((doc) => doc.kind === "doc")
       .slice(0, LIMIT)
       .map((doc) => asDoc(doc.id, doc.title, recentDocIds.includes(doc.id) ? "최근" : undefined));
   }
 
-  const docs = rank(
+  const saved = rank(
     docList(workspace)
-      .filter((doc) => doc.kind === "doc")
-      .map((doc) => asDoc(doc.id, doc.title)),
+      .filter((doc) => doc.kind === "search" && doc.deleted === null)
+      .map((doc) => ({
+        kind: "saved" as const,
+        key: `saved:${doc.id}`,
+        label: doc.title,
+        hint: doc.query,
+        hits: [],
+        query: doc.query
+      })),
     term
   );
 
+  const docs = rank(realDocs(workspace).map((doc) => asDoc(doc.id, doc.title)), term);
+
   const items: Suggestion[] = [];
-  for (const doc of docList(workspace)) {
-    if (doc.kind === "folder") continue;
+  for (const doc of realDocs(workspace)) {
     for (const node of Object.values(doc.nodes)) {
       if (node.id === doc.rootId || node.text === "") continue;
       if (items.length >= SCAN_LIMIT) break;
@@ -126,7 +133,7 @@ export function suggest(
 
   // Documents come first at equal strength: opening the right file is the more
   // common intent, and an item is always reachable from inside one.
-  return [...docs, ...rank(items, term)].slice(0, LIMIT);
+  return [...saved, ...docs, ...rank(items, term)].slice(0, LIMIT);
 }
 
 function asCommand(command: Command): Suggestion {

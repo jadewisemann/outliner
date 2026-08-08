@@ -245,4 +245,23 @@ describe("pruneGraves", () => {
     const pruned = pruneGraves({ docs: { [doc.id]: deleted }, graves: {} }, Date.now() + 40 * 24 * 3600 * 1000);
     expect(Object.keys(pruned.docs[doc.id].graves)).toHaveLength(0);
   });
+
+  it("turns a document that has sat in the trash long enough into a real delete", () => {
+    const doc = seed().doc;
+    const long = 40 * 24 * 3600 * 1000;
+    const binned: Doc = { ...doc, deleted: { at: Date.now() - long, by: "laptop" } };
+
+    const pruned = pruneGraves({ docs: { [doc.id]: binned }, graves: {} }, Date.now());
+    expect(pruned.docs[doc.id]).toBeUndefined();
+    expect(pruned.graves[doc.id]).toBeDefined();
+  });
+
+  it("leaves a document in the trash while it is still restorable", () => {
+    const doc = seed().doc;
+    const binned: Doc = { ...doc, deleted: { at: Date.now(), by: "laptop" } };
+
+    const pruned = pruneGraves({ docs: { [doc.id]: binned }, graves: {} }, Date.now());
+    expect(pruned.docs[doc.id].deleted).not.toBeNull();
+    expect(pruned.graves[doc.id]).toBeUndefined();
+  });
 });

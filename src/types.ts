@@ -62,14 +62,27 @@ export type Doc = {
   /** Position among siblings in the sidebar. */
   sort: string;
   /**
-   * Containing folder, or null at the top level. A folder is just a document
-   * with `kind: "folder"` — same record, same file, same merge rules, so the
-   * sidebar tree costs no new machinery.
+   * Containing folder, or null at the top level.
+   *
+   * A folder is just a document with `kind: "folder"`, and a saved search is
+   * one with `kind: "search"` — same record, same file, same merge rules. The
+   * sidebar tree, folders and saved searches together cost no new machinery
+   * and nothing new in the sync payload.
    */
   parent: Id | null;
-  kind: "doc" | "folder";
+  kind: "doc" | "folder" | "search";
+  /** The query, for a saved search. Empty for anything else. */
+  query: string;
   bookmarked: boolean;
-  /** Covers `title`, `kind` and `bookmarked` — everything but position. */
+  /**
+   * When this document was put in the trash, or null.
+   *
+   * A soft delete is what makes restoring possible at all: gravestones carry
+   * an id and a time, never content, so a hard delete is not recoverable by
+   * construction. The file stays on the remote until the trash is emptied.
+   */
+  deleted: Stamp | null;
+  /** Covers `title`, `kind`, `query`, `bookmarked` and `deleted`. */
   titleEdited: Stamp;
   /** Covers `sort` and `parent`. */
   moved: Stamp;
@@ -155,7 +168,9 @@ export function makeDoc(title = "Untitled", patch: Partial<Doc> = {}): Doc {
     sort: patch.sort ?? keyBetween(null, null),
     parent: patch.parent ?? null,
     kind: patch.kind ?? "doc",
+    query: patch.query ?? "",
     bookmarked: patch.bookmarked ?? false,
+    deleted: patch.deleted ?? null,
     titleEdited: now,
     moved: now
   };
@@ -164,6 +179,11 @@ export function makeDoc(title = "Untitled", patch: Partial<Doc> = {}): Doc {
 /** A folder holds no outline of its own, but is otherwise an ordinary document. */
 export function makeFolder(title = "New folder", patch: Partial<Doc> = {}): Doc {
   return { ...makeDoc(title, patch), kind: "folder" };
+}
+
+/** A saved search: a document whose content is the query. */
+export function makeSearch(title: string, query: string, patch: Partial<Doc> = {}): Doc {
+  return { ...makeDoc(title, patch), kind: "search", query };
 }
 
 export function makeView(doc: Doc, patch: Partial<DocView> = {}): DocView {
@@ -202,11 +222,23 @@ function byPosition(a: Doc, b: Doc): number {
   return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
-/** The documents and folders directly inside `parent`, in order. */
+/** The live documents and folders directly inside `parent`, in order. */
 export function docChildren(workspace: Workspace, parent: Id | null): Doc[] {
   return Object.values(workspace.docs)
-    .filter((doc) => folderOf(workspace, doc) === parent)
+    .filter((doc) => doc.deleted === null && folderOf(workspace, doc) === parent)
     .sort(byPosition);
+}
+
+/** What is in the trash, most recently thrown away first. */
+export function trashed(workspace: Workspace): Doc[] {
+  return Object.values(workspace.docs)
+    .filter((doc) => doc.deleted !== null)
+    .sort((a, b) => b.deleted!.at - a.deleted!.at);
+}
+
+/** Documents that can hold an outline — not folders, saved searches or trash. */
+export function realDocs(workspace: Workspace): Doc[] {
+  return docList(workspace).filter((doc) => doc.kind === "doc" && doc.deleted === null);
 }
 
 /**

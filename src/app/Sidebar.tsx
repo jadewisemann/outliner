@@ -3,11 +3,13 @@ import { reveal } from "../outline/tree";
 import { bookmarks } from "../palette/commands";
 import { allTags } from "../search/search";
 import type { Store } from "../store";
-import { docTree, type Id } from "../types";
+import { docTree, trashed, type Id } from "../types";
 
 type Props = {
   store: Store;
   onTagClick: (tag: string) => void;
+  /** A saved search opens the search panel rather than a document. */
+  onSearch: (query: string) => void;
 };
 
 const OPEN_KEY = "outliner:folders";
@@ -22,7 +24,7 @@ function loadOpen(): Set<Id> {
   }
 }
 
-export function Sidebar({ store, onTagClick }: Props) {
+export function Sidebar({ store, onTagClick, onSearch }: Props) {
   const { workspace, docs } = store;
   const [renaming, setRenaming] = useState<Id | null>(null);
   const [open, setOpen] = useState<Set<Id>>(loadOpen);
@@ -34,6 +36,8 @@ export function Sidebar({ store, onTagClick }: Props) {
   const tags = useMemo(() => allTags(settled).slice(0, 20), [settled]);
   const pinned = useMemo(() => bookmarks(store), [store]);
   const rows = docTree(workspace, (id) => open.has(id));
+  const bin = trashed(workspace);
+  const [binOpen, setBinOpen] = useState(false);
 
   const toggleFolder = (id: Id) => {
     setOpen((current) => {
@@ -158,10 +162,14 @@ export function Sidebar({ store, onTagClick }: Props) {
                     <button
                       type="button"
                       className="doc-open"
-                      onClick={() => (folder ? toggleFolder(id) : docs.select(id))}
+                      onClick={() =>
+                        folder ? toggleFolder(id) : doc.kind === "search" ? onSearch(doc.query) : docs.select(id)
+                      }
                       onDoubleClick={() => setRenaming(id)}
                     >
-                      <span className="doc-icon">{folder ? (open.has(id) ? "▾" : "▸") : "·"}</span>
+                      <span className="doc-icon">
+                        {folder ? (open.has(id) ? "▾" : "▸") : doc.kind === "search" ? "⌕" : "·"}
+                      </span>
                       {doc.title}
                     </button>
                     <button
@@ -196,6 +204,36 @@ export function Sidebar({ store, onTagClick }: Props) {
           {rows.length === 0 ? <p className="sidebar-empty">문서가 없습니다.</p> : null}
         </nav>
       </div>
+
+      {bin.length > 0 ? (
+        <div>
+          <button type="button" className="sidebar-title sidebar-toggle" onClick={() => setBinOpen((on) => !on)}>
+            휴지통 {bin.length}
+          </button>
+          {binOpen ? (
+            <nav className="doc-list">
+              {bin.map((doc) => (
+                <div key={doc.id} className="doc-item doc-item-trashed">
+                  <span className="doc-open">{doc.title}</span>
+                  <button type="button" className="ghost" title="되살리기" onClick={() => docs.restore(doc.id)}>
+                    ↩
+                  </button>
+                  <button
+                    type="button"
+                    className="ghost"
+                    title="완전히 삭제"
+                    onClick={() => {
+                      if (confirm(`"${doc.title}" 을(를) 완전히 삭제할까요? 되돌릴 수 없습니다.`)) docs.purge(doc.id);
+                    }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </nav>
+          ) : null}
+        </div>
+      ) : null}
 
       {tags.length > 0 ? (
         <div className="tag-cloud">
