@@ -2,6 +2,19 @@
 <html lang="ko">
   <head>
     <meta charset="UTF-8" />
+    <!--
+      The sync token lives in localStorage, so the thing worth spending a policy
+      on is script injection: nothing runs that did not come from this origin.
+      `style-src-attr` is the one hole, and it is one this app digs itself — the
+      row indent and the virtualisation padding are style attributes.
+      `connect-src` cannot be narrowed honestly: the endpoint is whatever the
+      person configured. `frame-ancestors` is ignored in a meta tag; a host that
+      can send headers should add it there.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; connect-src *; base-uri 'none'; form-action 'none'"
+    />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Outliner</title>
     <meta name="color-scheme" content="light dark" />
