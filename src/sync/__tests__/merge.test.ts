@@ -214,8 +214,27 @@ describe("regressions", () => {
     const merged = mergeWorkspace(payload(cyclic), payload(cyclic));
     expect(visibleRows(merged.docs[doc.id], doc.rootId).map((row) => row.node.text).sort()).toEqual(["alpha", "beta"]);
   });
-});
+  it("takes the earlier creation stamp, since a node was only created once", () => {
+    const { doc, a } = seed();
+    const [mine, theirs] = fork(doc);
+    mine.nodes[a] = { ...mine.nodes[a], created: { at: 500, by: "laptop" } };
+    theirs.nodes[a] = { ...theirs.nodes[a], created: { at: 100, by: "phone" } };
 
+    // Both directions, because the merge has to be order-independent.
+    expect(mergeWorkspace(payload(mine), payload(theirs)).docs[doc.id].nodes[a].created.at).toBe(100);
+    expect(mergeWorkspace(payload(theirs), payload(mine)).docs[doc.id].nodes[a].created.at).toBe(100);
+  });
+
+  it("keeps a folder move from one device and a rename from the other", () => {
+    const [mine, theirs] = fork(seed().doc);
+    const renamed: Doc = { ...mine, title: "renamed", titleEdited: stamp() };
+    const filed: Doc = { ...theirs, parent: "some-folder", moved: stamp() };
+
+    const merged = mergeWorkspace(payload(renamed), payload(filed)).docs[mine.id];
+    expect(merged.title).toBe("renamed");
+    expect(merged.parent).toBe("some-folder");
+  });
+});
 describe("pruneGraves", () => {
   it("forgets gravestones once they are older than the window", () => {
     const { doc, b } = seed();

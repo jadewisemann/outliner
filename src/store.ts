@@ -20,6 +20,7 @@ import { ensureEditable, visibleRows, type Edit } from "./outline/tree";
 import {
   docList,
   makeDoc,
+  makeView,
   makeWorkspace,
   stamp,
   type Doc,
@@ -182,7 +183,7 @@ export function useStore() {
       ...current,
       docs: { ...current.docs, [doc.id]: doc },
       activeDocId: doc.id,
-      views: { ...current.views, [doc.id]: { zoomId: doc.rootId, focusId: doc.nodes[doc.rootId].children[0] ?? null } }
+      views: { ...current.views, [doc.id]: makeView(doc) }
     });
     const lastSort = (current: Workspace) => docList(current).at(-1)?.sort ?? null;
 
@@ -225,14 +226,14 @@ export function useStore() {
         editWorkspace(
           (current) => {
             const target = current.docs[id];
-            if (!target) return current;
-            const existing = current.views[id] ?? { zoomId: target.rootId, focusId: null };
+            if (!target || target.kind === "folder") return current;
+            const existing = current.views[id] ?? makeView(target);
             return {
               ...current,
               activeDocId: id,
               views: {
                 ...current.views,
-                [id]: { zoomId: options.zoomId ?? existing.zoomId, focusId: options.focusId ?? existing.focusId }
+                [id]: { ...existing, zoomId: options.zoomId ?? existing.zoomId, focusId: options.focusId ?? existing.focusId }
               }
             };
           },
@@ -404,7 +405,10 @@ export function useStore() {
   const stored = workspace && doc ? workspace.views[doc.id] : null;
   const view: DocView = {
     zoomId: doc && stored && doc.nodes[stored.zoomId] ? stored.zoomId : doc?.rootId ?? "",
-    focusId: stored?.focusId ?? null
+    focusId: stored?.focusId ?? null,
+    hideCompleted: stored?.hideCompleted ?? false,
+    hideNotes: stored?.hideNotes ?? false,
+    filter: stored?.filter ?? ""
   };
   const zoomId = view.zoomId;
   const rows = useMemo(() => (doc && zoomId ? visibleRows(doc, zoomId) : []), [doc, zoomId]);

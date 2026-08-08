@@ -99,8 +99,11 @@ function mergeDoc(mine: Doc, theirs: Doc): Doc {
     id: mine.id,
     rootId: mine.rootId,
     title: title.title,
+    kind: title.kind,
+    bookmarked: title.bookmarked,
     titleEdited: title.titleEdited,
     sort: position.sort,
+    parent: position.parent,
     moved: position.moved,
     nodes,
     graves
@@ -111,14 +114,19 @@ function mergeDoc(mine: Doc, theirs: Doc): Doc {
 function mergeNode(a: Node, b: Node): Node {
   const content = wins(b.edited, a.edited) ? b : a;
   const position = wins(b.moved, a.moved) ? b : a;
+  // A node was created once. Whichever side remembers that happening earlier
+  // is the one telling the truth, so this is a minimum rather than a race.
+  const created = a.created.at <= b.created.at ? a.created : b.created;
+
   // Keeping the original object when one side wins outright is what lets an
   // unchanged document come back from a merge as the very same object.
-  if (content === position) return content;
+  if (content === position && created === content.created) return content;
   return {
     ...content,
     parent: position.parent,
     sort: position.sort,
     moved: position.moved,
+    created,
     children: content.children
   };
 }
@@ -172,9 +180,19 @@ function isUntouched(payload: SyncPayload): boolean {
   const [doc] = docs;
   return (
     doc.title === "Inbox" &&
+    doc.kind === "doc" &&
     Object.keys(doc.graves).length === 0 &&
     Object.values(doc.nodes).every(
-      (node) => node.text === "" && node.note === "" && !node.done && !node.collapsed && node.heading === 0
+      (node) =>
+        node.text === "" &&
+        node.note === "" &&
+        !node.done &&
+        !node.collapsed &&
+        node.heading === 0 &&
+        node.color === 0 &&
+        !node.checklist &&
+        !node.numbered &&
+        !node.bookmarked
     )
   );
 }
@@ -185,6 +203,9 @@ function same(mine: Doc, merged: Doc): boolean {
   if (
     mine.title !== merged.title ||
     mine.sort !== merged.sort ||
+    mine.parent !== merged.parent ||
+    mine.kind !== merged.kind ||
+    mine.bookmarked !== merged.bookmarked ||
     mine.titleEdited !== merged.titleEdited ||
     mine.moved !== merged.moved ||
     Object.keys(mine.nodes).length !== Object.keys(merged.nodes).length ||
@@ -234,6 +255,8 @@ function observeStamps(payload: SyncPayload): void {
       observe(node.edited.at);
       observe(node.moved.at);
     }
+    // `created` is deliberately not observed: it is the oldest stamp in the
+    // payload, so it can only drag the logical clock backwards.
   }
 }
 

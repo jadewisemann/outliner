@@ -99,6 +99,9 @@ export function importDoc(title: string, content: string, format: Format): Doc {
     nodes,
     graves: {},
     sort: keyBetween(null, null),
+    parent: null,
+    kind: "doc",
+    bookmarked: false,
     titleEdited: now,
     moved: now
   });
@@ -165,5 +168,5 @@ export function parseBackup(content: string): Workspace | null {
 
 function isKnownVersion(raw: unknown): boolean {
   const version = (raw as { version?: unknown } | null)?.version;
-  return version === 3 || version === 4;
+  return version === 3 || version === 4 || version === 5;
 }

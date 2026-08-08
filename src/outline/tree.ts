@@ -44,10 +44,14 @@ export function visibleRows(doc: Doc, zoomId: Id): Row[] {
     const parent = doc.nodes[parentId];
     if (!parent || seen.has(parentId)) return;
     seen.add(parentId);
+    const { checklist, numbered } = parent;
     parent.children.forEach((id, index) => {
       const node = doc.nodes[id];
       if (!node || seen.has(id)) return;
-      rows.push({ id, node, depth, index, parentId });
+      // A row inherits its checkbox and its number from the list it is in, but
+      // a row that is already ticked keeps its box whatever the list says —
+      // otherwise turning a checklist off would silently hide the ticks.
+      rows.push({ id, node, depth, index, parentId, checklist: checklist || node.done, numbered });
       if (!node.collapsed) walk(id, depth + 1);
     });
   };

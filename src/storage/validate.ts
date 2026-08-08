@@ -38,11 +38,16 @@ export function readWorkspace(value: unknown, now = Date.now()): Workspace | nul
       const zoomId = typeof view.zoomId === "string" ? view.zoomId : null;
       views[id] = {
         zoomId: zoomId && payload.docs[id].nodes[zoomId] ? zoomId : payload.docs[id].rootId,
-        focusId: typeof view.focusId === "string" ? view.focusId : null
+        focusId: typeof view.focusId === "string" ? view.focusId : null,
+        hideCompleted: view.hideCompleted === true,
+        hideNotes: view.hideNotes === true,
+        // A filter left over from a previous session would hide most of the
+        // outline with no visible cause, so it does not survive a reload.
+        filter: ""
       };
     }
   }
-  return { version: 4, ...payload, activeDocId, views };
+  return { version: 5, ...payload, activeDocId, views };
 }
 
 /**
@@ -63,6 +68,9 @@ export function readDoc(id: Id, value: unknown, now = Date.now()): Doc | null {
     nodes,
     graves: readGraves(value.graves, now),
     sort: str(value.sort) ?? "V",
+    parent: str(value.parent) ?? null,
+    kind: value.kind === "folder" ? "folder" : "doc",
+    bookmarked: value.bookmarked === true,
     titleEdited: readStamp(value.titleEdited, now),
     moved: readStamp(value.moved, now)
   };
@@ -86,6 +94,8 @@ function readNodes(value: unknown, now: number): Record<Id, Node> | null {
   for (const [id, raw] of entries(value)) {
     if (!isRecord(raw)) continue;
     const heading = Number(raw.heading);
+    const color = Number(raw.color);
+    const edited = readStamp(raw.edited, now);
     nodes[id] = {
       id,
       text: str(raw.text) ?? "",
@@ -93,10 +103,18 @@ function readNodes(value: unknown, now: number): Record<Id, Node> | null {
       collapsed: raw.collapsed === true,
       done: raw.done === true,
       heading: heading === 1 || heading === 2 || heading === 3 ? heading : 0,
+      checklist: raw.checklist === true,
+      numbered: raw.numbered === true,
+      color: Number.isInteger(color) && color >= 1 && color <= 6 ? (color as Node["color"]) : 0,
+      bookmarked: raw.bookmarked === true,
       parent: str(raw.parent) ?? null,
       sort: str(raw.sort) ?? "V",
       children: Array.isArray(raw.children) ? raw.children.filter((child) => typeof child === "string") : [],
-      edited: readStamp(raw.edited, now),
+      // Data written before nodes carried a creation stamp gets the oldest
+      // thing known about it rather than "now", or every old row would look
+      // brand new to a `created:` search.
+      created: raw.created === undefined ? edited : readStamp(raw.created, now),
+      edited,
       moved: readStamp(raw.moved, now)
     };
   }

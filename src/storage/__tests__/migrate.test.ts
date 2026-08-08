@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { migrate } from "../migrate";
+import { readWorkspace } from "../validate";
 import { visibleRows } from "../../outline/tree";
 import { makeWorkspace } from "../../types";
 
@@ -29,7 +30,7 @@ describe("migrate", () => {
     const workspace = migrate(structuredClone(V3));
     const doc = workspace.docs.doc;
 
-    expect(workspace.version).toBe(4);
+    expect(workspace.version).toBe(5);
     expect(doc.title).toBe("Notes");
     expect(visibleRows(doc, doc.rootId).map((row) => `${"  ".repeat(row.depth)}${row.node.text}`)).toEqual([
       "alpha",
@@ -58,6 +59,20 @@ describe("migrate", () => {
   it("passes a current workspace through untouched", () => {
     const workspace = makeWorkspace();
     expect(migrate(workspace)).toBe(workspace);
+  });
+
+  it("lifts a version 4 workspace by filling in the fields it never had", () => {
+    const v4 = { ...makeWorkspace(), version: 4 };
+    const lifted = readWorkspace(migrate(structuredClone(v4)));
+    const doc = Object.values(lifted!.docs)[0];
+
+    expect(lifted!.version).toBe(5);
+    expect(doc.kind).toBe("doc");
+    expect(doc.parent).toBeNull();
+    expect(Object.values(doc.nodes).every((node) => node.color === 0 && !node.checklist)).toBe(true);
+    // Nothing else knows when these rows appeared, so their last edit is the
+    // closest honest answer — not the moment of the upgrade.
+    expect(Object.values(doc.nodes).every((node) => node.created.at === node.edited.at)).toBe(true);
   });
 
   it("falls back to a fresh workspace only for input it cannot read", () => {
