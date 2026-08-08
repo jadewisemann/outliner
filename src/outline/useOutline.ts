@@ -421,8 +421,9 @@ export function useOutline(
   /* ---------------------------------------------------------------- */
 
   const selected = useMemo(() => new Set(selection), [selection]);
-  const activeId = selection.length > 0 ? null : focus?.id ?? null;
-  const window = useVirtualRows(rows, scrollRef, containerRef, activeId);
+  const pin = selection.length > 0 ? null : focus;
+  const activeId = pin?.id ?? null;
+  const window = useVirtualRows(rows, scrollRef, containerRef, pin);
 
   return {
     containerRef,

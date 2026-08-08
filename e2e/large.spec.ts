@@ -42,6 +42,12 @@ test("keeps the DOM small and the whole document reachable", async ({ page }) =>
     document.querySelector(".main")!.scrollTop = 0;
   });
   await expect(page.getByText("line 1", { exact: true })).toBeVisible();
+
+  // And it stays there. The row being edited is 2000 lines down; hauling the
+  // page back to it a moment later would make a long document unreadable.
+  await page.waitForTimeout(1000);
+  await expect(page.getByText("line 1", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.querySelector(".main")!.scrollTop)).toBe(0);
 });
 
 test("search jumps to a row far outside the rendered window", async ({ page }) => {

@@ -26,7 +26,8 @@ export function useVirtualRows(
   rows: Row[],
   scrollRef: RefObject<HTMLElement>,
   contentRef: RefObject<HTMLElement>,
-  pinned: Id | null
+  /** The latest focus request, whose `seq` distinguishes a new one from the same one. */
+  pinned: { id: Id; seq: number } | null
 ): RowWindow {
   const [heights, setHeights] = useState<Record<Id, number>>({});
   const [viewport, setViewport] = useState({ top: 0, height: 0 });
@@ -81,16 +82,24 @@ export function useVirtualRows(
   // A focus request can land on a row far outside the window — a search hit, or
   // an undo. Scrolling to it brings it into the window on the next frame;
   // widening the window to reach it would mount every row in between.
+  //
+  // Only a *new* request scrolls. Reacting to the window instead would mean
+  // that scrolling away from the row you are editing hauls the page straight
+  // back to it, which is not a thing a document should do.
+  const boundsRef = useRef(bounds);
+  boundsRef.current = bounds;
+  const answered = useRef(-1);
   useEffect(() => {
     const scroller = scrollRef.current;
     const content = contentRef.current;
-    if (!virtual || !pinned || !scroller || !content) return;
-    const at = rows.findIndex((row) => row.id === pinned);
-    if (at === -1 || (at >= bounds.start && at < bounds.end)) return;
+    if (!virtual || !pinned || !scroller || !content || pinned.seq === answered.current) return;
+    answered.current = pinned.seq;
+    const at = rows.findIndex((row) => row.id === pinned.id);
+    if (at === -1 || (at >= boundsRef.current.start && at < boundsRef.current.end)) return;
 
     const origin = content.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
     scroller.scrollTop = origin + offsets[at] - scroller.clientHeight / 3;
-  }, [virtual, pinned, rows, bounds, offsets, scrollRef, contentRef]);
+  }, [virtual, pinned, rows, offsets, scrollRef, contentRef]);
 
   // Record the real height of everything currently rendered.
   // Heights are keyed by node id; without this they would accumulate for every
