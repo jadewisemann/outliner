@@ -18,20 +18,33 @@ export function useTransfer(store: Store) {
     [store]
   );
 
-  const importFile = useCallback(
-    async (file: File) => {
-      const content = await file.text();
-      const backup = parseBackup(content);
-      if (backup) {
-        // Importing a backup replaces everything; that decision stays with the user.
-        if (confirm("백업 파일입니다. 현재 워크스페이스를 덮어쓸까요?")) store.docs.replaceAll(backup);
-        return;
+  /**
+   * A whole export at once, since that is the shape another outliner hands
+   * over: one file per document. A backup among them replaces the workspace
+   * and nothing else in the batch is read — the two cannot both be honoured.
+   */
+  const importFiles = useCallback(
+    async (files: File[]) => {
+      for (const file of files) {
+        const content = await file.text();
+        const backup = parseBackup(content);
+        if (backup) {
+          // Importing a backup replaces everything; that decision stays with the user.
+          if (confirm("백업 파일입니다. 현재 워크스페이스를 덮어쓸까요?")) store.docs.replaceAll(backup);
+          return;
+        }
       }
-      const title = file.name.replace(/\.[^.]+$/, "");
-      store.docs.add(importDoc(title, content, detectFormat(file.name, content)));
+
+      // Files arrive in whatever order the picker gave them; a stable one
+      // keeps the sidebar reproducible across two imports of the same folder.
+      for (const file of [...files].sort((a, b) => a.name.localeCompare(b.name))) {
+        const content = await file.text();
+        const title = file.name.replace(/\.[^.]+$/, "");
+        store.docs.add(importDoc(title, content, detectFormat(file.name, content)));
+      }
     },
     [store]
   );
 
-  return { exportAs, importFile };
+  return { exportAs, importFiles };
 }

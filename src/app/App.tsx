@@ -255,10 +255,11 @@ export function App() {
         ref={fileInput}
         type="file"
         accept=".md,.markdown,.txt,.opml,.xml,.json"
+        multiple
         hidden
         onChange={(event) => {
-          const file = event.target.files?.[0];
-          if (file) void transfer.importFile(file);
+          const files = [...(event.target.files ?? [])];
+          if (files.length > 0) void transfer.importFiles(files);
           event.target.value = "";
         }}
       />
