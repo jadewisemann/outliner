@@ -17,7 +17,7 @@ import {
   type SyncConfig,
   type SyncStatus
 } from "./sync/api/remote";
-import { ancestors, ensureEditable, visibleRows, type Edit } from "./outline/tree";
+import { ancestors, cutSubtree, ensureEditable, graftSubtree, visibleRows, type Edit } from "./outline/tree";
 import { parseQuery } from "./search/query";
 import {
   docChildren,
@@ -97,11 +97,6 @@ export function useStore() {
     };
   }, [workspace]);
 
-  const requestFocus = useCallback((id: Id, caret: number | "end" = "end") => {
-    focusSeq.current += 1;
-    setFocus({ id, caret, seq: focusSeq.current });
-  }, []);
-
   const applyWorkspace = useCallback((next: Workspace) => {
     live.current = next;
     setWorkspace(next);
@@ -125,6 +120,31 @@ export function useStore() {
       if (next !== current) commit(next, current, options);
     },
     [commit]
+  );
+
+  /**
+   * Moves the caret, and records where it went.
+   *
+   * The recording is the part that is easy to miss: `focus` is a one-shot
+   * request that a row consumes, while `view.focusId` is "where the reader
+   * is". Anything asking *which row* — the palette's row commands, the
+   * restore-on-reload landing spot — reads the latter, so a caret moved by a
+   * click or an arrow key has to update it too, not only one moved by an edit.
+   */
+  const requestFocus = useCallback(
+    (id: Id, caret: number | "end" = "end") => {
+      focusSeq.current += 1;
+      setFocus({ id, caret, seq: focusSeq.current });
+      editWorkspace(
+        (current) => {
+          const view = current.views[current.activeDocId];
+          if (!view || view.focusId === id) return current;
+          return { ...current, views: { ...current.views, [current.activeDocId]: { ...view, focusId: id } } };
+        },
+        { transient: true }
+      );
+    },
+    [editWorkspace]
   );
 
   /** Applies a pure tree edit to the active document, honouring its focus request. */
@@ -300,6 +320,27 @@ export function useStore() {
       },
       replaceAll(next: Workspace) {
         editWorkspace(() => next);
+      },
+      /**
+       * Moves a row and everything under it into another document, ids and all.
+       *
+       * Both documents change in one edit, but they are two files on the
+       * remote, so a device that pulls between the two writes sees the row in
+       * both places. It converges on the next round — the merge does not care
+       * about order — and `remote.ts` pushes the document that did the burying
+       * first, which makes that window as small as it can be.
+       */
+      moveToDoc(nodeId: Id, targetDocId: Id) {
+        editWorkspace((current) => {
+          const source = current.docs[current.activeDocId];
+          const target = current.docs[targetDocId];
+          if (!source || !target || target.kind === "folder" || source.id === target.id) return current;
+
+          const cut = cutSubtree(source, nodeId);
+          if (!cut) return current;
+          const grafted = graftSubtree(target, target.rootId, cut.taken);
+          return { ...current, docs: { ...current.docs, [source.id]: cut.doc, [target.id]: grafted.doc } };
+        });
       }
     };
   }, [editWorkspace, requestFocus]);

@@ -51,6 +51,7 @@ export function App() {
     () =>
       store.ready
         ? buildCommands(store, {
+            openPalette,
             exportAs: transfer.exportAs,
             importFile: () => fileInput.current?.click(),
             toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
@@ -59,7 +60,7 @@ export function App() {
             openShortcuts: () => setOverlay({ kind: "shortcuts" })
           })
         : [],
-    [store, transfer.exportAs]
+    [store, transfer.exportAs, openPalette]
   );
 
   // Returning from GitHub's consent screen: finish the exchange and land the

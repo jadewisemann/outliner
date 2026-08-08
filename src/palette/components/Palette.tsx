@@ -16,7 +16,8 @@ type Props = {
 const HINTS: Record<ReturnType<typeof modeOf>, string> = {
   mixed: "문서와 항목 · `>` 명령 · `#` 태그",
   command: "명령",
-  tag: "태그"
+  tag: "태그",
+  move: "이 항목을 옮길 문서"
 };
 
 /**
@@ -63,6 +64,11 @@ export function Palette({ store, commands, initialQuery, onClose, onSearch }: Pr
       store.docs.select(hit.docId);
       return;
     }
+    if (hit.kind === "move") {
+      const nodeId = store.view.focusId;
+      if (nodeId) store.docs.moveToDoc(nodeId, hit.docId);
+      return;
+    }
     store.docs.select(hit.docId, { zoomId: store.workspace.docs[hit.docId].rootId });
     store.edit((doc) => reveal(doc, hit.nodeId), { transient: true });
     store.requestFocus(hit.nodeId);
@@ -73,7 +79,7 @@ export function Palette({ store, commands, initialQuery, onClose, onSearch }: Pr
       <input
         ref={input}
         className="search-input"
-        placeholder="어디로, 또는 무엇을 — `>` 명령, `#` 태그"
+        placeholder="어디로, 또는 무엇을 — `>` 명령, `>>` 항목 이동, `#` 태그"
         value={query}
         autoFocus
         onChange={(event) => {
@@ -137,7 +143,8 @@ const KIND_LABEL: Record<Suggestion["kind"], string> = {
   command: "명령",
   doc: "문서",
   item: "항목",
-  tag: "태그"
+  tag: "태그",
+  move: "이동"
 };
 
 /** Marks the characters the fuzzy matcher actually landed on. */

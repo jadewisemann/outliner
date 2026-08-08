@@ -351,7 +351,19 @@ function createGithubBackend(config: Extract<SyncConfig, { kind: "github" }>, ke
         graves = { etag: null, sha: written, text: gravesText, value: payload.graves };
       }
 
-      for (const [id, doc] of Object.entries(payload.docs)) {
+      // A document that buried something goes first. Moving a row to another
+      // document is two files: if the destination were written first, a device
+      // reading in between would see the row in both places until it caught
+      // up. Same family as gravestones-before-deletions, one level down.
+      const buried = (id: Id, doc: Doc) => {
+        const known = mirror.get(id)?.doc;
+        return known ? Object.keys(doc.graves).length > Object.keys(known.graves).length : false;
+      };
+      const changed = Object.entries(payload.docs).sort(
+        ([a, left], [b, right]) => Number(buried(b, right)) - Number(buried(a, left))
+      );
+
+      for (const [id, doc] of changed) {
         const name = fileNameOf(id);
         if (!name) continue;
         const text = serialize(doc);

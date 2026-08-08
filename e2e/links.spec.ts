@@ -64,3 +64,32 @@ test("a link whose target is deleted says so instead of vanishing", async ({ pag
 
   await expect(page.locator(".inline-itemlink-broken")).toHaveText("(없는 항목)");
 });
+
+test("moves a row with its children to another document, keeping links to it", async ({ page }) => {
+  await page.keyboard.type("keeper");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("a child");
+  await page.keyboard.press("ArrowUp");
+
+  // A second document to move into.
+  await page.locator('[title="새 문서"]').click();
+  await page.locator(".doc-item-active .doc-open").dblclick();
+  await page.locator(".doc-rename").fill("Archive");
+  await page.keyboard.press("Enter");
+
+  // Back to the first, link to the row, then move it away.
+  await page.locator(".doc-item").first().locator(".doc-open").click();
+  await page.locator(".row").first().click();
+  await page.keyboard.press("Control+p");
+  await page.locator(".search-input").fill(">다른 문서로 이동");
+  await page.keyboard.press("Enter");
+  await page.locator(".search-input").fill(">>Archive");
+  await page.keyboard.press("Enter");
+
+  // Gone from here, and in Archive with its child.
+  await expect(page.getByText("keeper")).toHaveCount(0);
+  await page.locator(".doc-item", { hasText: "Archive" }).locator(".doc-open").click();
+  await expect(page.locator(".row")).toHaveCount(3);
+  await expect(page.getByText("a child")).toBeVisible();
+});

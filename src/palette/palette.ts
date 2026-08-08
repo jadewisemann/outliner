@@ -24,15 +24,18 @@ export type Suggestion =
   | { kind: "command"; key: string; label: string; hint?: string; hits: number[]; command: Command }
   | { kind: "doc"; key: string; label: string; hint?: string; hits: number[]; docId: Id }
   | { kind: "item"; key: string; label: string; hint?: string; hits: number[]; docId: Id; nodeId: Id }
-  | { kind: "tag"; key: string; label: string; hint?: string; hits: number[]; tag: string };
+  | { kind: "tag"; key: string; label: string; hint?: string; hits: number[]; tag: string }
+  | { kind: "move"; key: string; label: string; hint?: string; hits: number[]; docId: Id };
 
-export type Mode = "mixed" | "command" | "tag";
+export type Mode = "mixed" | "command" | "tag" | "move";
 
 const LIMIT = 40;
 /** Bounds the scan on a large workspace; the ranked head is what gets shown. */
 const SCAN_LIMIT = 600;
 
 export function modeOf(query: string): Mode {
+  // Checked before ">", since ">>" is the longer prefix.
+  if (query.startsWith(">>")) return "move";
   if (query.startsWith(">")) return "command";
   if (query.startsWith("#")) return "tag";
   return "mixed";
@@ -40,7 +43,9 @@ export function modeOf(query: string): Mode {
 
 /** The query with its mode prefix removed. */
 export function termOf(query: string): string {
-  return modeOf(query) === "mixed" ? query.trim() : query.slice(1).trim();
+  const mode = modeOf(query);
+  if (mode === "mixed") return query.trim();
+  return query.slice(mode === "move" ? 2 : 1).trim();
 }
 
 export function suggest(
@@ -53,6 +58,21 @@ export function suggest(
   const term = termOf(query);
 
   if (mode === "command") return rank(commands.map(asCommand), term);
+  if (mode === "move") {
+    return rank(
+      docList(workspace)
+        .filter((doc) => doc.kind === "doc")
+        .map((doc) => ({
+          kind: "move" as const,
+          key: `move:${doc.id}`,
+          label: doc.title || "Untitled",
+          hint: "여기로 이동",
+          hits: [],
+          docId: doc.id
+        })),
+      term
+    );
+  }
   if (mode === "tag") {
     return rank(
       allTags(workspace).map((entry) => ({

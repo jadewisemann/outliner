@@ -457,6 +457,48 @@ export function duplicate(doc: Doc, id: Id): Edit {
   return { doc: withNodes(doc, nodes), focusId: copy(id, parentId, at), caret: node.text.length };
 }
 
+/* ------------------------------------------------------------------ */
+/* across documents                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Lifts a row and its descendants out of a document, leaving gravestones.
+ *
+ * The nodes come back untouched so the caller can graft them elsewhere with
+ * their ids intact — which is the whole point, since `((id))` links to any of
+ * them have to keep working after the move.
+ */
+export function cutSubtree(doc: Doc, id: Id): { doc: Doc; taken: Node[] } | null {
+  if (!doc.nodes[id] || id === doc.rootId) return null;
+  const taken = subtree(doc, id).map((each) => doc.nodes[each]);
+
+  const nodes = draft(doc);
+  const graves = { ...doc.graves };
+  removeInto(nodes, graves, id);
+  return { doc: { ...doc, nodes, graves }, taken };
+}
+
+/**
+ * Puts a lifted subtree at the end of `parentId`, keeping every id.
+ *
+ * Anything the destination had buried under those ids is forgiven: the rows
+ * are demonstrably alive, and leaving the gravestone would make them vanish
+ * again on the next merge.
+ */
+export function graftSubtree(doc: Doc, parentId: Id, taken: Node[]): Edit {
+  const root = taken[0];
+  if (!root || !doc.nodes[parentId]) return { doc };
+
+  const now = stamp();
+  const nodes = draft(doc);
+  for (const node of taken) nodes[node.id] = { ...node, edited: now, moved: now };
+  place(nodes, parentId, root.id, doc.nodes[parentId].children.length);
+
+  const graves = { ...doc.graves };
+  for (const node of taken) delete graves[node.id];
+  return { doc: { ...doc, nodes, graves }, focusId: root.id };
+}
+
 /** Moves `id` (with subtree) to position `index` under `newParentId`. Used by drag & drop. */
 export function reparent(doc: Doc, id: Id, newParentId: Id, index: number): Edit {
   if (id === newParentId || !doc.nodes[newParentId] || subtree(doc, id).includes(newParentId)) return { doc };

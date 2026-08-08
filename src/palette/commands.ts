@@ -11,6 +11,8 @@ import type { Command } from "./palette";
  * a hand back to the trackpad.
  */
 export type AppActions = {
+  /** Reopens the palette on a given prefix, for commands that need a target. */
+  openPalette(query: string): void;
   exportAs(format: "markdown" | "opml" | "text" | "backup"): void;
   importFile(): void;
   toggleTheme(): void;
@@ -66,6 +68,17 @@ export function buildCommands(store: Store, actions: AppActions): Command[] {
       ? onRow(focused.bookmarked ? "항목 즐겨찾기 해제" : "항목 즐겨찾기", "row.bookmark", {
           bookmarked: !focused.bookmarked
         })
+      : []),
+
+    ...(focusId
+      ? [
+          {
+            id: "row.move",
+            label: "다른 문서로 이동…",
+            hint: ">>",
+            run: () => actions.openPalette(">>")
+          }
+        ]
       : []),
 
     /* the list the row is in */

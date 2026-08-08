@@ -296,4 +296,40 @@ describe("the GitHub backend, one file per document", () => {
 
     expect(Object.keys((await backend.pull()).payload.docs)).toEqual([doc.id]);
   });
+
+  it("writes the document that buried a row before the one that received it", async () => {
+    const repo = fakeGithub();
+    const backend = connect();
+
+    // Two documents already on the remote, so the mirror knows their graves.
+    const source = makeDoc("source");
+    const target = makeDoc("target");
+    let version: Version = (await backend.push(payload([source, target]), (await backend.pull()).version)) ?? null;
+    repo.writes.length = 0;
+
+    // A row moves: the source gains a gravestone, the target gains the row.
+    const moved = Object.keys(source.nodes).find((id) => id !== source.rootId)!;
+    const rest = { ...source.nodes };
+    delete rest[moved];
+    const cut: Doc = {
+      ...source,
+      nodes: { ...rest, [source.rootId]: { ...source.nodes[source.rootId], children: [] } },
+      graves: { [moved]: stamp() }
+    };
+    const grafted: Doc = {
+      ...target,
+      nodes: {
+        ...target.nodes,
+        [moved]: { ...source.nodes[moved], parent: target.rootId },
+        [target.rootId]: {
+          ...target.nodes[target.rootId],
+          children: [...target.nodes[target.rootId].children, moved]
+        }
+      }
+    };
+
+    // Offered destination-first, so only the ordering rule can save it.
+    version = (await backend.push(payload([grafted, cut]), version)) ?? null;
+    expect(repo.writes).toEqual([`outliner/docs/${cut.id}.json`, `outliner/docs/${grafted.id}.json`]);
+  });
 });
