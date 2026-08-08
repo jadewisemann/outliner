@@ -602,7 +602,9 @@ export function useStore() {
       setConfig: setSyncConfig,
       now: syncNow,
       /** Present only on a backend that keeps history — today, GitHub. */
-      history: backend?.history ?? null
+      history: backend?.history ?? null,
+      /** Likewise for somewhere to put attachment bytes. */
+      files: backend?.files ?? null
     },
     saveFailed
   };

@@ -34,6 +34,7 @@ export type RowApi = {
   openDocByTitle(title: string): void;
   openItem(id: string): void;
   resolveItem(id: string): string | null;
+  resolveFile(name: string): Promise<string | null>;
   dragStart(event: DragEvent, id: string): void;
   dragOver(event: DragEvent, row: RowModel): void;
   drop(event: DragEvent): void;
@@ -149,6 +150,7 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, completion, 
                   onDocLinkClick: api.openDocByTitle,
                   onItemLinkClick: api.openItem,
                   resolveItem: api.resolveItem,
+                  resolveFile: api.resolveFile,
                   showImages: true
                 })
               )}
@@ -209,6 +211,7 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, completion, 
               onDocLinkClick: api.openDocByTitle,
               onItemLinkClick: api.openItem,
               resolveItem: api.resolveItem,
+              resolveFile: api.resolveFile,
               showImages: true
             })}
           </div>

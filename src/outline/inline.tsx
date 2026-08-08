@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { highlight } from "./highlight";
 // Named TeX rather than Math: this file does arithmetic with the global one.
 import { TeX } from "./components/TeX";
+import { Attachment } from "./components/Attachment";
 
 /**
  * Inline markup understood in a row: **bold**, *italic*, `code`, ~~strike~~,
@@ -19,6 +20,8 @@ type InlineHandlers = {
   resolveItem?: (id: string) => string | null;
   /** Images are only drawn where there is room; a picker list wants the text. */
   showImages?: boolean;
+  /** Turns an attachment name into something an `<img>` can use. */
+  resolveFile?: (name: string) => Promise<string | null>;
   /**
    * Renders links and tags as plain spans. Set where the whole line is already
    * a control — a backlink entry, a search hit — since a button inside a
@@ -122,7 +125,13 @@ function renderToken(token: string, key: number, handlers: InlineHandlers): Reac
     const split = token.indexOf("](");
     const alt = token.slice(2, split);
     const src = token.slice(split + 2, -1);
-    if (!handlers.showImages || !/^https?:\/\//i.test(src)) return `${alt || src}`;
+    if (!handlers.showImages) return `${alt || src}`;
+    if (src.startsWith("file:")) {
+      const resolve = handlers.resolveFile;
+      if (!resolve) return `${alt || src}`;
+      return <Attachment key={key} name={src.slice("file:".length)} alt={alt} resolve={resolve} />;
+    }
+    if (!/^https?:\/\//i.test(src)) return `${alt || src}`;
     return <img key={key} className="inline-image" src={src} alt={alt} loading="lazy" />;
   }
 

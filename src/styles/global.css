@@ -1688,3 +1688,13 @@ button {
   margin: 6px 0;
   overflow-x: auto;
 }
+
+.attachment-loading,
+.attachment-missing {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.attachment-missing {
+  text-decoration: line-through;
+}

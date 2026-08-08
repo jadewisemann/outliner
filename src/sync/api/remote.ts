@@ -62,9 +62,22 @@ export type History = {
   read(docId: Id, revision: string): Promise<Doc | null>;
 };
 
+/**
+ * Somewhere to put bytes that are not notes.
+ *
+ * Optional for the same reason history is: a plain `GET`/`PUT` URL is one
+ * document, with no room beside it. A repository has room.
+ */
+export type Files = {
+  put(name: string, bytes: Uint8Array): Promise<void>;
+  /** Null when the file is not there; throws `locked` when it cannot be read. */
+  get(name: string): Promise<Uint8Array | null>;
+};
+
 export type Backend = {
   pull(): Promise<Stored>;
   history?: History;
+  files?: Files;
   /** Resolves to `null` when the remote moved on and the caller should re-merge. */
   push(payload: SyncPayload, version: Version): Promise<Version | undefined>;
   /**
@@ -325,6 +338,37 @@ function createGithubBackend(config: Extract<SyncConfig, { kind: "github" }>, ke
     cadence: { pullMs: 30_000, pushMs: 10_000 },
 
     /**
+     * Attachments live beside the documents rather than inside them. A note
+     * stays a line of text; the bytes are a file, and a file is what a
+     * repository is good at.
+     *
+     * They are sealed with the same key as everything else, which is why they
+     * cannot be linked to directly — a private repository would refuse the
+     * request and an encrypted one would return noise. They are fetched
+     * through the API and turned into an object URL, same as the notes.
+     */
+    files: {
+      async put(name, bytes) {
+        const url = contents([...folder, "files", name]);
+        const existing = await api(url);
+        // Names are content-addressed, so a file that is already there is the
+        // same file: uploading it again would only add a commit.
+        if (existing.status === 200) return;
+        const written = await write(url, toBinaryString(bytes), null, `outliner: attach ${name}`);
+        if (!written) throw new Error("github attach failed");
+      },
+
+      async get(name) {
+        const response = await api(contents([...folder, "files", name]));
+        if (response.status === 404) return null;
+        if (!response.ok) throw new Error(`github attach read failed: ${response.status}`);
+        const body = (await response.json()) as { content?: string; encoding?: string };
+        if (body.encoding !== "base64" || typeof body.content !== "string") return null;
+        return fromBinaryString(await keys.open(fromBase64(body.content)));
+      }
+    },
+
+    /**
      * Every push was a commit, so the repository has been keeping a version
      * archive all along — this is only the part that reads it back. Encrypted
      * workspaces work too: an old file is opened with the same key as a new one.
@@ -530,6 +574,23 @@ function parse(raw: string): unknown {
   } catch {
     return null;
   }
+}
+
+/**
+ * Bytes as a string, one character per byte.
+ *
+ * Attachments go through the same seal-and-base64 path as the notes, and that
+ * path speaks strings — so the bytes are carried as latin-1 rather than given
+ * a second encoding of their own.
+ */
+function toBinaryString(bytes: Uint8Array): string {
+  let out = "";
+  for (let at = 0; at < bytes.length; at += 0x8000) out += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  return out;
+}
+
+function fromBinaryString(text: string): Uint8Array {
+  return Uint8Array.from(text, (char) => char.charCodeAt(0) & 0xff);
 }
 
 /** btoa/atob speak latin-1 only; the notes are UTF-8. */

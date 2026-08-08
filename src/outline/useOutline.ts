@@ -12,6 +12,7 @@ import {
 import type { Store } from "../store";
 import { matches, type Action, type Keymap } from "../app/keymap";
 import { labelOf } from "../search/links";
+import { MAX_ATTACHMENT_BYTES, attachmentUrl, nameFor, rememberUpload } from "../sync/api/attachments";
 import { allTags } from "../search/search";
 import { docList, type Color, type Id, type Node, type Row as RowModel } from "../types";
 import type { DropPosition, RowApi } from "./components/Row";
@@ -218,6 +219,42 @@ export function useOutline(
       setCompletion(trigger && items.length > 0 ? { rowId, trigger, items, index: 0 } : null);
     },
     [candidates]
+  );
+
+  /**
+   * Pasting an image uploads it and leaves a reference behind.
+   *
+   * Only a backend with somewhere to put bytes can do this, and saying so is
+   * better than silently dropping the paste — the picture is in the clipboard
+   * either way, and the reader needs to know it did not land.
+   */
+  const attach = useCallback(
+    async (file: File, rowId: Id) => {
+      const files = store.sync.files;
+      if (!files) {
+        alert("첨부는 GitHub 저장소를 백엔드로 쓸 때만 됩니다. 동기화 설정에서 연결하세요.");
+        return;
+      }
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        alert(`첨부는 ${Math.round(MAX_ATTACHMENT_BYTES / 1024)}KB까지입니다.`);
+        return;
+      }
+      const bytes = new Uint8Array(await file.arrayBuffer()) as Uint8Array<ArrayBuffer>;
+      const name = await nameFor(bytes, file.type);
+      try {
+        await files.put(name, bytes);
+      } catch {
+        alert("첨부를 올리지 못했습니다.");
+        return;
+      }
+      rememberUpload(name, file);
+      const label = file.name.replace(/\.[^.]+$/, "") || "image";
+      edit((current) => {
+        const node = current.nodes[rowId];
+        return node ? patchNode(current, rowId, { text: `${node.text}![${label}](file:${name})` }) : current;
+      });
+    },
+    [edit, store.sync.files]
   );
 
   const acceptCompletion = useCallback(
@@ -593,6 +630,12 @@ export function useOutline(
       onTextKeyDown,
       onNoteKeyDown,
       onPaste(event, row) {
+        const file = [...event.clipboardData.files].find((each) => each.type.startsWith("image/"));
+        if (file) {
+          event.preventDefault();
+          void attach(file, row.id);
+          return;
+        }
         const text = event.clipboardData.getData("text/plain");
         const element = event.currentTarget;
         // A url dropped onto selected text links it instead of replacing it.
@@ -674,6 +717,7 @@ export function useOutline(
       openDocByTitle: onDocLinkClick,
       openItem: onItemLinkClick,
       resolveItem: (id) => labelOf(workspaceRef.current, id),
+      resolveFile: (name) => attachmentUrl(store.sync.files, name),
       dragStart(event: DragEvent, id) {
         dragId.current = id;
         event.dataTransfer.effectAllowed = "move";
@@ -721,7 +765,9 @@ export function useOutline(
       focusNote,
       applyText,
       refreshCompletion,
-      acceptCompletion
+      acceptCompletion,
+      attach,
+      store.sync.files
     ]
   );
 

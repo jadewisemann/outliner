@@ -380,4 +380,28 @@ describe("the GitHub backend, one file per document", () => {
   it("has no history to offer on a plain REST endpoint", () => {
     expect(createBackend({ kind: "rest", url: "https://example.test/notes", token: "" }).history).toBeUndefined();
   });
+
+  it("stores an attachment beside the documents, sealed and content-named", async () => {
+    const repo = fakeGithub();
+    const backend = connect("hunter2");
+    const bytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x00, 0xff, 0x10]);
+
+    await backend.files!.put("abc123.png", bytes);
+    expect([...repo.files.keys()]).toEqual(["outliner/files/abc123.png"]);
+    // Sealed, so the raw file is not the bytes that went in.
+    expect(repo.files.get("outliner/files/abc123.png")!.text).not.toContain("PNG");
+
+    expect([...(await backend.files!.get("abc123.png"))!]).toEqual([...bytes]);
+    expect(await backend.files!.get("missing.png")).toBeNull();
+  });
+
+  it("does not commit the same attachment twice", async () => {
+    const repo = fakeGithub();
+    const backend = connect();
+    const bytes = new Uint8Array([1, 2, 3]);
+
+    await backend.files!.put("same.png", bytes);
+    await backend.files!.put("same.png", bytes);
+    expect(repo.writes.filter((path) => path.includes("/files/"))).toHaveLength(1);
+  });
 });
