@@ -12,8 +12,9 @@ import {
 import type { Store } from "../store";
 import { labelOf } from "../search/links";
 import { allTags } from "../search/search";
-import { docList, type Id, type Node, type Row as RowModel } from "../types";
+import { docList, type Color, type Id, type Node, type Row as RowModel } from "../types";
 import type { DropPosition, RowApi } from "./components/Row";
+import type { MenuSpot } from "./components/RowMenu";
 import { writeField } from "./components/Editable";
 import {
   applyCompletion,
@@ -82,6 +83,8 @@ export type OutlineView = {
   focus: Store["focus"];
   noteFocus: { id: Id; seq: number } | null;
   completion: Completion | null;
+  menu: MenuSpot | null;
+  closeMenu(): void;
   dropSpot: { id: Id; position: DropPosition } | null;
   api: RowApi;
   containerProps: {
@@ -112,6 +115,7 @@ export function useOutline(
   const [selection, setSelection] = useState<Id[]>([]);
   const [noteFocus, setNoteFocus] = useState<{ id: Id; seq: number } | null>(null);
   const [completion, setCompletion] = useState<Completion | null>(null);
+  const [menu, setMenu] = useState<MenuSpot | null>(null);
   const [dropSpot, setDropSpot] = useState<{ id: Id; position: DropPosition } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -618,6 +622,39 @@ export function useOutline(
       clearSelection() {
         setSelection([]);
       },
+      openMenu(event, row) {
+        event.preventDefault();
+        event.stopPropagation();
+        requestFocus(row.id);
+        setMenu({ row, x: event.clientX, y: event.clientY });
+      },
+      setColor(id, color: Color) {
+        edit((current) => patchNode(current, id, { color }));
+      },
+      toggleQuote(id) {
+        edit((current) => patchNode(current, id, { quote: !current.nodes[id]?.quote }));
+      },
+      // The flag belongs to the list, so these two act on the row's parent.
+      toggleChecklist(id) {
+        const parentId = docRef.current.nodes[id]?.parent;
+        if (parentId) edit((current) => patchNode(current, parentId, { checklist: !current.nodes[parentId]?.checklist }));
+      },
+      toggleNumbered(id) {
+        const parentId = docRef.current.nodes[id]?.parent;
+        if (parentId) edit((current) => patchNode(current, parentId, { numbered: !current.nodes[parentId]?.numbered }));
+      },
+      toggleRowBookmark(id) {
+        edit((current) => patchNode(current, id, { bookmarked: !current.nodes[id]?.bookmarked }));
+      },
+      copyItemLink(id) {
+        void navigator.clipboard?.writeText(`((${id}))`);
+      },
+      duplicateRow(id) {
+        edit((current) => duplicate(current, id));
+      },
+      removeRow(id) {
+        edit((current) => bulkRemove(current, zoomRef.current, [id]));
+      },
       openTag: onTagClick,
       openDocByTitle: onDocLinkClick,
       openItem: onItemLinkClick,
@@ -675,6 +712,7 @@ export function useOutline(
 
   /* ---------------------------------------------------------------- */
 
+  const closeMenu = useCallback(() => setMenu(null), []);
   const selected = useMemo(() => new Set(selection), [selection]);
   const pin = selection.length > 0 ? null : focus;
   const activeId = pin?.id ?? null;
@@ -690,6 +728,8 @@ export function useOutline(
     focus,
     noteFocus,
     completion,
+    menu,
+    closeMenu,
     dropSpot,
     api,
     containerProps: {

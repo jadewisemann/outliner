@@ -258,6 +258,7 @@ export function App() {
           onTagClick={openSearch}
           onDocLinkClick={openDoc}
           onItemLinkClick={openItem}
+          onMoveRequest={() => openPalette(">>")}
         />
         <Backlinks store={store} onOpen={openItem} />
       </main>

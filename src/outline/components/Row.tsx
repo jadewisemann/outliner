@@ -1,6 +1,6 @@
 import { memo, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
 import { renderInline, renderNote, sourceOffset } from "../inline";
-import type { Row as RowModel } from "../../types";
+import type { Color, Row as RowModel } from "../../types";
 import type { Choice } from "../useOutline";
 import { Editable, type FocusHint } from "./Editable";
 
@@ -19,6 +19,15 @@ export type RowApi = {
   zoom(id: string): void;
   focusText(id: string, caret: number | "end"): void;
   focusNote(id: string): void;
+  openMenu(event: MouseEvent, row: RowModel): void;
+  setColor(id: string, color: Color): void;
+  toggleQuote(id: string): void;
+  toggleChecklist(id: string): void;
+  toggleNumbered(id: string): void;
+  toggleRowBookmark(id: string): void;
+  copyItemLink(id: string): void;
+  duplicateRow(id: string): void;
+  removeRow(id: string): void;
   pointerSelect(event: MouseEvent, row: RowModel): void;
   clearSelection(): void;
   openTag(tag: string): void;
@@ -90,6 +99,7 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, completion, 
         aria-label={`${node.text || "빈 항목"} 확대`}
         tabIndex={-1}
         draggable
+        onContextMenu={(event) => api.openMenu(event, row)}
         onDragStart={(event) => api.dragStart(event, row.id)}
         onClick={(event) => {
           event.stopPropagation();

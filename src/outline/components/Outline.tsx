@@ -3,6 +3,7 @@ import type { Store } from "../../store";
 import { useOutline } from "../useOutline";
 import { useTouchBar } from "../useTouchBar";
 import { Row } from "./Row";
+import { RowMenu } from "./RowMenu";
 import { TouchBar } from "./TouchBar";
 
 type Props = {
@@ -12,10 +13,11 @@ type Props = {
   onTagClick: (tag: string) => void;
   onDocLinkClick: (title: string) => void;
   onItemLinkClick: (id: string) => void;
+  onMoveRequest: () => void;
 };
 
 /** Pure rendering; every behaviour lives in `useOutline`. */
-export function Outline({ store, scrollRef, onTagClick, onDocLinkClick, onItemLinkClick }: Props) {
+export function Outline({ store, scrollRef, onTagClick, onDocLinkClick, onItemLinkClick, onMoveRequest }: Props) {
   const outline = useOutline(store, scrollRef, onTagClick, onDocLinkClick, onItemLinkClick);
   const { rows, window, focus, noteFocus, completion, dropSpot } = outline;
   const touch = useTouchBar();
@@ -46,6 +48,9 @@ export function Outline({ store, scrollRef, onTagClick, onDocLinkClick, onItemLi
       ))}
       {window.padBottom > 0 ? <div style={{ height: window.padBottom }} /> : null}
       <div className="outline-tail" onMouseDown={outline.onTailMouseDown} />
+      {outline.menu ? (
+        <RowMenu spot={outline.menu} api={outline.api} onClose={outline.closeMenu} onMove={onMoveRequest} />
+      ) : null}
       {touch.coarse ? <TouchBar activeId={outline.activeId} nudge={outline.nudge} inset={touch.inset} /> : null}
     </div>
   );
