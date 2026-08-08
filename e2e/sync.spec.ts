@@ -247,6 +247,65 @@ test("a GitHub repository works as the backend, sha CAS and Korean text included
   await phone.close();
 });
 
+test("signing in with GitHub lands in settings with the token in place, then syncs", async ({ browser, baseURL }) => {
+  const context = await browser.newContext();
+  let file: { content: string; sha: string } | null = null;
+  let commits = 0;
+
+  // The serverless exchange, GitHub's user endpoint, and the contents API.
+  await context.route("**/api/github-oauth", (route) =>
+    route.request().method() === "POST"
+      ? route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ token: "gho_test" }) })
+      : route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ clientId: "client1" }) })
+  );
+  await context.route("https://api.github.com/user", (route) =>
+    route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ login: "tester" }) })
+  );
+  await context.route("https://api.github.com/repos/tester/outliner/contents/*", async (route) => {
+    if (route.request().method() === "PUT") {
+      const body = JSON.parse(route.request().postData() ?? "{}");
+      if (file && body.sha !== file.sha) return route.fulfill({ status: 409, body: "{}" });
+      commits += 1;
+      file = { content: String(body.content), sha: `sha-${commits}` };
+      return route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ content: { sha: file.sha } })
+      });
+    }
+    if (!file) return route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
+    return route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({ content: file.content, encoding: "base64", sha: file.sha })
+    });
+  });
+
+  const page = await context.newPage();
+  // The state parameter must match what "this tab" stored before redirecting.
+  await page.addInitScript(() => sessionStorage.setItem("outliner:oauth-state", "st-1"));
+  await page.goto(`${baseURL}/?code=oauth-code&state=st-1`);
+
+  // The exchange finishes and the settings panel opens itself, prefilled.
+  const dialog = page.getByRole("dialog", { name: "기기 간 동기화" });
+  await expect(dialog).toBeVisible({ timeout: 10_000 });
+  await expect(dialog.getByPlaceholder("owner/repository")).toHaveValue("tester/outliner");
+  await expect(dialog.getByPlaceholder("github_pat_…")).toHaveValue("gho_test");
+  // The spent code is gone from the URL, so a reload cannot replay it.
+  expect(new URL(page.url()).searchParams.get("code")).toBeNull();
+
+  await dialog.getByRole("button", { name: "저장하고 동기화" }).click();
+  await page.locator(".row").first().click();
+  await page.keyboard.type("로그인으로 연결된 노트");
+
+  await expect
+    .poll(() => (file ? Buffer.from(file.content, "base64").toString("utf8").includes("로그인으로 연결된 노트") : false), {
+      timeout: 30_000
+    })
+    .toBe(true);
+  await context.close();
+});
+
 test("a second tab of the same browser picks up the changes", async ({ browser, baseURL }) => {
   const context = await browser.newContext();
   const first = await context.newPage();
