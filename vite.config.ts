@@ -17,6 +17,9 @@ function relaxCspWhileServing(): Plugin {
 }
 
 export default defineConfig({
+  // Relative asset URLs, so the same build works at the root of a domain and
+  // under a repository path — which is how GitHub Pages serves a project site.
+  base: "./",
   plugins: [react(), relaxCspWhileServing()],
   test: {
     environment: "jsdom",
