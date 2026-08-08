@@ -35,6 +35,7 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
     items: [
       ["⌘/Ctrl+K, ⌘F", "검색 (`#태그`도 가능)"],
       ["⌘/Ctrl+\\", "사이드바 열고 닫기"],
+      ["상단 점 표시", "동기화 상태 · 눌러서 설정"],
       ["⌘/Ctrl+/", "이 도움말"]
     ]
   }

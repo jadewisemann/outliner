@@ -1,6 +1,6 @@
 import { extractTags } from "./inline";
 import { ancestors } from "./tree";
-import type { Doc, Id, Workspace } from "./types";
+import { docList, type Doc, type Id, type Workspace } from "./types";
 
 export type Hit = {
   docId: Id;
@@ -21,7 +21,8 @@ export function search(workspace: Workspace, query: string, limit = 200): Hit[] 
   if (terms.length === 0) return [];
 
   const hits: Hit[] = [];
-  const order = [workspace.activeDocId, ...workspace.docOrder.filter((id) => id !== workspace.activeDocId)];
+  const ids = docList(workspace).map((doc) => doc.id);
+  const order = [workspace.activeDocId, ...ids.filter((id) => id !== workspace.activeDocId)];
 
   for (const docId of order) {
     const doc = workspace.docs[docId];

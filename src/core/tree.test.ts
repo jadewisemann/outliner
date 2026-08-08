@@ -14,6 +14,7 @@ import {
   reparent,
   splitAt,
   toOutlineText,
+  linkChildren,
   visibleRows
 } from "./tree";
 import { makeDoc, makeNode, type Doc, type Id } from "./types";
@@ -34,13 +35,26 @@ function build(outline: string): Doc {
     doc.nodes[parentId].children.push(node.id);
     stack.push({ depth, id: node.id });
   }
-  return doc;
+  return linkChildren(doc);
 }
 
-const shape = (doc: Doc) =>
-  visibleRows(doc, doc.rootId)
+/**
+ * Renders the outline, and asserts on the way that the `children` cache still
+ * agrees with the `parent`/`sort` fields the merge relies on. Every operation
+ * in this file is checked against that invariant for free.
+ */
+const shape = (doc: Doc) => {
+  for (const node of Object.values(doc.nodes)) {
+    for (const child of node.children) {
+      expect(doc.nodes[child]?.parent, `parent of ${doc.nodes[child]?.text}`).toBe(node.id);
+    }
+    const sorts = node.children.map((child) => doc.nodes[child].sort);
+    expect(sorts, `sibling order under ${node.text}`).toEqual([...sorts].sort());
+  }
+  return visibleRows(doc, doc.rootId)
     .map((row) => `${"  ".repeat(row.depth)}${row.node.text}`)
     .join("\n");
+};
 
 const find = (doc: Doc, text: string): Id => Object.values(doc.nodes).find((node) => node.text === text)!.id;
 

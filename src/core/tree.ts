@@ -1,4 +1,5 @@
-import { makeNode, type Doc, type Id, type Node, type Row } from "./types";
+import { keyBetween, keysAfter } from "./order";
+import { makeNode, stamp, type Doc, type Id, type Node, type Row, type Stamp } from "./types";
 
 /* ------------------------------------------------------------------ */
 /* reading                                                             */
@@ -9,17 +10,14 @@ export function get(doc: Doc, id: Id): Node | undefined {
 }
 
 export function parentOf(doc: Doc, id: Id): Id | null {
-  for (const node of Object.values(doc.nodes)) {
-    if (node.children.includes(id)) return node.id;
-  }
-  return null;
+  return doc.nodes[id]?.parent ?? null;
 }
 
 /** Root-first chain of ancestors, excluding `id` itself. */
 export function ancestors(doc: Doc, id: Id): Id[] {
   const chain: Id[] = [];
   let cursor = parentOf(doc, id);
-  while (cursor) {
+  while (cursor && !chain.includes(cursor)) {
     chain.unshift(cursor);
     cursor = parentOf(doc, cursor);
   }
@@ -65,44 +63,172 @@ export function rowAfter(rows: Row[], id: Id): Row | null {
 }
 
 /* ------------------------------------------------------------------ */
-/* writing helpers                                                     */
+/* writing primitives                                                  */
 /* ------------------------------------------------------------------ */
 
-function withNodes(doc: Doc, nodes: Record<Id, Node>): Doc {
-  return { ...doc, nodes, updatedAt: Date.now() };
+type Nodes = Record<Id, Node>;
+
+function withNodes(doc: Doc, nodes: Nodes): Doc {
+  return { ...doc, nodes };
 }
 
-/** Copy-on-write update of a single node. */
+/** Copy-on-write update of a node's content, stamping it for merges. */
 export function patchNode(doc: Doc, id: Id, patch: Partial<Node>): Doc {
   const node = doc.nodes[id];
   if (!node) return doc;
-  return withNodes(doc, { ...doc.nodes, [id]: { ...node, ...patch } });
+  return withNodes(doc, { ...doc.nodes, [id]: { ...node, ...patch, edited: stamp() } });
 }
 
-function setChildren(nodes: Record<Id, Node>, parentId: Id, children: Id[]): Record<Id, Node> {
+/**
+ * The primitives below mutate a *draft*: a shallow copy of `doc.nodes` that the
+ * caller owns and nobody else can see yet. Individual nodes are still replaced
+ * rather than modified, so React's identity checks keep working.
+ *
+ * This matters for bulk work. Copying the whole node map inside every step
+ * would make pasting a 10,000-line outline quadratic; one copy per operation
+ * keeps it linear.
+ */
+function draft(doc: Doc): Nodes {
+  return { ...doc.nodes };
+}
+
+function setChildren(nodes: Nodes, parentId: Id, children: Id[]): void {
   const parent = nodes[parentId];
-  if (!parent) return nodes;
-  return { ...nodes, [parentId]: { ...parent, children } };
+  if (parent) nodes[parentId] = { ...parent, children };
 }
 
-/** Removes `id` from its parent's child list. Does not delete the node itself. */
-function detach(nodes: Record<Id, Node>, doc: Doc, id: Id): { nodes: Record<Id, Node>; parentId: Id | null; index: number } {
-  for (const node of Object.values(nodes)) {
-    const index = node.children.indexOf(id);
-    if (index === -1) continue;
-    const children = node.children.slice();
-    children.splice(index, 1);
-    return { nodes: setChildren(nodes, node.id, children), parentId: node.id, index };
+/** Removes `id` from its parent's child list, leaving the node itself alone. */
+function detach(nodes: Nodes, id: Id): { parentId: Id | null; index: number } {
+  const parentId = nodes[id]?.parent ?? null;
+  const parent = parentId ? nodes[parentId] : null;
+  if (!parentId || !parent) return { parentId: null, index: -1 };
+  const index = parent.children.indexOf(id);
+  if (index !== -1) setChildren(nodes, parentId, parent.children.toSpliced(index, 1));
+  return { parentId, index };
+}
+
+/**
+ * Puts `id` under `parentId` at `index`, deriving the sort key from the
+ * neighbours it lands between. This is the only place position is assigned, so
+ * `children` order and `sort` order can never drift apart.
+ */
+function place(nodes: Nodes, parentId: Id, id: Id, index: number): void {
+  const parent = nodes[parentId];
+  const node = nodes[id];
+  if (!parent || !node) return;
+
+  const siblings = parent.children;
+  const at = Math.max(0, Math.min(index, siblings.length));
+  const before = at > 0 ? nodes[siblings[at - 1]]?.sort ?? null : null;
+  const after = at < siblings.length ? nodes[siblings[at]]?.sort ?? null : null;
+
+  nodes[id] = { ...node, parent: parentId, sort: keyBetween(before, after), moved: stamp() };
+  setChildren(nodes, parentId, siblings.toSpliced(at, 0, id));
+}
+
+/** Moves an existing node to `index` under `parentId`. */
+function move(nodes: Nodes, id: Id, parentId: Id, index: number): void {
+  const from = detach(nodes, id);
+  const shift = from.parentId === parentId && from.index !== -1 && from.index < index ? 1 : 0;
+  place(nodes, parentId, id, index - shift);
+}
+
+/** Adds a brand new node under `parentId` at `index`. */
+function insert(nodes: Nodes, parentId: Id, node: Node, index: number): void {
+  nodes[node.id] = node;
+  place(nodes, parentId, node.id, index);
+}
+
+/**
+ * Fills in `parent`/`sort` from existing `children` lists — the inverse of
+ * `rebuildChildren`, for trees built by an importer or an older schema.
+ */
+export function linkChildren(doc: Doc): Doc {
+  const nodes = draft(doc);
+  if (!nodes[doc.rootId]) return doc;
+  nodes[doc.rootId] = { ...nodes[doc.rootId], parent: null };
+
+  const walk = (id: Id) => {
+    const children = nodes[id].children.filter((child) => nodes[child]);
+    const sorts = keysAfter(null, children.length);
+    nodes[id] = { ...nodes[id], children };
+    children.forEach((child, index) => {
+      nodes[child] = { ...nodes[child], parent: id, sort: sorts[index] };
+      walk(child);
+    });
+  };
+  walk(doc.rootId);
+  return withNodes(doc, nodes);
+}
+
+/** Rebuilds every `children` list from `parent`/`sort`. Used after a merge. */
+export function rebuildChildren(doc: Doc): Doc {
+  const buckets = new Map<Id, Node[]>();
+  for (const node of Object.values(doc.nodes)) {
+    if (!node.parent) continue;
+    const bucket = buckets.get(node.parent);
+    if (bucket) bucket.push(node);
+    else buckets.set(node.parent, [node]);
   }
-  return { nodes, parentId: null, index: -1 };
+
+  const nodes: Nodes = {};
+  for (const node of Object.values(doc.nodes)) {
+    const children = (buckets.get(node.id) ?? [])
+      .sort((a, b) => (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : a.id < b.id ? -1 : 1))
+      .map((child) => child.id);
+    nodes[node.id] = { ...node, children };
+  }
+  return withNodes(doc, nodes);
 }
 
-function insertChild(nodes: Record<Id, Node>, parentId: Id, index: number, ids: Id[]): Record<Id, Node> {
-  const parent = nodes[parentId];
-  if (!parent) return nodes;
-  const children = parent.children.slice();
-  children.splice(index, 0, ...ids);
-  return setChildren(nodes, parentId, children);
+/* ------------------------------------------------------------------ */
+/* single-row steps, shared by the one-shot and bulk versions           */
+/* ------------------------------------------------------------------ */
+
+function indentInto(nodes: Nodes, id: Id): void {
+  const parentId = nodes[id]?.parent;
+  if (!parentId) return;
+  const siblings = nodes[parentId].children;
+  const index = siblings.indexOf(id);
+  if (index <= 0) return;
+
+  const newParentId = siblings[index - 1];
+  move(nodes, id, newParentId, nodes[newParentId].children.length);
+  nodes[newParentId] = { ...nodes[newParentId], collapsed: false };
+}
+
+function outdentInto(nodes: Nodes, id: Id, zoomId: Id): void {
+  const parentId = nodes[id]?.parent;
+  if (!parentId || parentId === zoomId) return;
+  const grandparentId = nodes[parentId].parent;
+  if (!grandparentId) return;
+  move(nodes, id, grandparentId, nodes[grandparentId].children.indexOf(parentId) + 1);
+}
+
+function moveVerticallyInto(nodes: Nodes, id: Id, direction: -1 | 1): void {
+  const parentId = nodes[id]?.parent;
+  if (!parentId) return;
+  const siblings = nodes[parentId].children;
+  const target = siblings.indexOf(id) + direction;
+  if (target < 0 || target >= siblings.length) return;
+  // +1 when moving down because the target index is measured after removal.
+  move(nodes, id, parentId, direction === 1 ? target + 1 : target);
+}
+
+function removeInto(nodes: Nodes, graves: Record<Id, Stamp>, id: Id): void {
+  const doomed: Id[] = [];
+  const walk = (current: Id) => {
+    doomed.push(current);
+    for (const child of nodes[current]?.children ?? []) walk(child);
+  };
+  walk(id);
+
+  detach(nodes, id);
+  const now = stamp();
+  for (const dead of doomed) {
+    delete nodes[dead];
+    graves[dead] = now;
+  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -111,22 +237,21 @@ function insertChild(nodes: Record<Id, Node>, parentId: Id, index: number, ids: 
 
 export type Edit = { doc: Doc; focusId?: Id; caret?: number };
 
-/** Inserts a fresh sibling directly after `id` (or as its first child when expanded with children). */
+/** Inserts a fresh sibling directly after `id`, or as its first child when expanded. */
 export function insertAfter(doc: Doc, id: Id, text = ""): Edit {
   const node = doc.nodes[id];
   if (!node) return { doc };
   const fresh = makeNode({ text });
-  let nodes = { ...doc.nodes, [fresh.id]: fresh };
+  const nodes = draft(doc);
 
   // A node with visible children gets the new row as its first child, matching
   // where the eye expects the next line to land.
   if (node.children.length > 0 && !node.collapsed) {
-    nodes = insertChild(nodes, id, 0, [fresh.id]);
+    insert(nodes, id, fresh, 0);
   } else {
-    const parentId = parentOf(doc, id);
+    const parentId = node.parent;
     if (!parentId) return { doc };
-    const index = doc.nodes[parentId].children.indexOf(id);
-    nodes = insertChild(nodes, parentId, index + 1, [fresh.id]);
+    insert(nodes, parentId, fresh, doc.nodes[parentId].children.indexOf(id) + 1);
   }
   return { doc: withNodes(doc, nodes), focusId: fresh.id, caret: 0 };
 }
@@ -135,22 +260,20 @@ export function insertAfter(doc: Doc, id: Id, text = ""): Edit {
 export function splitAt(doc: Doc, id: Id, offset: number): Edit {
   const node = doc.nodes[id];
   if (!node) return { doc };
-  const head = node.text.slice(0, offset);
   const tail = node.text.slice(offset);
+  if (tail === "") return insertAfter(patchNode(doc, id, { text: node.text.slice(0, offset) }), id, "");
 
-  // Splitting at the very end is just "new empty row after this one".
-  if (tail === "") return insertAfter(patchNode(doc, id, { text: head }), id, "");
-
-  const fresh = makeNode({ text: tail, children: node.children, note: "" });
-  let nodes: Record<Id, Node> = {
-    ...doc.nodes,
-    [id]: { ...node, text: head, children: [] },
-    [fresh.id]: fresh
-  };
-  const parentId = parentOf(doc, id);
+  const parentId = node.parent;
   if (!parentId) return { doc };
-  const index = doc.nodes[parentId].children.indexOf(id);
-  nodes = insertChild(nodes, parentId, index + 1, [fresh.id]);
+  const fresh = makeNode({ text: tail });
+
+  // Hand the children over before placing, so both lists stay consistent.
+  const nodes = draft(doc);
+  nodes[id] = { ...node, text: node.text.slice(0, offset), children: [], edited: stamp() };
+  nodes[fresh.id] = { ...fresh, children: node.children };
+  for (const child of node.children) nodes[child] = { ...nodes[child], parent: fresh.id, moved: stamp() };
+
+  place(nodes, parentId, fresh.id, doc.nodes[parentId].children.indexOf(id) + 1);
   return { doc: withNodes(doc, nodes), focusId: fresh.id, caret: 0 };
 }
 
@@ -159,103 +282,88 @@ export function mergeIntoPrevious(doc: Doc, zoomId: Id, id: Id): Edit {
   const rows = visibleRows(doc, zoomId);
   const previous = rowBefore(rows, id);
   const node = doc.nodes[id];
-  if (!previous || !node) return { doc };
+  const parentId = node?.parent;
+  if (!previous || !node || !parentId) return { doc };
 
   const caret = previous.node.text.length;
-  const parentId = parentOf(doc, id);
-  if (!parentId) return { doc };
   const index = doc.nodes[parentId].children.indexOf(id);
+  const nodes = draft(doc);
+  detach(nodes, id);
 
-  let nodes: Record<Id, Node> = { ...doc.nodes };
-  nodes = setChildren(nodes, parentId, doc.nodes[parentId].children.filter((child) => child !== id));
-
-  if (node.children.length > 0) {
-    // First child merging into its own parent: the orphans stay where they were.
-    // Otherwise they belong under the row we just merged into.
-    if (previous.id === parentId) {
-      nodes = insertChild(nodes, parentId, index, node.children);
-    } else {
-      nodes = insertChild(nodes, previous.id, nodes[previous.id].children.length, node.children);
-      nodes = { ...nodes, [previous.id]: { ...nodes[previous.id], collapsed: false } };
-    }
-  }
+  // First child merging into its own parent leaves the orphans where they were;
+  // otherwise they belong under the row that absorbed the text.
+  const [newParent, newIndex] =
+    previous.id === parentId ? [parentId, index] : [previous.id, nodes[previous.id].children.length];
+  node.children.forEach((child, offset) => place(nodes, newParent, child, newIndex + offset));
+  if (previous.id !== parentId) nodes[previous.id] = { ...nodes[previous.id], collapsed: false };
 
   const merged = nodes[previous.id];
-  nodes = {
-    ...nodes,
-    [previous.id]: {
-      ...merged,
-      text: merged.text + node.text,
-      note: merged.note || node.note
-    }
-  };
+  nodes[previous.id] = { ...merged, text: merged.text + node.text, note: merged.note || node.note, edited: stamp() };
   delete nodes[id];
-  return { doc: withNodes(doc, nodes), focusId: previous.id, caret };
+  return { doc: { ...doc, nodes, graves: { ...doc.graves, [id]: stamp() } }, focusId: previous.id, caret };
 }
 
 /** Makes `id` the last child of its previous sibling. */
 export function indent(doc: Doc, id: Id): Edit {
-  const parentId = parentOf(doc, id);
+  const parentId = doc.nodes[id]?.parent;
   if (!parentId) return { doc };
   const siblings = doc.nodes[parentId].children;
   const index = siblings.indexOf(id);
   if (index <= 0) return { doc };
-  const newParentId = siblings[index - 1];
 
-  let nodes = detach({ ...doc.nodes }, doc, id).nodes;
-  nodes = insertChild(nodes, newParentId, nodes[newParentId].children.length, [id]);
-  nodes = { ...nodes, [newParentId]: { ...nodes[newParentId], collapsed: false } };
+  const nodes = draft(doc);
+  indentInto(nodes, id);
   return { doc: withNodes(doc, nodes), focusId: id };
 }
 
 /** Makes `id` the next sibling of its parent. No-op at the zoom root's top level. */
 export function outdent(doc: Doc, id: Id, zoomId: Id): Edit {
-  const parentId = parentOf(doc, id);
+  const parentId = doc.nodes[id]?.parent;
   if (!parentId || parentId === zoomId) return { doc };
-  const grandparentId = parentOf(doc, parentId);
+  const grandparentId = doc.nodes[parentId].parent;
   if (!grandparentId) return { doc };
 
-  const detached = detach({ ...doc.nodes }, doc, id);
-  const at = detached.nodes[grandparentId].children.indexOf(parentId);
-  const nodes = insertChild(detached.nodes, grandparentId, at + 1, [id]);
+  const nodes = draft(doc);
+  outdentInto(nodes, id, zoomId);
   return { doc: withNodes(doc, nodes), focusId: id };
 }
 
 /** Swaps `id` with the sibling above/below, carrying its subtree. */
 export function moveVertically(doc: Doc, id: Id, direction: -1 | 1): Edit {
-  const parentId = parentOf(doc, id);
+  const parentId = doc.nodes[id]?.parent;
   if (!parentId) return { doc };
-  const children = doc.nodes[parentId].children.slice();
-  const index = children.indexOf(id);
+  const siblings = doc.nodes[parentId].children;
+  const index = siblings.indexOf(id);
   const target = index + direction;
-  if (target < 0 || target >= children.length) return { doc };
-  [children[index], children[target]] = [children[target], children[index]];
-  return { doc: withNodes(doc, setChildren({ ...doc.nodes }, parentId, children)), focusId: id };
+  if (target < 0 || target >= siblings.length) return { doc };
+  const nodes = draft(doc);
+  moveVerticallyInto(nodes, id, direction);
+  return { doc: withNodes(doc, nodes), focusId: id };
 }
 
 /** Deletes `id` and everything under it. Focus lands on the neighbour above, else below. */
 export function removeNode(doc: Doc, zoomId: Id, id: Id): Edit {
   const rows = visibleRows(doc, zoomId);
   const neighbour = rowBefore(rows, id) ?? rowAfter(rows, id);
-  const doomed = new Set(subtree(doc, id));
-  const nodes: Record<Id, Node> = {};
-  for (const [key, node] of Object.entries(doc.nodes)) {
-    if (doomed.has(key)) continue;
-    nodes[key] = doomed.size > 0 ? { ...node, children: node.children.filter((child) => !doomed.has(child)) } : node;
-  }
-  if (!nodes[zoomId]) return { doc };
-  return { doc: withNodes(doc, nodes), focusId: neighbour?.id, caret: neighbour ? nodes[neighbour.id]?.text.length : 0 };
+  const doomed = subtree(doc, id);
+  if (doomed.includes(zoomId)) return { doc };
+
+  const nodes = draft(doc);
+  const graves = { ...doc.graves };
+  removeInto(nodes, graves, id);
+  return {
+    doc: { ...doc, nodes, graves },
+    focusId: neighbour?.id,
+    caret: neighbour ? nodes[neighbour.id]?.text.length : 0
+  };
 }
 
 /** Moves `id` (with subtree) to position `index` under `newParentId`. Used by drag & drop. */
 export function reparent(doc: Doc, id: Id, newParentId: Id, index: number): Edit {
   if (id === newParentId || subtree(doc, id).includes(newParentId)) return { doc };
-  const from = detach({ ...doc.nodes }, doc, id);
-  let at = index;
-  if (from.parentId === newParentId && from.index < index) at -= 1;
-  const bounded = Math.max(0, Math.min(at, from.nodes[newParentId]?.children.length ?? 0));
-  let nodes = insertChild(from.nodes, newParentId, bounded, [id]);
-  if (nodes[newParentId]?.collapsed) nodes = { ...nodes, [newParentId]: { ...nodes[newParentId], collapsed: false } };
+  const nodes = draft(doc);
+  move(nodes, id, newParentId, index);
+  if (nodes[newParentId]?.collapsed) nodes[newParentId] = { ...nodes[newParentId], collapsed: false };
   return { doc: withNodes(doc, nodes), focusId: id };
 }
 
@@ -263,13 +371,15 @@ export function reparent(doc: Doc, id: Id, newParentId: Id, index: number): Edit
 /* zoom                                                                */
 /* ------------------------------------------------------------------ */
 
-/** Expands every ancestor so `id` is reachable from `zoomId`. */
+/** Expands every ancestor so `id` is reachable from the document root. */
 export function reveal(doc: Doc, id: Id): Doc {
-  let nodes = doc.nodes;
+  let nodes: Nodes | null = null;
   for (const ancestor of ancestors(doc, id)) {
-    if (nodes[ancestor]?.collapsed) nodes = { ...nodes, [ancestor]: { ...nodes[ancestor], collapsed: false } };
+    if (!doc.nodes[ancestor]?.collapsed) continue;
+    nodes ??= draft(doc);
+    nodes[ancestor] = { ...nodes[ancestor], collapsed: false };
   }
-  return nodes === doc.nodes ? doc : { ...doc, nodes };
+  return nodes ? withNodes(doc, nodes) : doc;
 }
 
 /** Adds an empty row at the end of `parentId`, or focuses the trailing empty one. */
@@ -280,17 +390,15 @@ export function appendChild(doc: Doc, parentId: Id): Edit {
     return { doc, focusId: last, caret: 0 };
   }
   const fresh = makeNode();
-  const nodes = setChildren({ ...doc.nodes, [fresh.id]: fresh }, parentId, [...children, fresh.id]);
+  const nodes = draft(doc);
+  insert(nodes, parentId, fresh, children.length);
   return { doc: withNodes(doc, nodes), focusId: fresh.id, caret: 0 };
 }
 
 /** A zoomed node always needs at least one child to type into. */
 export function ensureEditable(doc: Doc, zoomId: Id): Edit {
-  const zoom = doc.nodes[zoomId];
-  if (!zoom || zoom.children.length > 0) return { doc };
-  const fresh = makeNode();
-  const nodes = setChildren({ ...doc.nodes, [fresh.id]: fresh }, zoomId, [fresh.id]);
-  return { doc: withNodes(doc, nodes), focusId: fresh.id, caret: 0 };
+  if (!doc.nodes[zoomId] || doc.nodes[zoomId].children.length > 0) return { doc };
+  return appendChild(doc, zoomId);
 }
 
 /* ------------------------------------------------------------------ */
@@ -308,25 +416,25 @@ export function topLevel(doc: Doc, zoomId: Id, ids: Id[]): Id[] {
     .filter((id) => selected.has(id) && !ancestors(doc, id).some((parent) => selected.has(parent)));
 }
 
-/** Runs a single-row operation over a selection, in the order that keeps it stable. */
-function bulk(doc: Doc, ids: Id[], reverse: boolean, step: (doc: Doc, id: Id) => Edit): Edit {
-  const ordered = reverse ? [...ids].reverse() : ids;
-  let current = doc;
-  for (const id of ordered) current = step(current, id).doc;
-  return { doc: current };
+/** Runs a single-row step over a whole selection against one shared draft. */
+function bulk(doc: Doc, ids: Id[], reverse: boolean, step: (nodes: Nodes, id: Id) => void): Edit {
+  if (ids.length === 0) return { doc };
+  const nodes = draft(doc);
+  for (const id of reverse ? [...ids].reverse() : ids) step(nodes, id);
+  return { doc: withNodes(doc, nodes) };
 }
 
 export function bulkIndent(doc: Doc, zoomId: Id, ids: Id[]): Edit {
-  return bulk(doc, topLevel(doc, zoomId, ids), false, (current, id) => indent(current, id));
+  return bulk(doc, topLevel(doc, zoomId, ids), false, indentInto);
 }
 
 export function bulkOutdent(doc: Doc, zoomId: Id, ids: Id[]): Edit {
-  return bulk(doc, topLevel(doc, zoomId, ids), true, (current, id) => outdent(current, id, zoomId));
+  return bulk(doc, topLevel(doc, zoomId, ids), true, (nodes, id) => outdentInto(nodes, id, zoomId));
 }
 
 export function bulkMove(doc: Doc, zoomId: Id, ids: Id[], direction: -1 | 1): Edit {
   // Moving down starts from the bottom so rows do not step over each other.
-  return bulk(doc, topLevel(doc, zoomId, ids), direction === 1, (current, id) => moveVertically(current, id, direction));
+  return bulk(doc, topLevel(doc, zoomId, ids), direction === 1, (nodes, id) => moveVerticallyInto(nodes, id, direction));
 }
 
 export function bulkRemove(doc: Doc, zoomId: Id, ids: Id[]): Edit {
@@ -340,22 +448,25 @@ export function bulkRemove(doc: Doc, zoomId: Id, ids: Id[]): Edit {
     [...rows.slice(0, first)].reverse().find((row) => !doomed.has(row.id)) ??
     rows.slice(first).find((row) => !doomed.has(row.id));
 
-  let current = doc;
-  for (const id of [...ordered].reverse()) current = removeNode(current, zoomId, id).doc;
+  const nodes = draft(doc);
+  const graves = { ...doc.graves };
+  for (const id of [...ordered].reverse()) removeInto(nodes, graves, id);
+  const next: Doc = { ...doc, nodes, graves };
 
-  const focusId = survivor && current.nodes[survivor.id] ? survivor.id : visibleRows(current, zoomId)[0]?.id;
-  return { doc: current, focusId, caret: focusId ? current.nodes[focusId]?.text.length : 0 };
+  const focusId = survivor && nodes[survivor.id] ? survivor.id : visibleRows(next, zoomId)[0]?.id;
+  return { doc: next, focusId, caret: focusId ? nodes[focusId]?.text.length : 0 };
 }
 
 export function bulkSetCollapsed(doc: Doc, ids: Id[], collapsed: boolean): Edit {
-  let nodes = doc.nodes;
+  const now = stamp();
+  let nodes: Nodes | null = null;
   for (const id of ids) {
-    const node = nodes[id];
-    if (node && node.children.length > 0 && node.collapsed !== collapsed) {
-      nodes = { ...nodes, [id]: { ...node, collapsed } };
-    }
+    const node = (nodes ?? doc.nodes)[id];
+    if (!node || node.children.length === 0 || node.collapsed === collapsed) continue;
+    nodes ??= draft(doc);
+    nodes[id] = { ...node, collapsed, edited: now };
   }
-  return { doc: nodes === doc.nodes ? doc : { ...doc, nodes, updatedAt: Date.now() } };
+  return { doc: nodes ? withNodes(doc, nodes) : doc };
 }
 
 /** Collapses or expands every descendant of `fromId`. */
@@ -364,7 +475,7 @@ export function setCollapsedDeep(doc: Doc, fromId: Id, collapsed: boolean): Edit
 }
 
 /* ------------------------------------------------------------------ */
-/* bulk / clipboard                                ------------------- */
+/* plain-text in and out                                               */
 /* ------------------------------------------------------------------ */
 
 /**
@@ -373,42 +484,56 @@ export function setCollapsedDeep(doc: Doc, fromId: Id, collapsed: boolean): Edit
  */
 export function insertOutlineText(doc: Doc, afterId: Id, text: string): Edit {
   const lines = text.replace(/\r\n?/g, "\n").split("\n").filter((line) => line.trim() !== "");
-  if (lines.length === 0) return { doc };
+  const target = doc.nodes[afterId];
+  const parentId = target?.parent;
+  if (lines.length === 0 || !parentId) return { doc };
 
-  const parentId = parentOf(doc, afterId);
-  if (!parentId) return { doc };
-
-  const nodes: Record<Id, Node> = { ...doc.nodes };
-  const roots: Id[] = [];
+  const nodes = draft(doc);
   const stack: { depth: number; id: Id }[] = [];
+  let index = doc.nodes[parentId].children.indexOf(afterId) + 1;
   let lastId = afterId;
 
   for (const line of lines) {
-    const indentWidth = line.match(/^[\t ]*/)?.[0] ?? "";
-    const depth = indentWidth.replace(/\t/g, "  ").length >> 1;
+    const indentWidth = (line.match(/^[\t ]*/)?.[0] ?? "").replace(/\t/g, "  ").length;
+    const depth = indentWidth >> 1;
     const fresh = makeNode(parseOutlineLine(line.trim()));
-    nodes[fresh.id] = fresh;
 
     while (stack.length > 0 && stack[stack.length - 1].depth >= depth) stack.pop();
     const owner = stack[stack.length - 1];
     if (owner) {
-      nodes[owner.id] = { ...nodes[owner.id], children: [...nodes[owner.id].children, fresh.id] };
+      insert(nodes, owner.id, fresh, nodes[owner.id].children.length);
     } else {
-      roots.push(fresh.id);
+      insert(nodes, parentId, fresh, index);
+      index += 1;
     }
     stack.push({ depth, id: fresh.id });
     lastId = fresh.id;
   }
 
-  const index = nodes[parentId].children.indexOf(afterId);
-  const target = doc.nodes[afterId].text === "" ? index : index + 1;
-  let next = insertChild(nodes, parentId, target, roots);
-  // Typing into an empty row and pasting replaces it rather than leaving a blank.
-  if (doc.nodes[afterId].text === "") {
-    next = setChildren(next, parentId, next[parentId].children.filter((child) => child !== afterId));
-    delete next[afterId];
+  // Pasting into an empty row replaces it rather than leaving a blank behind.
+  let graves = doc.graves;
+  if (target.text === "" && target.children.length === 0) {
+    detach(nodes, afterId);
+    delete nodes[afterId];
+    graves = { ...graves, [afterId]: stamp() };
   }
-  return { doc: withNodes(doc, next), focusId: lastId, caret: nodes[lastId].text.length };
+  return { doc: { ...doc, nodes, graves }, focusId: lastId, caret: nodes[lastId].text.length };
+}
+
+/** Serializes a subtree as indented plain text, for the clipboard and exports. */
+export function toOutlineText(doc: Doc, ids: Id[], bullet = ""): string {
+  const lines: string[] = [];
+  const walk = (id: Id, depth: number) => {
+    const node = doc.nodes[id];
+    if (!node) return;
+    lines.push(`${"  ".repeat(depth)}${bullet}${node.text}`);
+    if (node.note) {
+      for (const line of node.note.split("\n")) lines.push(`${"  ".repeat(depth + 1)}${line}`);
+    }
+    for (const child of node.children) walk(child, depth + 1);
+  };
+  for (const id of ids) walk(id, 0);
+  return lines.join("\n");
 }
 
 /**
@@ -431,20 +556,4 @@ export function parseOutlineLine(line: string): Partial<Node> {
     text = text.slice(hashes[0].length);
   }
   return { text, done, heading };
-}
-
-/** Serializes a subtree as indented plain text, for the clipboard and exports. */
-export function toOutlineText(doc: Doc, ids: Id[], bullet = ""): string {
-  const lines: string[] = [];
-  const walk = (id: Id, depth: number) => {
-    const node = doc.nodes[id];
-    if (!node) return;
-    lines.push(`${"  ".repeat(depth)}${bullet}${node.text}`);
-    if (node.note) {
-      for (const line of node.note.split("\n")) lines.push(`${"  ".repeat(depth + 1)}${line}`);
-    }
-    for (const child of node.children) walk(child, depth + 1);
-  };
-  for (const id of ids) walk(id, 0);
-  return lines.join("\n");
 }

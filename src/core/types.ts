@@ -1,14 +1,37 @@
+import { deviceId, tick } from "./clock";
+import { keyBetween } from "./order";
+
 export type Id = string;
+
+/**
+ * A stamp records who last changed something and when, so two devices editing
+ * offline can be merged without asking the user.
+ */
+export type Stamp = { at: number; by: string };
 
 export type Node = {
   id: Id;
   text: string;
-  children: Id[];
   /** Sub-text shown under the row. Empty string means "no note". */
   note: string;
   collapsed: boolean;
   done: boolean;
   heading: 0 | 1 | 2 | 3;
+
+  parent: Id | null;
+  /** Fractional index among siblings — the merge-safe form of "position". */
+  sort: string;
+  /**
+   * Sibling ids in `sort` order. A cache of what `parent`/`sort` already say,
+   * kept because reading an outline is far more common than merging one.
+   * `rebuildChildren` restores it from scratch after a merge.
+   */
+  children: Id[];
+
+  /** Last change to the text, note, or flags. */
+  edited: Stamp;
+  /** Last change to `parent` or `sort`. */
+  moved: Stamp;
 };
 
 export type Doc = {
@@ -16,22 +39,30 @@ export type Doc = {
   title: string;
   rootId: Id;
   nodes: Record<Id, Node>;
-  updatedAt: number;
+  /** Deleted node ids, kept so a delete is not undone by an older device. */
+  graves: Record<Id, Stamp>;
+  /** Position among documents in the sidebar. */
+  sort: string;
+  titleEdited: Stamp;
+  moved: Stamp;
 };
 
-/** Per-document UI state. Persisted so a reload lands where you left off. */
+/** Per-document UI state. Local to this device — never synced. */
 export type DocView = {
   zoomId: Id;
   focusId: Id | null;
 };
 
 export type Workspace = {
-  version: 3;
+  version: 4;
   docs: Record<Id, Doc>;
-  docOrder: Id[];
+  graves: Record<Id, Stamp>;
   activeDocId: Id;
   views: Record<Id, DocView>;
 };
+
+/** The part of a workspace that travels between devices. */
+export type SyncPayload = Pick<Workspace, "docs" | "graves">;
 
 export type Row = {
   id: Id;
@@ -47,38 +78,56 @@ export const newId = (): Id =>
     ? crypto.randomUUID()
     : Math.random().toString(36).slice(2, 11);
 
+export function stamp(): Stamp {
+  return { at: tick(), by: deviceId() };
+}
+
 export function makeNode(patch: Partial<Node> = {}): Node {
+  const now = stamp();
   return {
     id: patch.id ?? newId(),
     text: patch.text ?? "",
-    children: patch.children ?? [],
     note: patch.note ?? "",
     collapsed: patch.collapsed ?? false,
     done: patch.done ?? false,
-    heading: patch.heading ?? 0
+    heading: patch.heading ?? 0,
+    parent: patch.parent ?? null,
+    sort: patch.sort ?? keyBetween(null, null),
+    children: patch.children ?? [],
+    edited: patch.edited ?? now,
+    moved: patch.moved ?? now
   };
 }
 
 export function makeDoc(title = "Untitled", patch: Partial<Doc> = {}): Doc {
   const root = makeNode();
-  const first = makeNode();
+  const first = makeNode({ parent: root.id });
   root.children = [first.id];
+  const now = stamp();
   return {
     id: patch.id ?? newId(),
     title,
     rootId: root.id,
     nodes: { [root.id]: root, [first.id]: first },
-    updatedAt: Date.now()
+    graves: {},
+    sort: patch.sort ?? keyBetween(null, null),
+    titleEdited: now,
+    moved: now
   };
 }
 
 export function makeWorkspace(): Workspace {
   const doc = makeDoc("Inbox");
   return {
-    version: 3,
+    version: 4,
     docs: { [doc.id]: doc },
-    docOrder: [doc.id],
+    graves: {},
     activeDocId: doc.id,
     views: { [doc.id]: { zoomId: doc.rootId, focusId: doc.nodes[doc.rootId].children[0] } }
   };
+}
+
+/** Documents in sidebar order. */
+export function docList(workspace: Workspace): Doc[] {
+  return Object.values(workspace.docs).sort((a, b) => (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0));
 }

@@ -1,3 +1,4 @@
+import { migrate } from "./migrate";
 import type { Workspace } from "./types";
 
 const DB_NAME = "outliner";
@@ -8,14 +9,10 @@ const KEY = "current";
  * IndexedDB with a localStorage fallback. IndexedDB is the primary store
  * because a large outline outgrows the 5MB localStorage budget.
  */
-export async function loadWorkspace(): Promise<Workspace | null> {
+export async function loadWorkspace(): Promise<Workspace> {
   const db = await openDb();
-  if (!db) return readLocalStorage();
-  return new Promise((resolve) => {
-    const request = db.transaction(STORE, "readonly").objectStore(STORE).get(KEY);
-    request.onsuccess = () => resolve((request.result as Workspace | undefined) ?? readLocalStorage());
-    request.onerror = () => resolve(readLocalStorage());
-  });
+  const raw = db ? await readDb(db) : readLocalStorage();
+  return migrate(raw ?? readLocalStorage());
 }
 
 export async function saveWorkspace(workspace: Workspace): Promise<void> {
@@ -35,6 +32,14 @@ export async function saveWorkspace(workspace: Workspace): Promise<void> {
   });
 }
 
+function readDb(db: IDBDatabase): Promise<unknown> {
+  return new Promise((resolve) => {
+    const request = db.transaction(STORE, "readonly").objectStore(STORE).get(KEY);
+    request.onsuccess = () => resolve(request.result ?? null);
+    request.onerror = () => resolve(null);
+  });
+}
+
 let dbPromise: Promise<IDBDatabase | null> | null = null;
 
 function openDb(): Promise<IDBDatabase | null> {
@@ -49,10 +54,10 @@ function openDb(): Promise<IDBDatabase | null> {
   return dbPromise;
 }
 
-function readLocalStorage(): Workspace | null {
+function readLocalStorage(): unknown {
   try {
     const raw = localStorage.getItem(`${DB_NAME}:${KEY}`);
-    return raw ? (JSON.parse(raw) as Workspace) : null;
+    return raw ? JSON.parse(raw) : null;
   } catch {
     return null;
   }

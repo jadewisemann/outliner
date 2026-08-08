@@ -1,5 +1,7 @@
-import { parseOutlineLine } from "./tree";
-import { makeNode, newId, type Doc, type Id, type Node, type Workspace } from "./types";
+import { migrate } from "./migrate";
+import { linkChildren, parseOutlineLine } from "./tree";
+import { keyBetween } from "./order";
+import { makeNode, newId, stamp, type Doc, type Id, type Node, type Workspace } from "./types";
 
 export type Format = "markdown" | "opml" | "text";
 
@@ -88,7 +90,17 @@ export function importDoc(title: string, content: string, format: Format): Doc {
     nodes[empty.id] = empty;
     root.children.push(empty.id);
   }
-  return { id: newId(), title, rootId: root.id, nodes, updatedAt: Date.now() };
+  const now = stamp();
+  return linkChildren({
+    id: newId(),
+    title,
+    rootId: root.id,
+    nodes,
+    graves: {},
+    sort: keyBetween(null, null),
+    titleEdited: now,
+    moved: now
+  });
 }
 
 function parseIndented(content: string, root: Node, nodes: Record<Id, Node>) {
@@ -137,13 +149,15 @@ export function exportBackup(workspace: Workspace): string {
   return JSON.stringify({ kind: "outliner-backup", exportedAt: new Date().toISOString(), workspace }, null, 2);
 }
 
+/** Accepts backups from any released schema; older ones are upgraded on the way in. */
 export function parseBackup(content: string): Workspace | null {
   try {
     const parsed = JSON.parse(content);
-    const workspace = parsed?.workspace ?? parsed;
-    if (workspace?.version === 3 && workspace.docs && workspace.activeDocId) return workspace as Workspace;
+    const raw = parsed?.workspace ?? parsed;
+    if (!raw?.docs || Object.keys(raw.docs).length === 0) return null;
+    const workspace = migrate(raw);
+    return Object.keys(workspace.docs).length > 0 ? workspace : null;
   } catch {
-    /* fall through */
+    return null;
   }
-  return null;
 }

@@ -5,7 +5,8 @@ import {
   useState,
   type DragEvent,
   type KeyboardEvent,
-  type MouseEvent
+  type MouseEvent,
+  type RefObject
 } from "react";
 import type { Store } from "../core/store";
 import {
@@ -31,14 +32,17 @@ import {
 } from "../core/tree";
 import type { Id, Row as RowModel } from "../core/types";
 import { Row, type DropPosition, type RowApi } from "./Row";
+import { useVirtualRows } from "./useVirtualRows";
 
 type Props = {
   store: Store;
+  /** The scrolling element the row window is measured against. */
+  scrollRef: RefObject<HTMLElement>;
   onTagClick: (tag: string) => void;
   onDocLinkClick: (title: string) => void;
 };
 
-export function Outline({ store, onTagClick, onDocLinkClick }: Props) {
+export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props) {
   const { doc, view, rows, focus, edit, setView, requestFocus } = store;
   const [selection, setSelection] = useState<Id[]>([]);
   const [noteFocus, setNoteFocus] = useState<{ id: Id; seq: number } | null>(null);
@@ -339,6 +343,7 @@ export function Outline({ store, onTagClick, onDocLinkClick }: Props) {
 
   const selected = useMemo(() => new Set(selection), [selection]);
   const activeId = selection.length > 0 ? null : focus?.id ?? null;
+  const window_ = useVirtualRows(rows, scrollRef, container, activeId);
 
   return (
     <div
@@ -352,7 +357,8 @@ export function Outline({ store, onTagClick, onDocLinkClick }: Props) {
         setDropSpot(null);
       }}
     >
-      {rows.map((row) => (
+      {window_.padTop > 0 ? <div style={{ height: window_.padTop }} /> : null}
+      {rows.slice(window_.start, window_.end).map((row) => (
         <Row
           key={row.id}
           row={row}
@@ -364,6 +370,7 @@ export function Outline({ store, onTagClick, onDocLinkClick }: Props) {
           api={api}
         />
       ))}
+      {window_.padBottom > 0 ? <div style={{ height: window_.padBottom }} /> : null}
       <div
         className="outline-tail"
         onMouseDown={(event) => {

@@ -2,13 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { detectFormat, exportBackup, exportDoc, importDoc, parseBackup, type Format } from "../core/formats";
 import { useStore } from "../core/store";
 import { ancestors, setCollapsedDeep } from "../core/tree";
-import type { Id } from "../core/types";
+import { docList } from "../core/types";
 import { Outline } from "./Outline";
 import { SearchPanel } from "./SearchPanel";
 import { Shortcuts } from "./Shortcuts";
 import { Sidebar } from "./Sidebar";
+import { SyncBadge, SyncSettings } from "./SyncSettings";
 
-type Overlay = { kind: "search"; query: string } | { kind: "shortcuts" } | null;
+type Overlay = { kind: "search"; query: string } | { kind: "shortcuts" } | { kind: "sync" } | null;
 
 export function App() {
   const store = useStore();
@@ -18,6 +19,7 @@ export function App() {
     () => (localStorage.getItem("outliner:theme") as "light" | "dark") ?? "light"
   );
   const fileInput = useRef<HTMLInputElement>(null);
+  const scroller = useRef<HTMLElement>(null);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -95,7 +97,7 @@ export function App() {
     <div className={`app${sidebarOpen ? " app-with-sidebar" : ""}`}>
       {sidebarOpen ? <Sidebar store={store} onTagClick={openSearch} /> : null}
 
-      <main className="main">
+      <main className="main" ref={scroller}>
         <header className="topbar">
           <button type="button" className="ghost" title="사이드바 (⌘\)" onClick={() => setSidebarOpen((open) => !open)}>
             ☰
@@ -116,6 +118,7 @@ export function App() {
           </nav>
 
           <div className="topbar-actions">
+            <SyncBadge store={store} onClick={() => setOverlay({ kind: "sync" })} />
             <button type="button" className="ghost" title="검색 (⌘K)" onClick={() => openSearch()}>
               🔍
             </button>
@@ -165,6 +168,9 @@ export function App() {
                 <button type="button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
                   {theme === "dark" ? "밝은 테마" : "어두운 테마"}
                 </button>
+                <button type="button" onClick={() => setOverlay({ kind: "sync" })}>
+                  동기화 설정
+                </button>
                 <button type="button" onClick={() => setOverlay({ kind: "shortcuts" })}>
                   단축키 (⌘/)
                 </button>
@@ -175,7 +181,12 @@ export function App() {
 
         {zoomed ? <h1 className="zoom-title">{doc.nodes[view.zoomId]?.text || "(빈 항목)"}</h1> : null}
 
-        <Outline store={store} onTagClick={openSearch} onDocLinkClick={(title) => openDocByTitle(store, title)} />
+        <Outline
+          store={store}
+          scrollRef={scroller}
+          onTagClick={openSearch}
+          onDocLinkClick={(title) => openDocByTitle(store, title)}
+        />
       </main>
 
       <input
@@ -194,15 +205,14 @@ export function App() {
         <SearchPanel store={store} initialQuery={overlay.query} onClose={() => setOverlay(null)} />
       ) : null}
       {overlay?.kind === "shortcuts" ? <Shortcuts onClose={() => setOverlay(null)} /> : null}
+      {overlay?.kind === "sync" ? <SyncSettings store={store} onClose={() => setOverlay(null)} /> : null}
     </div>
   );
 }
 
 /** `[[Title]]` opens the matching document, creating it when missing. */
 function openDocByTitle(store: ReturnType<typeof useStore>, title: string) {
-  const match = store.workspace.docOrder.find(
-    (id: Id) => store.workspace.docs[id].title.toLowerCase() === title.toLowerCase()
-  );
-  if (match) store.docs.select(match);
+  const match = docList(store.workspace).find((doc) => doc.title.toLowerCase() === title.toLowerCase());
+  if (match) store.docs.select(match.id);
   else store.docs.create(title);
 }

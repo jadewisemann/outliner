@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { allTags } from "../core/search";
 import type { Store } from "../core/store";
-import type { Id } from "../core/types";
+import { docList, type Id } from "../core/types";
 
 type Props = {
   store: Store;
@@ -11,7 +11,9 @@ type Props = {
 export function Sidebar({ store, onTagClick }: Props) {
   const { workspace, docs } = store;
   const [renaming, setRenaming] = useState<Id | null>(null);
-  const tags = allTags(workspace).slice(0, 20);
+  // Scans every node, so it only reruns when a document actually changes.
+  const tags = useMemo(() => allTags(workspace).slice(0, 20), [workspace.docs]);
+  const list = docList(workspace);
 
   return (
     <aside className="sidebar">
@@ -23,20 +25,19 @@ export function Sidebar({ store, onTagClick }: Props) {
       </div>
 
       <nav className="doc-list">
-        {workspace.docOrder.map((id, index) => {
-          const doc = workspace.docs[id];
-          if (!doc) return null;
+        {list.map((doc, index) => {
+          const id = doc.id;
           const active = id === workspace.activeDocId;
           return (
             <div
               key={id}
               className={`doc-item${active ? " doc-item-active" : ""}`}
               draggable={renaming !== id}
-              onDragStart={(event) => event.dataTransfer.setData("text/doc-index", String(index))}
+              onDragStart={(event) => event.dataTransfer.setData("text/doc-id", id)}
               onDragOver={(event) => event.preventDefault()}
               onDrop={(event) => {
-                const from = Number(event.dataTransfer.getData("text/doc-index"));
-                if (!Number.isNaN(from) && from !== index) docs.reorder(from, index);
+                const moved = event.dataTransfer.getData("text/doc-id");
+                if (moved && moved !== id) docs.reorder(moved, index);
               }}
             >
               {renaming === id ? (
@@ -63,7 +64,7 @@ export function Sidebar({ store, onTagClick }: Props) {
                     className="ghost doc-remove"
                     title="문서 삭제"
                     onClick={() => {
-                      if (workspace.docOrder.length > 1 && confirm(`"${doc.title}" 문서를 삭제할까요?`)) docs.remove(id);
+                      if (list.length > 1 && confirm(`"${doc.title}" 문서를 삭제할까요?`)) docs.remove(id);
                     }}
                   >
                     ×
