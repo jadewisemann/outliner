@@ -186,3 +186,54 @@ const TAG_PATTERN = /(?<![\w#])#[\p{L}\p{N}_/-]+/gu;
 export function extractTags(text: string): string[] {
   return [...text.matchAll(TAG_PATTERN)].map((match) => match[0]);
 }
+
+/**
+ * A note, rendered rather than shown as source: ``` fences become code blocks,
+ * `> ` lines become quotations, everything else keeps the inline markup.
+ *
+ * A row's text is one line by construction — one textarea, one item — so a
+ * multi-line code block has nowhere to live except a note. That is where it
+ * belongs anyway: the block is commentary on the row, not the row.
+ */
+export function renderNote(source: string, handlers: InlineHandlers = {}): ReactNode {
+  const lines = source.split("\n");
+  const out: ReactNode[] = [];
+  let at = 0;
+
+  while (at < lines.length) {
+    const fence = lines[at].match(/^```(\w*)\s*$/);
+    if (fence) {
+      const body: string[] = [];
+      at += 1;
+      while (at < lines.length && !/^```\s*$/.test(lines[at])) {
+        body.push(lines[at]);
+        at += 1;
+      }
+      // A fence left unclosed still renders as a block; refusing to would mean
+      // the note looks broken while it is being written.
+      at += 1;
+      out.push(
+        <pre key={out.length} className="note-code" data-language={fence[1] || undefined}>
+          <code>{body.join("\n")}</code>
+        </pre>
+      );
+      continue;
+    }
+
+    const paragraph: string[] = [];
+    const quoted = lines[at].startsWith("> ");
+    while (at < lines.length && !/^```/.test(lines[at]) && lines[at].startsWith("> ") === quoted) {
+      paragraph.push(quoted ? lines[at].slice(2) : lines[at]);
+      at += 1;
+    }
+    const text = paragraph.join("\n");
+    out.push(
+      quoted ? (
+        <blockquote key={out.length}>{renderInline(text, handlers)}</blockquote>
+      ) : (
+        <p key={out.length}>{renderInline(text, handlers)}</p>
+      )
+    );
+  }
+  return out;
+}

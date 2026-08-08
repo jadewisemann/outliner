@@ -16,8 +16,11 @@ import { makeWorkspace, stamp, type Doc, type Id, type Node, type Workspace } fr
  */
 export function migrate(raw: unknown): Workspace {
   if (!isRecord(raw)) return makeWorkspace();
-  if (raw.version === 5) return raw as unknown as Workspace;
-  if (raw.version === 4) return { ...(raw as unknown as Workspace), version: 5 };
+  if (raw.version === 6) return raw as unknown as Workspace;
+  // 4 → 5 → 6 are additive only, and `validate.ts` already supplies a default
+  // for every field they added, so each step is a version bump. Storage always
+  // passes through validation on the way in, which is what makes that safe.
+  if (raw.version === 4 || raw.version === 5) return { ...(raw as unknown as Workspace), version: 6 };
   if (raw.version === 3) return fromV3(raw);
   return makeWorkspace();
 }
@@ -38,7 +41,7 @@ function fromV3(raw: Record<string, unknown>): Workspace {
   if (Object.keys(docs).length === 0) return makeWorkspace();
   const activeDocId = docs[raw.activeDocId as Id] ? (raw.activeDocId as Id) : Object.keys(docs)[0];
   return {
-    version: 5,
+    version: 6,
     docs,
     graves: {},
     activeDocId,
@@ -57,6 +60,7 @@ function lift(old: LegacyDoc, sort: string, now: ReturnType<typeof stamp>): Doc 
       collapsed: legacy.collapsed ?? false,
       done: legacy.done ?? false,
       heading: legacy.heading ?? 0,
+      quote: false,
       checklist: false,
       numbered: false,
       color: 0,

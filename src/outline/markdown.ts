@@ -114,7 +114,8 @@ export type AutoFormat = {
 const PREFIXES: { pattern: RegExp; apply(match: RegExpMatchArray): Omit<AutoFormat, "prefix" | "text"> }[] = [
   { pattern: /^(#{1,3})$/, apply: (match) => ({ node: { heading: match[1].length as Node["heading"] } }) },
   { pattern: /^\[\s?\]$/, apply: () => ({ parent: { checklist: true } }) },
-  { pattern: /^\d{1,3}[.)]$/, apply: () => ({ parent: { numbered: true } }) }
+  { pattern: /^\d{1,3}[.)]$/, apply: () => ({ parent: { numbered: true } }) },
+  { pattern: /^>$/, apply: () => ({ node: { quote: true } }) }
 ];
 
 /**

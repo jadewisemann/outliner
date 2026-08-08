@@ -30,7 +30,7 @@ describe("migrate", () => {
     const workspace = migrate(structuredClone(V3));
     const doc = workspace.docs.doc;
 
-    expect(workspace.version).toBe(5);
+    expect(workspace.version).toBe(6);
     expect(doc.title).toBe("Notes");
     expect(visibleRows(doc, doc.rootId).map((row) => `${"  ".repeat(row.depth)}${row.node.text}`)).toEqual([
       "alpha",
@@ -66,7 +66,7 @@ describe("migrate", () => {
     const lifted = readWorkspace(migrate(structuredClone(v4)));
     const doc = Object.values(lifted!.docs)[0];
 
-    expect(lifted!.version).toBe(5);
+    expect(lifted!.version).toBe(6);
     expect(doc.kind).toBe("doc");
     expect(doc.parent).toBeNull();
     expect(Object.values(doc.nodes).every((node) => node.color === 0 && !node.checklist)).toBe(true);

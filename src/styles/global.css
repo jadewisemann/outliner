@@ -1338,3 +1338,62 @@ button {
   font-size: 12px;
   color: var(--muted);
 }
+
+/* ------------------------------------------------------------------ */
+/* quotes and code                                                     */
+/* ------------------------------------------------------------------ */
+
+.row-quote > .row-body > .row-line {
+  padding-left: 10px;
+  border-left: 3px solid var(--faint);
+}
+
+.row-quote .row-text {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* The rendered note has to share metrics with the textarea it replaces, or
+   the swap moves the text under the pointer that asked for it. */
+.row-note-rendered {
+  cursor: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.row-note-rendered p,
+.row-note-rendered blockquote {
+  margin: 0;
+}
+
+.row-note-rendered blockquote {
+  padding-left: 8px;
+  border-left: 2px solid var(--faint);
+}
+
+.note-code {
+  margin: 4px 0;
+  padding: 8px 10px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  background: var(--faint);
+  border-radius: 6px;
+}
+
+.note-code code {
+  white-space: pre;
+}
+
+/* Names the language without a highlighter, which would be the first
+   runtime dependency this project has. */
+.note-code[data-language]::before {
+  content: attr(data-language);
+  display: block;
+  margin-bottom: 4px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}

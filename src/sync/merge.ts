@@ -190,6 +190,7 @@ function isUntouched(payload: SyncPayload): boolean {
         !node.collapsed &&
         node.heading === 0 &&
         node.color === 0 &&
+        !node.quote &&
         !node.checklist &&
         !node.numbered &&
         !node.bookmarked

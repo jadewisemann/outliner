@@ -20,6 +20,8 @@ export type Node = {
   collapsed: boolean;
   done: boolean;
   heading: 0 | 1 | 2 | 3;
+  /** Renders the row as a quotation. Unlike the two below, this one is the row's own. */
+  quote: boolean;
   /** Shows a checkbox on this node's *children*. A list is a checklist, not a row. */
   checklist: boolean;
   /** Numbers this node's *children*, for the same reason. */
@@ -85,7 +87,7 @@ export type DocView = {
 };
 
 export type Workspace = {
-  version: 5;
+  version: 6;
   docs: Record<Id, Doc>;
   graves: Record<Id, Stamp>;
   activeDocId: Id;
@@ -125,6 +127,7 @@ export function makeNode(patch: Partial<Node> = {}): Node {
     collapsed: patch.collapsed ?? false,
     done: patch.done ?? false,
     heading: patch.heading ?? 0,
+    quote: patch.quote ?? false,
     checklist: patch.checklist ?? false,
     numbered: patch.numbered ?? false,
     color: patch.color ?? 0,
@@ -177,7 +180,7 @@ export function makeView(doc: Doc, patch: Partial<DocView> = {}): DocView {
 export function makeWorkspace(): Workspace {
   const doc = makeDoc("Inbox");
   return {
-    version: 5,
+    version: 6,
     docs: { [doc.id]: doc },
     graves: {},
     activeDocId: doc.id,

@@ -47,7 +47,7 @@ export function readWorkspace(value: unknown, now = Date.now()): Workspace | nul
       };
     }
   }
-  return { version: 5, ...payload, activeDocId, views };
+  return { version: 6, ...payload, activeDocId, views };
 }
 
 /**
@@ -103,6 +103,7 @@ function readNodes(value: unknown, now: number): Record<Id, Node> | null {
       collapsed: raw.collapsed === true,
       done: raw.done === true,
       heading: heading === 1 || heading === 2 || heading === 3 ? heading : 0,
+      quote: raw.quote === true,
       checklist: raw.checklist === true,
       numbered: raw.numbered === true,
       color: Number.isInteger(color) && color >= 1 && color <= 6 ? (color as Node["color"]) : 0,

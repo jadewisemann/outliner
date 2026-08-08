@@ -351,7 +351,9 @@ export function useOutline(
           autoUndo.current = {
             rowId: row.id,
             prefix: applied.prefix,
-            node: applied.node ? { heading: node?.heading ?? 0 } : undefined,
+            // Whatever the rule is about to overwrite, not a fixed field: a
+            // prefix can set a heading, a quote, or a flag on the parent.
+            node: applied.node ? pick(node, applied.node) : undefined,
             parentId,
             parent: parentId ? pick(docRef.current.nodes[parentId], applied.parent!) : undefined
           };
@@ -603,6 +605,7 @@ export function useOutline(
         setCompletion(null);
         requestFocus(id, caret);
       },
+      focusNote,
       pointerSelect(event: MouseEvent, row) {
         if (event.shiftKey) {
           event.preventDefault();
@@ -663,6 +666,7 @@ export function useOutline(
       onTagClick,
       onDocLinkClick,
       onItemLinkClick,
+      focusNote,
       applyText,
       refreshCompletion,
       acceptCompletion

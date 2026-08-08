@@ -61,6 +61,7 @@ function opmlNode(doc: Doc, id: Id, depth: number): string {
     node.collapsed ? `_collapsed="true"` : "",
     node.checklist ? `_checkbox="true"` : "",
     node.numbered ? `_numbered="true"` : "",
+    node.quote ? `_quote="true"` : "",
     node.heading > 0 ? `_heading="${node.heading}"` : "",
     node.color > 0 ? `_colorLabel="${node.color}"` : ""
   ]
@@ -141,6 +142,7 @@ const OPML_FIELDS = {
   collapsed: ["_collapsed", "collapsed"],
   checklist: ["_checkbox", "checkbox"],
   numbered: ["_numbered", "numbered"],
+  quote: ["_quote", "quote"],
   color: ["_colorLabel", "colorLabel", "color"],
   heading: ["_heading", "heading"],
   id: ["id", "_id"]
@@ -179,6 +181,7 @@ function parseOpml(content: string, root: Node, nodes: Record<Id, Node>) {
         collapsed: isTrue(attr(child, OPML_FIELDS.collapsed)),
         checklist: isTrue(attr(child, OPML_FIELDS.checklist)),
         numbered: isTrue(attr(child, OPML_FIELDS.numbered)),
+        quote: isTrue(attr(child, OPML_FIELDS.quote)),
         heading: heading >= 1 && heading <= 3 ? (heading as Node["heading"]) : 0,
         color: color >= 1 && color <= 6 ? (color as Node["color"]) : 0
       });
@@ -218,5 +221,5 @@ export function parseBackup(content: string): Workspace | null {
 
 function isKnownVersion(raw: unknown): boolean {
   const version = (raw as { version?: unknown } | null)?.version;
-  return version === 3 || version === 4 || version === 5;
+  return version === 3 || version === 4 || version === 5 || version === 6;
 }

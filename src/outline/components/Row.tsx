@@ -1,5 +1,5 @@
 import { memo, type ClipboardEvent, type DragEvent, type KeyboardEvent, type MouseEvent } from "react";
-import { renderInline, sourceOffset } from "../inline";
+import { renderInline, renderNote, sourceOffset } from "../inline";
 import type { Row as RowModel } from "../../types";
 import type { Choice } from "../useOutline";
 import { Editable, type FocusHint } from "./Editable";
@@ -18,6 +18,7 @@ export type RowApi = {
   toggleDone(id: string): void;
   zoom(id: string): void;
   focusText(id: string, caret: number | "end"): void;
+  focusNote(id: string): void;
   pointerSelect(event: MouseEvent, row: RowModel): void;
   clearSelection(): void;
   openTag(tag: string): void;
@@ -44,6 +45,7 @@ type Props = {
 function RowView({ row, active, selected, focusHint, noteFocusHint, completion, hideNotes, drop, api }: Props) {
   const { node } = row;
   const hasChildren = node.children.length > 0;
+  const editingNote = noteFocusHint !== null;
 
   return (
     <div
@@ -53,6 +55,7 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, completion, 
         active ? "row-active" : "",
         node.done ? "row-done" : "",
         node.heading > 0 ? `row-h${node.heading}` : "",
+        node.quote ? "row-quote" : "",
         node.color > 0 ? `row-c${node.color}` : "",
         node.bookmarked ? "row-bookmarked" : "",
         drop ? `row-drop-${drop}` : ""
@@ -170,7 +173,7 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, completion, 
           </ul>
         ) : null}
 
-        {!hideNotes && (node.note !== "" || noteFocusHint) ? (
+        {hideNotes || (node.note === "" && !noteFocusHint) ? null : editingNote ? (
           <Editable
             value={node.note}
             className="row-note"
@@ -180,7 +183,26 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, completion, 
             onChange={(note) => api.setNote(row.id, note)}
             onKeyDown={(event, element) => api.onNoteKeyDown(event, element, row)}
           />
-        ) : null}
+        ) : (
+          // Same swap as the row itself: source while being written, rendered
+          // otherwise, so a code block reads as one without an editor for it.
+          <div
+            className="row-note row-note-rendered"
+            onMouseDown={(event) => {
+              if (event.button !== 0) return;
+              event.preventDefault();
+              api.focusNote(row.id);
+            }}
+          >
+            {renderNote(node.note, {
+              onTagClick: api.openTag,
+              onDocLinkClick: api.openDocByTitle,
+              onItemLinkClick: api.openItem,
+              resolveItem: api.resolveItem,
+              showImages: true
+            })}
+          </div>
+        )}
       </div>
     </div>
   );
