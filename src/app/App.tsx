@@ -1,8 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
 import { ancestors, setCollapsedDeep } from "../outline/tree";
 import { docList } from "../types";
 import { Outline } from "../outline/components/Outline";
+import { Palette } from "../palette/components/Palette";
+import { buildCommands } from "../palette/commands";
 import { SearchPanel } from "../search/components/SearchPanel";
 import { completeGithubLogin, fetchGithubLogin } from "../sync/api/githubAuth";
 import { SyncBadge, SyncSettings, type OauthPrefill } from "../sync/components/SyncSettings";
@@ -11,6 +13,7 @@ import { Shortcuts } from "./Shortcuts";
 import { Sidebar } from "./Sidebar";
 
 type Overlay =
+  | { kind: "palette"; query: string }
   | { kind: "search"; query: string }
   | { kind: "shortcuts" }
   | { kind: "sync"; oauth?: OauthPrefill }
@@ -36,8 +39,24 @@ export function App() {
   const storeRef = useRef(store);
   storeRef.current = store;
   const openSearch = useCallback((query = "") => setOverlay({ kind: "search", query }), []);
+  const openPalette = useCallback((query = "") => setOverlay({ kind: "palette", query }), []);
   const openDoc = useCallback((title: string) => openDocByTitle(storeRef.current, title), []);
   const transfer = useTransfer(store);
+
+  const commands = useMemo(
+    () =>
+      store.ready
+        ? buildCommands(store, {
+            exportAs: transfer.exportAs,
+            importFile: () => fileInput.current?.click(),
+            toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
+            toggleSidebar: () => setSidebarOpen((open) => !open),
+            openSync: () => setOverlay({ kind: "sync" }),
+            openShortcuts: () => setOverlay({ kind: "shortcuts" })
+          })
+        : [],
+    [store, transfer.exportAs]
+  );
 
   // Returning from GitHub's consent screen: finish the exchange and land the
   // user in the sync panel with the token already in place.
@@ -57,7 +76,12 @@ export function App() {
       const mod = event.metaKey || event.ctrlKey;
       // ⌘K belongs to "link" inside a row, the way it does in every markdown
       // editor, so the palette takes the editor's keys instead.
-      if (mod && (event.key.toLowerCase() === "p" || (event.shiftKey && event.key.toLowerCase() === "f"))) {
+      if (mod && event.key.toLowerCase() === "p") {
+        event.preventDefault();
+        openPalette(event.shiftKey ? ">" : "");
+        return;
+      }
+      if (mod && event.shiftKey && event.key.toLowerCase() === "f") {
         event.preventDefault();
         openSearch();
         return;
@@ -87,7 +111,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openSearch]);
+  }, [openSearch, openPalette]);
 
   if (!store.ready) return <div className="booting">불러오는 중…</div>;
 
@@ -126,7 +150,10 @@ export function App() {
 
           <div className="topbar-actions">
             <SyncBadge store={store} onClick={() => setOverlay({ kind: "sync" })} />
-            <button type="button" className="ghost" title="검색 (⌘K)" onClick={() => openSearch()}>
+            <button type="button" className="ghost" title="팔레트 (⌘P)" onClick={() => openPalette()}>
+              ⌘
+            </button>
+            <button type="button" className="ghost" title="검색 (⌘⇧F)" onClick={() => openSearch()}>
               🔍
             </button>
             <button type="button" className="ghost" title="실행 취소 (⌘Z)" onClick={store.undo}>
@@ -203,6 +230,15 @@ export function App() {
         }}
       />
 
+      {overlay?.kind === "palette" ? (
+        <Palette
+          store={store}
+          commands={commands}
+          initialQuery={overlay.query}
+          onClose={() => setOverlay(null)}
+          onSearch={openSearch}
+        />
+      ) : null}
       {overlay?.kind === "search" ? (
         <SearchPanel store={store} initialQuery={overlay.query} onClose={() => setOverlay(null)} />
       ) : null}

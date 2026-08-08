@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createHistory } from "./history";
+import { rememberDoc } from "./palette/palette";
 import { changedBy, mergeWorkspace } from "./sync/merge";
 import { isLocked } from "./sync/api/cipher";
 import { keyBetween } from "./shared/order";
@@ -20,6 +21,7 @@ import { ensureEditable, visibleRows, type Edit } from "./outline/tree";
 import {
   docList,
   makeDoc,
+  makeFolder,
   makeView,
   makeWorkspace,
   stamp,
@@ -188,12 +190,44 @@ export function useStore() {
     const lastSort = (current: Workspace) => docList(current).at(-1)?.sort ?? null;
 
     return {
-      create(title = "Untitled") {
+      create(title = "Untitled", parent: Id | null = null) {
         const current = live.current;
-        const doc = makeDoc(title, { sort: keyBetween(current ? lastSort(current) : null, null) });
+        const doc = makeDoc(title, { sort: keyBetween(current ? lastSort(current) : null, null), parent });
         editWorkspace((now) => attach(now, doc));
         requestFocus(doc.nodes[doc.rootId].children[0]);
         return doc;
+      },
+      /** A folder is an ordinary document that holds no outline of its own. */
+      createFolder(title = "새 폴더", parent: Id | null = null) {
+        const current = live.current;
+        const folder = makeFolder(title, { sort: keyBetween(current ? lastSort(current) : null, null), parent });
+        editWorkspace((now) => ({ ...now, docs: { ...now.docs, [folder.id]: folder } }));
+        return folder;
+      },
+      toggleBookmark(id: Id) {
+        editWorkspace((current) =>
+          current.docs[id]
+            ? {
+                ...current,
+                docs: {
+                  ...current.docs,
+                  [id]: { ...current.docs[id], bookmarked: !current.docs[id].bookmarked, titleEdited: stamp() }
+                }
+              }
+            : current
+        );
+      },
+      /** Files a document (or folder) into `parent`, or back to the top level. */
+      moveInto(id: Id, parent: Id | null) {
+        editWorkspace((current) => {
+          const doc = current.docs[id];
+          // A folder cannot be filed into itself or into its own descendant.
+          if (!doc || id === parent) return current;
+          for (let cursor = parent; cursor; cursor = current.docs[cursor]?.parent ?? null) {
+            if (cursor === id) return current;
+          }
+          return { ...current, docs: { ...current.docs, [id]: { ...doc, parent, moved: stamp() } } };
+        });
       },
       add(doc: Doc) {
         const current = live.current;
@@ -239,6 +273,7 @@ export function useStore() {
           },
           { transient: true }
         );
+        rememberDoc(id);
         if (options.focusId) requestFocus(options.focusId);
       },
       /** Drops `id` at `toIndex` in the sidebar list. */

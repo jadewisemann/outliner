@@ -74,7 +74,7 @@ test("renders inline markup and finds rows by tag", async ({ page }) => {
 
   await expect(page.locator(".row-rendered strong")).toHaveText("bold");
 
-  await page.keyboard.press("Control+p");
+  await page.keyboard.press("Control+Shift+f");
   await page.locator(".search-input").fill("#urgent");
   await expect(page.locator(".search-hit")).toHaveCount(1);
   await page.locator(".search-hit").first().click();

@@ -143,3 +143,35 @@ test("completes a tag that is already used elsewhere", async ({ page }) => {
   await page.keyboard.press("Tab");
   await expect(value(page)).toHaveValue("second #urgent");
 });
+
+test("the palette runs a command that no menu has to be opened for", async ({ page }) => {
+  await page.keyboard.type("a row");
+
+  await page.keyboard.press("Control+Shift+p");
+  await page.locator(".search-input").fill(">제목 2");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".row-h2")).toHaveCount(1);
+
+  await page.keyboard.press("Control+Shift+p");
+  await page.locator(".search-input").fill(">체크리스트");
+  await page.keyboard.press("Enter");
+  await expect(page.locator(".row-check")).toHaveCount(1);
+});
+
+test("the palette jumps to a document and to an item", async ({ page }) => {
+  await page.keyboard.type("needle in the first doc");
+  await page.locator('[title="새 문서"]').click();
+  await page.locator(".doc-item-active .doc-open").dblclick();
+  await page.locator(".doc-rename").fill("Second");
+  await page.keyboard.press("Enter");
+
+  await page.keyboard.press("Control+p");
+  await page.locator(".search-input").fill("needle");
+  await expect(page.locator(".palette-hit").first()).toContainText("needle");
+  await page.keyboard.press("Enter");
+  await expect(page.locator("textarea.row-input")).toHaveValue("needle in the first doc");
+
+  // Empty query offers where you have just been.
+  await page.keyboard.press("Control+p");
+  await expect(page.locator(".palette-hit").first()).toContainText("최근");
+});
