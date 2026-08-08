@@ -317,6 +317,43 @@ button {
   cursor: text;
 }
 
+/*
+ * Sits on top of the software keyboard; `bottom` is set inline from
+ * `visualViewport`, since `fixed` alone pins it under the keyboard.
+ */
+.touch-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-top: 1px solid var(--faint);
+  box-shadow: 0 -1px 8px rgba(0, 0, 0, 0.06);
+}
+
+.touch-bar button {
+  flex: 1;
+  /* A comfortable touch target, and the same height as the keys below it. */
+  min-height: 40px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--faint);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1;
+  /* No double-tap zoom, no lingering blue wash, no selecting the glyph. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.touch-bar button:active {
+  background: var(--selection);
+}
+
 .row {
   position: relative;
   display: flex;
