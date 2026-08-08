@@ -495,15 +495,22 @@ button {
   text-align: right;
 }
 
+/* On a numbered list the number is the marker, so the bullet steps back to
+   being only what it also is: the drag and zoom handle. */
 .row-bullet-numbered {
   width: 10px;
 }
 
 .row-bullet-numbered::after {
   left: 1px;
+  top: 11px;
   width: 4px;
   height: 4px;
-  top: 11px;
+  opacity: 0;
+}
+
+.row:hover .row-bullet-numbered::after {
+  opacity: 1;
 }
 
 /* Colour labels tint the row's text, not its background: a page of six

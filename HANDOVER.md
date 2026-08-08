@@ -12,7 +12,7 @@ Yjs/Lexical/Firebase 기반 9,200줄 TDD 산출물을 폐기하고, 의존성 0(
 
 ## 지금 상태
 
-- 소스 ~5,200줄, 유닛 122 / e2e 30 전부 green, `tsc --noEmit` clean, 번들 71KB gzip
+- 소스 ~6,600줄, 유닛 160 / e2e 46 전부 green, `tsc --noEmit` clean, 번들 79KB gzip
 - e2e 실행: `PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npm run test:e2e`
   (이 환경 기준. GitHub 백엔드 테스트는 케이던스 때문에 `test.setTimeout(120_000)` 필요)
 - e2e는 웹 서버를 **둘** 띄운다: dev(5173)와 `vite preview`(4173). CSP와 매니페스트는 빌드
@@ -38,6 +38,15 @@ Yjs/Lexical/Firebase 기반 9,200줄 TDD 산출물을 폐기하고, 의존성 0(
 | `de5e896` feat | **모바일 터치 바**. 폰에 Tab이 없어 들여쓰기가 불가능했던 것 — 편집 중에만 키보드 위에 ⇤ ⇥ ↑ ↓ |
 | `a8c4c9a` build | `base: "./"` + **GitHub Pages 워크플로**. Vercel/Pages 배포 문서화 |
 | `413455e` fix | 긴 문서에서 **편집 중인 행에서 스크롤해 벗어나면 1초 뒤 도로 끌려오던 버그**. large.spec.ts가 가끔 실패하던 진짜 원인 |
+| `971b87b` (#2) | 문서당 파일, CSP, E2EE, 설치, 모바일 터치 바까지의 PR |
+| — docs | **`PARITY.md`** — 다이나리스트 격차 분석. 축 7개, P0/P1/P2, 스키마 변경 총계 |
+| — feat | **스키마 v5**. `checklist`/`numbered`/`color`/`bookmarked`/`created`(노드), `parent`/`kind`/`bookmarked`(문서). 새 병합 규칙은 `created`(더 이른 쪽) 하나 |
+| — feat | **마크다운 키보드 편집**. ⌘B/I/E·⌘⇧X/H·⌘K 토글, `# `·`[] `·`1. ` 자동 서식(직후 Backspace로 복구), `[[`·`#` 자동완성, ⌘D 복제 / ⌘⇧K 삭제. ⌘K가 링크가 되면서 팔레트가 에디터 키로 이동 |
+| — feat | **팔레트**. 명령 실행 흡수(⋯ 메뉴에만 있던 것들), 접두사 모드, 퍼지 매칭, 최근 문서 |
+| — feat | **검색 연산자 + 제자리 필터**. 하나의 질의 언어(`query.ts`)를 패널과 ⌘F가 공유 |
+| — feat | **폴더와 즐겨찾기**. 폴더 = `kind: "folder"`인 문서 |
+| — feat | **관대한 OPML 읽기 + 여러 파일 한 번에**, id 보존 |
+| — feat | **service worker**. 신호 없이도 열린다 |
 
 ## 세션에서 내린 결정과 근거 (뒤집으려면 이유를 알아야 함)
 
