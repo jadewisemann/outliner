@@ -1,3 +1,5 @@
+import { Panel } from "./Panel";
+
 const GROUPS: { title: string; items: [string, string][] }[] = [
   {
     title: "편집",
@@ -43,15 +45,14 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
 
 export function Shortcuts({ onClose }: { onClose: () => void }) {
   return (
-    <div className="overlay" onMouseDown={onClose}>
-      <div className="panel shortcuts-panel" onMouseDown={(event) => event.stopPropagation()}>
-        <header className="panel-head">
-          <h2>단축키</h2>
-          <button type="button" className="ghost" onClick={onClose}>
-            ×
-          </button>
-        </header>
-        <div className="shortcuts-grid">
+    <Panel className="shortcuts-panel" label="단축키" onClose={onClose}>
+      <header className="panel-head">
+        <h2>단축키</h2>
+        <button type="button" className="ghost" onClick={onClose}>
+          ×
+        </button>
+      </header>
+      <div className="shortcuts-grid">
           {GROUPS.map((group) => (
             <section key={group.title}>
               <h3>{group.title}</h3>
@@ -65,12 +66,11 @@ export function Shortcuts({ onClose }: { onClose: () => void }) {
               </dl>
             </section>
           ))}
-        </div>
-        <footer className="panel-foot">
-          마크다운 표기: <code>**굵게**</code> <code>*기울임*</code> <code>`코드`</code> <code>~~취소~~</code>{" "}
-          <code>==강조==</code> <code>[[문서]]</code> <code>#태그</code>
-        </footer>
       </div>
-    </div>
+      <footer className="panel-foot">
+        마크다운 표기: <code>**굵게**</code> <code>*기울임*</code> <code>`코드`</code> <code>~~취소~~</code>{" "}
+        <code>==강조==</code> <code>[[문서]]</code> <code>#태그</code>
+      </footer>
+    </Panel>
   );
 }

@@ -102,6 +102,69 @@ test("a delete on one device is not undone by the other", async ({ browser, base
   await phone.close();
 });
 
+test("a hostile endpoint cannot destroy the local document", async ({ browser, baseURL }) => {
+  const context = await browser.newContext();
+  // Serves garbage, then a payload crafted to bury everything.
+  let phase = 0;
+  const bodies = [
+    "<!doctype html><h1>captive portal</h1>",
+    JSON.stringify({ docs: null }),
+    JSON.stringify({ docs: { a: null }, graves: { a: { at: 9e15, by: "zzz" } } }),
+    JSON.stringify({ docs: {}, graves: { "__proto__": { at: 9e15, by: "zzz" } } })
+  ];
+  await context.route(SYNC_URL, async (route) => {
+    if (route.request().method() === "PUT") return route.fulfill({ status: 200, body: "{}" });
+    return route.fulfill({ status: 200, contentType: "application/json", body: bodies[phase++ % bodies.length] });
+  });
+
+  const page = await openSynced(context, baseURL!);
+  await page.keyboard.type("my only copy of this note");
+  await page.waitForTimeout(6000);
+
+  await expect(page.getByText("my only copy of this note")).toBeVisible();
+  expect(await rowTexts(page)).toContain("my only copy of this note");
+  await context.close();
+});
+
+test("an unreachable endpoint reports itself and backs off", async ({ browser, baseURL }) => {
+  const context = await browser.newContext();
+  let requests = 0;
+  await context.route(SYNC_URL, async (route) => {
+    requests += 1;
+    await route.fulfill({ status: 500, body: "nope" });
+  });
+
+  const page = await openSynced(context, baseURL!);
+  await page.keyboard.type("still editable while sync is broken");
+  await expect(page.locator(".sync-badge.sync-error")).toBeVisible({ timeout: 10_000 });
+
+  const afterFirst = requests;
+  await page.waitForTimeout(8000);
+  // Without backoff this would be another ~5 attempts per second of waiting.
+  expect(requests - afterFirst).toBeLessThan(6);
+  expect(await rowTexts(page)).toContain("still editable while sync is broken");
+  await context.close();
+});
+
+test("an undone edit is not brought back by the next sync", async ({ browser, baseURL }) => {
+  const context = await browser.newContext();
+  const remote = await serveSharedDocument([context]);
+
+  const page = await openSynced(context, baseURL!);
+  await page.keyboard.type("keep this");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("regret this");
+  await remote.uploaded("regret this");
+
+  await page.keyboard.press("Control+z");
+  await expect(page.getByText("regret this")).toHaveCount(0);
+
+  // Long enough for two full pull/merge rounds to run.
+  await page.waitForTimeout(12_000);
+  expect(await rowTexts(page)).not.toContain("regret this");
+  await context.close();
+});
+
 test("a second tab of the same browser picks up the changes", async ({ browser, baseURL }) => {
   const context = await browser.newContext();
   const first = await context.newPage();

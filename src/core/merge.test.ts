@@ -1,15 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { mergeWorkspace, pruneGraves } from "./merge";
-import {
-  bulkRemove,
-  indent,
-  insertAfter,
-  patchNode,
-  removeNode,
-  splitAt,
-  visibleRows
-} from "./tree";
-import { makeDoc, stamp, type Doc, type Id, type SyncPayload } from "./types";
+import { changedBy, mergeWorkspace, pruneGraves } from "./merge";
+import { bulkRemove, indent, insertAfter, patchNode, splitAt, visibleRows } from "./tree";
+import { makeDoc, makeNode, stamp, type Doc, type Id, type SyncPayload } from "./types";
 
 /** Two devices start from the same document and then diverge. */
 function fork(doc: Doc): [Doc, Doc] {
@@ -75,7 +67,7 @@ describe("mergeWorkspace", () => {
   it("does not let an untouched device resurrect a deleted row", () => {
     const { doc, b } = seed();
     const [mine, theirs] = fork(doc);
-    const deleted = removeNode(mine, mine.rootId, b).doc;
+    const deleted = bulkRemove(mine, mine.rootId, [b]).doc;
 
     expect(shape(mergeWorkspace(payload(deleted), payload(theirs)), doc.id)).toBe("alpha");
     // …and merging the other way round gives the same answer.
@@ -85,7 +77,7 @@ describe("mergeWorkspace", () => {
   it("brings a row back when the other device edited it after the delete", () => {
     const { doc, b } = seed();
     const [mine, theirs] = fork(doc);
-    const deleted = removeNode(mine, mine.rootId, b).doc;
+    const deleted = bulkRemove(mine, mine.rootId, [b]).doc;
     const rewritten = patchNode(theirs, b, { text: "beta is still wanted" });
 
     expect(shape(mergeWorkspace(payload(deleted), payload(rewritten)), doc.id)).toBe("alpha\nbeta is still wanted");
@@ -143,10 +135,91 @@ describe("mergeWorkspace", () => {
   });
 });
 
+describe("regressions", () => {
+  it("gives concurrently inserted siblings distinct positions", () => {
+    // Both devices derive the key from the same neighbours, so they mint the
+    // same one. Left tied, the next edit at that spot would throw.
+    const base = makeDoc("shared");
+    const host = base.nodes[base.rootId].children[0];
+    const under = (text: string): Doc => {
+      const child = makeNode({ text, parent: host });
+      return {
+        ...base,
+        nodes: { ...base.nodes, [host]: { ...base.nodes[host], children: [child.id] }, [child.id]: child }
+      };
+    };
+
+    const merged = mergeWorkspace(payload(under("from laptop")), payload(under("from phone")));
+    const doc = merged.docs[base.id];
+    const kids = doc.nodes[host].children;
+
+    expect(new Set(kids.map((id) => doc.nodes[id].sort)).size).toBe(kids.length);
+    expect(() => splitAt(doc, kids[0], 2)).not.toThrow();
+    expect(() => insertAfter(doc, kids[0], "third")).not.toThrow();
+  });
+
+  it("does not bury a document that came back, when a later edit is undone", () => {
+    // The resurrected document used to keep its gravestone, so any later row
+    // delete could drop the whole document below it and destroy it.
+    const keep = makeDoc("other notes");
+    const important = seed();
+    const buriedAt = stamp();
+    const revived = patchNode(important.doc, important.b, { text: "beta, edited after the delete" });
+
+    const merged = mergeWorkspace(
+      { docs: { [keep.id]: keep }, graves: { [important.doc.id]: buriedAt } },
+      { docs: { [keep.id]: keep, [revived.id]: revived }, graves: {} }
+    );
+    expect(merged.docs[revived.id]).toBeDefined();
+    expect(merged.graves[revived.id]).toBeUndefined();
+
+    // Now delete a row, the ordinary edit that used to trigger the loss.
+    const trimmed = bulkRemove(merged.docs[revived.id], revived.rootId, [important.b]).doc;
+    const after = mergeWorkspace({ ...merged, docs: { ...merged.docs, [revived.id]: trimmed } }, merged);
+    expect(Object.keys(after.docs).sort()).toEqual([keep.id, revived.id].sort());
+  });
+
+  it("agrees on the survivor when each device deleted a different document", () => {
+    const one = makeDoc("one");
+    const two = makeDoc("two");
+    const both = { [one.id]: one, [two.id]: two };
+    const mine: SyncPayload = { docs: { [two.id]: two }, graves: { [one.id]: stamp() } };
+    const theirs: SyncPayload = { docs: { [one.id]: one }, graves: { [two.id]: stamp() } };
+
+    const a = mergeWorkspace(mine, theirs);
+    const b = mergeWorkspace(theirs, mine);
+    expect(Object.keys(a.docs)).toEqual(Object.keys(b.docs));
+    expect(Object.keys(a.docs).length).toBe(1);
+    expect(Object.keys(both)).toContain(Object.keys(a.docs)[0]);
+  });
+
+  it("returns the very same objects when the remote has nothing new", () => {
+    // Object identity is what stops an idle sync re-rendering the outline.
+    const { doc } = seed();
+    const merged = mergeWorkspace(payload(doc), payload(structuredClone(doc)));
+    expect(merged.docs[doc.id]).toBe(doc);
+    expect(changedBy(payload(doc), merged)).toBe(false);
+  });
+
+  it("survives a document that contains a cycle", () => {
+    const { doc, a, b } = seed();
+    const cyclic: Doc = {
+      ...doc,
+      nodes: {
+        ...doc.nodes,
+        [a]: { ...doc.nodes[a], parent: b },
+        [b]: { ...doc.nodes[b], parent: a }
+      }
+    };
+    const merged = mergeWorkspace(payload(cyclic), payload(cyclic));
+    expect(visibleRows(merged.docs[doc.id], doc.rootId).map((row) => row.node.text).sort()).toEqual(["alpha", "beta"]);
+  });
+});
+
 describe("pruneGraves", () => {
   it("forgets gravestones once they are older than the window", () => {
     const { doc, b } = seed();
-    const deleted = removeNode(doc, doc.rootId, b).doc;
+    const deleted = bulkRemove(doc, doc.rootId, [b]).doc;
     const before = Object.keys(deleted.graves).length;
     expect(before).toBeGreaterThan(0);
 

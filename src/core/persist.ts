@@ -1,5 +1,6 @@
 import { migrate } from "./migrate";
 import type { Workspace } from "./types";
+import { readWorkspace } from "./validate";
 
 const DB_NAME = "outliner";
 const STORE = "workspace";
@@ -9,10 +10,13 @@ const KEY = "current";
  * IndexedDB with a localStorage fallback. IndexedDB is the primary store
  * because a large outline outgrows the 5MB localStorage budget.
  */
-export async function loadWorkspace(): Promise<Workspace> {
+/** Returns `null` when there is nothing usable stored, so the caller can start fresh. */
+export async function loadWorkspace(): Promise<Workspace | null> {
   const db = await openDb();
-  const raw = db ? await readDb(db) : readLocalStorage();
-  return migrate(raw ?? readLocalStorage());
+  const raw = (db ? await readDb(db) : null) ?? readLocalStorage();
+  if (raw === null) return null;
+  // Storage can be corrupted by a half-written record or an older build.
+  return readWorkspace(migrate(raw));
 }
 
 export async function saveWorkspace(workspace: Workspace): Promise<void> {

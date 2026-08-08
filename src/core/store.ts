@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { mergeWorkspace } from "./merge";
+import { createHistory } from "./history";
+import { changedBy, mergeWorkspace } from "./merge";
 import { keyBetween } from "./order";
 import { loadWorkspace, saveWorkspace } from "./persist";
 import {
   announceToOtherTabs,
   createRestBackend,
+  hasSynced,
   loadSyncConfig,
+  markSynced,
   saveSyncConfig,
   watchOtherTabs,
-  type Backend,
   type SyncConfig,
   type SyncStatus
 } from "./sync";
@@ -25,13 +27,13 @@ import {
   type Workspace
 } from "./types";
 
-export type FocusRequest = { id: Id; caret: number | "end"; seq: number };
+type FocusRequest = { id: Id; caret: number | "end"; seq: number };
 
-const UNDO_LIMIT = 200;
-const COALESCE_MS = 700;
 const SAVE_DEBOUNCE_MS = 400;
 const PUSH_DEBOUNCE_MS = 1500;
 const PULL_INTERVAL_MS = 10_000;
+/** Longest gap between retries after the endpoint starts failing. */
+const MAX_BACKOFF_MS = 5 * 60_000;
 
 type EditOptions = {
   /** Consecutive edits sharing a key within a short window collapse into one undo step. */
@@ -47,20 +49,23 @@ export function useStore() {
   const [focus, setFocus] = useState<FocusRequest | null>(null);
   const [syncConfig, setSyncConfigState] = useState<SyncConfig | null>(() => loadSyncConfig());
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => (loadSyncConfig() ? "idle" : "off"));
+  const [saveFailed, setSaveFailed] = useState(false);
 
   // Mirrors `workspace` so several edits dispatched in one tick compose
   // instead of overwriting each other.
   const live = useRef<Workspace | null>(null);
-  const past = useRef<Workspace[]>([]);
-  const future = useRef<Workspace[]>([]);
-  const lastEdit = useRef<{ key: string; at: number } | null>(null);
+  const history = useRef(createHistory()).current;
   const focusSeq = useRef(0);
+
+  /** Counts edits worth syncing, so a push knows exactly what it covered. */
+  const edits = useRef(0);
+  const pushed = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
     void loadWorkspace().then((loaded) => {
       if (cancelled) return;
-      const next = Object.keys(loaded.docs).length > 0 ? loaded : makeWorkspace();
+      const next = loaded && Object.keys(loaded.docs).length > 0 ? loaded : makeWorkspace();
       live.current = next;
       setWorkspace(next);
     });
@@ -69,11 +74,16 @@ export function useStore() {
     };
   }, []);
 
-  // Debounced persistence. The in-memory workspace is the source of truth, and
-  // a flush on unload covers the tab being closed mid-window.
+  // Debounced persistence, which doubles as the signal to other tabs. One
+  // timer, driven by actual changes rather than a polling flag.
   useEffect(() => {
     if (!workspace) return;
-    const timer = setTimeout(() => void saveWorkspace(workspace), SAVE_DEBOUNCE_MS);
+    const timer = setTimeout(() => {
+      void saveWorkspace(workspace).then(() => {
+        setSaveFailed(false);
+        announceToOtherTabs();
+      }, () => setSaveFailed(true));
+    }, SAVE_DEBOUNCE_MS);
     const flush = () => void saveWorkspace(workspace);
     window.addEventListener("beforeunload", flush);
     return () => {
@@ -87,7 +97,6 @@ export function useStore() {
     setFocus({ id, caret, seq: focusSeq.current });
   }, []);
 
-  const dirty = useRef(false);
   const applyWorkspace = useCallback((next: Workspace) => {
     live.current = next;
     setWorkspace(next);
@@ -95,20 +104,12 @@ export function useStore() {
 
   const commit = useCallback(
     (next: Workspace, previous: Workspace, options: EditOptions) => {
-      if (!options.transient) {
-        const now = Date.now();
-        const coalesces =
-          options.coalesceKey !== undefined &&
-          lastEdit.current?.key === options.coalesceKey &&
-          now - lastEdit.current.at < COALESCE_MS;
-        if (!coalesces) past.current = [...past.current.slice(-(UNDO_LIMIT - 1)), previous];
-        lastEdit.current = options.coalesceKey ? { key: options.coalesceKey, at: now } : null;
-        future.current = [];
-      }
-      dirty.current = true;
+      if (!options.transient) history.record(previous, options.coalesceKey);
+      // Zoom and focus live on this device only; they should not wake sync.
+      if (next.docs !== previous.docs || next.graves !== previous.graves) edits.current += 1;
       applyWorkspace(next);
     },
-    [applyWorkspace]
+    [applyWorkspace, history]
   );
 
   const editWorkspace = useCallback(
@@ -157,25 +158,20 @@ export function useStore() {
     [editWorkspace]
   );
 
-  const undo = useCallback(() => {
-    const current = live.current;
-    const previous = past.current.pop();
-    if (!current || !previous) return;
-    future.current = [...future.current, current];
-    lastEdit.current = null;
-    dirty.current = true;
-    applyWorkspace(previous);
-  }, [applyWorkspace]);
+  const step = useCallback(
+    (take: (current: Workspace) => Workspace | null) => {
+      const current = live.current;
+      if (!current) return;
+      const next = take(current);
+      if (!next) return;
+      edits.current += 1;
+      applyWorkspace(next);
+    },
+    [applyWorkspace]
+  );
 
-  const redo = useCallback(() => {
-    const current = live.current;
-    const next = future.current.pop();
-    if (!current || !next) return;
-    past.current = [...past.current, current];
-    lastEdit.current = null;
-    dirty.current = true;
-    applyWorkspace(next);
-  }, [applyWorkspace]);
+  const undo = useCallback(() => step((current) => history.undo(current)), [step, history]);
+  const redo = useCallback(() => step((current) => history.redo(current)), [step, history]);
 
   /* ---------------------------------------------------------------- */
   /* documents                                                         */
@@ -249,7 +245,9 @@ export function useStore() {
         editWorkspace((current) => {
           const ordered = docList(current).filter((doc) => doc.id !== id);
           const at = Math.max(0, Math.min(toIndex, ordered.length));
-          const sort = keyBetween(ordered[at - 1]?.sort ?? null, ordered[at]?.sort ?? null);
+          const before = ordered[at - 1]?.sort ?? null;
+          const after = ordered[at]?.sort ?? null;
+          const sort = keyBetween(before, before !== null && after !== null && before >= after ? null : after);
           return { ...current, docs: { ...current.docs, [id]: { ...current.docs[id], sort, moved: stamp() } } };
         });
       },
@@ -263,22 +261,31 @@ export function useStore() {
   /* sync                                                              */
   /* ---------------------------------------------------------------- */
 
-  const backend = useMemo<Backend | null>(() => (syncConfig ? createRestBackend(syncConfig) : null), [syncConfig]);
-  const version = useRef<string | null>(null);
+  const backend = useMemo(() => (syncConfig ? createRestBackend(syncConfig) : null), [syncConfig]);
   const running = useRef(false);
+  const failures = useRef(0);
+  const retryAfter = useRef(0);
 
+  /** Applies a merge result, but only when it actually brought something in. */
   const absorb = useCallback(
     (payload: SyncPayload) => {
       const current = live.current;
-      if (!current) return;
+      if (!current || !changedBy({ docs: current.docs, graves: current.graves }, payload)) return;
+      // Undo snapshots predate work this device did not author; replaying one
+      // would delete the other device's rows.
+      history.clear();
+
       const active = payload.docs[current.activeDocId] ? current.activeDocId : Object.keys(payload.docs)[0];
-      applyWorkspace({ ...current, ...payload, activeDocId: active ?? current.activeDocId });
+      if (!active) return;
+      const views = { ...current.views };
+      for (const id of Object.keys(views)) if (!payload.docs[id]) delete views[id];
+      applyWorkspace({ ...current, ...payload, activeDocId: active, views });
     },
-    [applyWorkspace]
+    [applyWorkspace, history]
   );
 
   const syncNow = useCallback(async () => {
-    if (!backend || running.current || !live.current) return;
+    if (!backend || running.current || !live.current || Date.now() < retryAfter.current) return;
     running.current = true;
     setSyncStatus("syncing");
     try {
@@ -287,23 +294,37 @@ export function useStore() {
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const stored = await backend.pull();
         if (!stored) break;
-        const merged = mergeWorkspace(payloadOf(live.current!), stored.payload);
-        absorb(merged);
-        const pushed = await backend.push(payloadOf(live.current!), stored.version);
-        if (pushed !== null) {
-          version.current = pushed ?? null;
-          dirty.current = false;
+        absorb(
+          mergeWorkspace(payloadOf(live.current!), stored.payload, {
+            // Nothing typed here yet, and never synced with this endpoint:
+            // this device is joining, not contributing a blank document.
+            adoptRemote: edits.current === 0 && !hasSynced(syncConfig!.url)
+          })
+        );
+
+        // Captured before the request: anything typed during the round trip
+        // must stay pending rather than be marked as sent.
+        const covered = edits.current;
+        const accepted = await backend.push(payloadOf(live.current!), stored.version);
+        if (accepted !== null) {
+          pushed.current = covered;
           break;
         }
       }
+      failures.current = 0;
+      retryAfter.current = 0;
+      markSynced(syncConfig!.url);
       setSyncStatus("idle");
       void saveWorkspace(live.current!);
     } catch {
+      // Back off, or a dead endpoint means a failing request every 1.5s forever.
+      failures.current += 1;
+      retryAfter.current = Date.now() + Math.min(2 ** failures.current * 1000, MAX_BACKOFF_MS);
       setSyncStatus(navigator.onLine === false ? "offline" : "error");
     } finally {
       running.current = false;
     }
-  }, [backend, absorb]);
+  }, [backend, absorb, syncConfig]);
 
   // Push shortly after edits settle, pull on a slow timer, and catch up
   // whenever the tab or the network comes back. Waits for the local workspace
@@ -319,7 +340,7 @@ export function useStore() {
     void syncNow();
 
     const push = setInterval(() => {
-      if (dirty.current) void syncNow();
+      if (edits.current !== pushed.current) void syncNow();
     }, PUSH_DEBOUNCE_MS);
     const pull = setInterval(() => {
       // A hidden tab catches up on the visibilitychange below instead.
@@ -339,32 +360,28 @@ export function useStore() {
   }, [backend, loaded, syncNow]);
 
   // Another tab of this browser is just another device: re-read the shared
-  // database and merge it the same way.
+  // database and merge it the same way. The save effect above does the
+  // announcing, so there is no second timer here.
   useEffect(() => {
-    let announcing = false;
+    let cancelled = false;
     const stop = watchOtherTabs(() => {
       void loadWorkspace().then((stored) => {
-        if (!live.current || announcing) return;
-        absorb(mergeWorkspace(payloadOf(live.current), payloadOf(stored)));
+        if (cancelled || !live.current || !stored) return;
+        // A tab that has not been typed into defers to what is already in the
+        // shared database rather than adding its own starter document.
+        absorb(mergeWorkspace(payloadOf(live.current), payloadOf(stored), { adoptRemote: edits.current === 0 }));
       });
     });
-    const announce = setInterval(() => {
-      if (!dirty.current || !live.current) return;
-      announcing = true;
-      void saveWorkspace(live.current).then(() => {
-        announceToOtherTabs();
-        announcing = false;
-      });
-    }, 1200);
     return () => {
+      cancelled = true;
       stop();
-      clearInterval(announce);
     };
   }, [absorb]);
 
   const setSyncConfig = useCallback((next: SyncConfig | null) => {
     saveSyncConfig(next);
-    version.current = null;
+    failures.current = 0;
+    retryAfter.current = 0;
     setSyncConfigState(next);
   }, []);
 
@@ -384,8 +401,9 @@ export function useStore() {
     if (doc && zoomId && rows.length === 0) edit((current) => ensureEditable(current, zoomId), { transient: true });
   }, [doc, zoomId, rows.length, edit]);
 
+
   return {
-    ready: workspace !== null && doc !== null,
+    ready: workspace != null && doc != null,
     workspace: workspace as Workspace,
     doc: doc as Doc,
     view,
@@ -398,7 +416,8 @@ export function useStore() {
     undo,
     redo,
     docs,
-    sync: { status: syncStatus, config: syncConfig, setConfig: setSyncConfig, now: syncNow }
+    sync: { status: syncStatus, config: syncConfig, setConfig: setSyncConfig, now: syncNow },
+    saveFailed
   };
 }
 

@@ -6,16 +6,55 @@
  * timestamp this device has seen — so a device with a slow clock cannot have
  * its edits silently discarded after it has seen a newer one.
  */
-let latest = 0;
+import { MAX_SKEW_MS } from "./validate";
+
+const CLOCK_KEY = "outliner:clock";
+
+/**
+ * Restored across reloads. Without this, a session that ran with a fast system
+ * clock would leave stamps in storage that every later edit loses to — the
+ * user would watch their newest work quietly revert after every restart.
+ */
+let latest = read(CLOCK_KEY);
+let saved = latest;
 
 export function tick(): number {
   latest = Math.max(Date.now(), latest + 1);
+  // Only persisted when it has run meaningfully ahead of the wall clock,
+  // which is the only case a reload could not reconstruct on its own.
+  if (latest - saved > 1000) {
+    saved = latest;
+    write(CLOCK_KEY, latest);
+  }
   return latest;
 }
 
-/** Called with every timestamp arriving from another device. */
+/**
+ * Called with every timestamp arriving from another device.
+ *
+ * A wildly future value is ignored rather than adopted. Adopting one would
+ * saturate this clock permanently — past 2^53 `latest + 1` stops advancing,
+ * every stamp collides, and merges would be decided by device id forever.
+ */
 export function observe(timestamp: number): void {
-  if (timestamp > latest) latest = timestamp;
+  if (timestamp > latest && timestamp < Date.now() + MAX_SKEW_MS) latest = timestamp;
+}
+
+function read(key: string): number {
+  try {
+    const value = Number(localStorage.getItem(key));
+    return Number.isFinite(value) && value > 0 && value < Date.now() + MAX_SKEW_MS ? value : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function write(key: string, value: number): void {
+  try {
+    localStorage.setItem(key, String(value));
+  } catch {
+    /* private mode — the clock just restarts from wall time */
+  }
 }
 
 const DEVICE_KEY = "outliner:device";

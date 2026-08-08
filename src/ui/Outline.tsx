@@ -88,10 +88,11 @@ export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props)
 
   const zoomOut = useCallback(() => {
     const current = zoomRef.current;
-    if (current === doc.rootId) return;
-    setView({ zoomId: parentOf(doc, current) ?? doc.rootId });
+    const now = docRef.current;
+    if (current === now.rootId) return;
+    setView({ zoomId: parentOf(now, current) ?? now.rootId });
     requestFocus(current);
-  }, [doc, setView, requestFocus]);
+  }, [setView, requestFocus]);
 
   /* ---------------------------------------------------------------- */
   /* keyboard inside a row                                             */
@@ -243,7 +244,8 @@ export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props)
       }
       if (mod && (event.key === "c" || event.key === "x")) {
         stop();
-        void navigator.clipboard?.writeText(toOutlineText(doc, topLevel(doc, zoomId, chosen)));
+        const now = docRef.current;
+        void navigator.clipboard?.writeText(toOutlineText(now, topLevel(now, zoomId, chosen)));
         if (event.key === "x") {
           setSelection([]);
           edit((current) => bulkRemove(current, zoomId, chosen));
@@ -257,11 +259,12 @@ export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props)
       }
       if (event.key === " ") {
         stop();
-        const collapsing = chosen.some((id) => doc.nodes[id]?.children.length && !doc.nodes[id].collapsed);
+        const now = docRef.current;
+        const collapsing = chosen.some((id) => now.nodes[id]?.children.length && !now.nodes[id].collapsed);
         edit((current) => bulkSetCollapsed(current, chosen, collapsing), { transient: true });
       }
     },
-    [doc, edit, enterSelection, requestFocus]
+    [edit, enterSelection, requestFocus]
   );
 
   /* ---------------------------------------------------------------- */
@@ -289,7 +292,10 @@ export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props)
         edit((current) => patchNode(current, id, { done: !current.nodes[id]?.done }));
       },
       zoom,
-      focusText: requestFocus,
+      focusText(id, caret) {
+        setNoteFocus(null);
+        requestFocus(id, caret);
+      },
       pointerSelect(event: MouseEvent, row) {
         if (event.shiftKey) {
           event.preventDefault();
@@ -343,13 +349,22 @@ export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props)
 
   const selected = useMemo(() => new Set(selection), [selection]);
   const activeId = selection.length > 0 ? null : focus?.id ?? null;
-  const window_ = useVirtualRows(rows, scrollRef, container, activeId);
+  const bounds = useVirtualRows(rows, scrollRef, container, activeId);
 
   return (
     <div
       className="outline"
       ref={container}
-      tabIndex={-1}
+      role="tree"
+      aria-label="아웃라인"
+      // Tabbable, so the outline is reachable without a mouse. Focusing it
+      // with nothing selected puts the caret back where the reader left off.
+      tabIndex={0}
+      onFocus={(event) => {
+        if (event.target !== event.currentTarget || selection.length > 0) return;
+        const landing = rows.find((row) => row.id === view.focusId) ?? rows[0];
+        if (landing) requestFocus(landing.id);
+      }}
       onKeyDown={onContainerKeyDown}
       onDragEnd={() => {
         dragId.current = null;
@@ -357,8 +372,8 @@ export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props)
         setDropSpot(null);
       }}
     >
-      {window_.padTop > 0 ? <div style={{ height: window_.padTop }} /> : null}
-      {rows.slice(window_.start, window_.end).map((row) => (
+      {bounds.padTop > 0 ? <div style={{ height: bounds.padTop }} /> : null}
+      {rows.slice(bounds.start, bounds.end).map((row) => (
         <Row
           key={row.id}
           row={row}
@@ -370,7 +385,7 @@ export function Outline({ store, scrollRef, onTagClick, onDocLinkClick }: Props)
           api={api}
         />
       ))}
-      {window_.padBottom > 0 ? <div style={{ height: window_.padBottom }} /> : null}
+      {bounds.padBottom > 0 ? <div style={{ height: bounds.padBottom }} /> : null}
       <div
         className="outline-tail"
         onMouseDown={(event) => {

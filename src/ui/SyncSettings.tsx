@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { Store } from "../core/store";
+import { Panel } from "./Panel";
 
 const STATUS_LABEL: Record<string, string> = {
   off: "동기화 꺼짐",
@@ -24,14 +25,13 @@ export function SyncSettings({ store, onClose }: { store: Store; onClose: () => 
   const [token, setToken] = useState(store.sync.config?.token ?? "");
 
   return (
-    <div className="overlay" onMouseDown={onClose}>
-      <div className="panel sync-panel" onMouseDown={(event) => event.stopPropagation()}>
-        <header className="panel-head">
-          <h2>기기 간 동기화</h2>
-          <button type="button" className="ghost" onClick={onClose}>
-            ×
-          </button>
-        </header>
+    <Panel className="sync-panel" label="기기 간 동기화" onClose={onClose}>
+      <header className="panel-head">
+        <h2>기기 간 동기화</h2>
+        <button type="button" className="ghost" onClick={onClose}>
+          ×
+        </button>
+      </header>
 
         <div className="sync-body">
           <p className="sync-note">
@@ -96,8 +96,7 @@ export function SyncSettings({ store, onClose }: { store: Store; onClose: () => 
               저장하고 동기화
             </button>
           </div>
-        </footer>
-      </div>
-    </div>
+      </footer>
+    </Panel>
   );
 }

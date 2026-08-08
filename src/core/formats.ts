@@ -1,5 +1,6 @@
 import { migrate } from "./migrate";
-import { linkChildren, parseOutlineLine } from "./tree";
+import { readWorkspace } from "./validate";
+import { linkChildren, parseOutlineLines } from "./tree";
 import { keyBetween } from "./order";
 import { makeNode, newId, stamp, type Doc, type Id, type Node, type Workspace } from "./types";
 
@@ -105,16 +106,12 @@ export function importDoc(title: string, content: string, format: Format): Doc {
 
 function parseIndented(content: string, root: Node, nodes: Record<Id, Node>) {
   const stack: { depth: number; node: Node }[] = [];
-  for (const raw of content.replace(/\r\n?/g, "\n").split("\n")) {
-    if (raw.trim() === "") continue;
-    const indentWidth = (raw.match(/^[\t ]*/)?.[0] ?? "").replace(/\t/g, "  ").length;
-    const depth = indentWidth >> 1;
-    const node = makeNode(parseOutlineLine(raw.trim()));
+  for (const { depth, patch } of parseOutlineLines(content)) {
+    const node = makeNode(patch);
     nodes[node.id] = node;
 
     while (stack.length > 0 && stack[stack.length - 1].depth >= depth) stack.pop();
-    const owner = stack[stack.length - 1]?.node ?? root;
-    owner.children.push(node.id);
+    (stack[stack.length - 1]?.node ?? root).children.push(node.id);
     stack.push({ depth, node });
   }
 }
@@ -149,15 +146,24 @@ export function exportBackup(workspace: Workspace): string {
   return JSON.stringify({ kind: "outliner-backup", exportedAt: new Date().toISOString(), workspace }, null, 2);
 }
 
-/** Accepts backups from any released schema; older ones are upgraded on the way in. */
+/**
+ * Accepts backups from any released schema; older ones are upgraded on the way
+ * in. Importing replaces everything the user has, so an unrecognised or
+ * damaged file must be rejected outright rather than quietly becoming an
+ * empty workspace.
+ */
 export function parseBackup(content: string): Workspace | null {
   try {
     const parsed = JSON.parse(content);
     const raw = parsed?.workspace ?? parsed;
-    if (!raw?.docs || Object.keys(raw.docs).length === 0) return null;
-    const workspace = migrate(raw);
-    return Object.keys(workspace.docs).length > 0 ? workspace : null;
+    if (!isKnownVersion(raw)) return null;
+    return readWorkspace(migrate(raw));
   } catch {
     return null;
   }
+}
+
+function isKnownVersion(raw: unknown): boolean {
+  const version = (raw as { version?: unknown } | null)?.version;
+  return version === 3 || version === 4;
 }

@@ -5,10 +5,6 @@ import { makeNode, stamp, type Doc, type Id, type Node, type Row, type Stamp } f
 /* reading                                                             */
 /* ------------------------------------------------------------------ */
 
-export function get(doc: Doc, id: Id): Node | undefined {
-  return doc.nodes[id];
-}
-
 export function parentOf(doc: Doc, id: Id): Id | null {
   return doc.nodes[id]?.parent ?? null;
 }
@@ -27,7 +23,10 @@ export function ancestors(doc: Doc, id: Id): Id[] {
 /** `id` and every descendant, in document order. */
 export function subtree(doc: Doc, id: Id): Id[] {
   const out: Id[] = [];
+  const seen = new Set<Id>();
   const walk = (current: Id) => {
+    if (seen.has(current)) return;
+    seen.add(current);
     out.push(current);
     for (const child of doc.nodes[current]?.children ?? []) walk(child);
   };
@@ -38,12 +37,16 @@ export function subtree(doc: Doc, id: Id): Id[] {
 /** Flattened rows under `zoomId`, skipping children of collapsed nodes. */
 export function visibleRows(doc: Doc, zoomId: Id): Row[] {
   const rows: Row[] = [];
+  // This runs during render, so a cycle in corrupt data must degrade to a
+  // truncated outline rather than an infinite loop and a blank screen.
+  const seen = new Set<Id>();
   const walk = (parentId: Id, depth: number) => {
     const parent = doc.nodes[parentId];
-    if (!parent) return;
+    if (!parent || seen.has(parentId)) return;
+    seen.add(parentId);
     parent.children.forEach((id, index) => {
       const node = doc.nodes[id];
-      if (!node) return;
+      if (!node || seen.has(id)) return;
       rows.push({ id, node, depth, index, parentId });
       if (!node.collapsed) walk(id, depth + 1);
     });
@@ -120,7 +123,10 @@ function place(nodes: Nodes, parentId: Id, id: Id, index: number): void {
   const siblings = parent.children;
   const at = Math.max(0, Math.min(index, siblings.length));
   const before = at > 0 ? nodes[siblings[at - 1]]?.sort ?? null : null;
-  const after = at < siblings.length ? nodes[siblings[at]]?.sort ?? null : null;
+  let after = at < siblings.length ? nodes[siblings[at]]?.sort ?? null : null;
+  // `rebuildChildren` normalises ties, but a key pair that is somehow still
+  // out of order must not throw in the middle of a keystroke.
+  if (before !== null && after !== null && before >= after) after = null;
 
   nodes[id] = { ...node, parent: parentId, sort: keyBetween(before, after), moved: stamp() };
   setChildren(nodes, parentId, siblings.toSpliced(at, 0, id));
@@ -128,6 +134,7 @@ function place(nodes: Nodes, parentId: Id, id: Id, index: number): void {
 
 /** Moves an existing node to `index` under `parentId`. */
 function move(nodes: Nodes, id: Id, parentId: Id, index: number): void {
+  if (!nodes[id] || !nodes[parentId]) return;
   const from = detach(nodes, id);
   const shift = from.parentId === parentId && from.index !== -1 && from.index < index ? 1 : 0;
   place(nodes, parentId, id, index - shift);
@@ -135,6 +142,7 @@ function move(nodes: Nodes, id: Id, parentId: Id, index: number): void {
 
 /** Adds a brand new node under `parentId` at `index`. */
 function insert(nodes: Nodes, parentId: Id, node: Node, index: number): void {
+  if (!nodes[parentId]) return;
   nodes[node.id] = node;
   place(nodes, parentId, node.id, index);
 }
@@ -172,13 +180,40 @@ export function rebuildChildren(doc: Doc): Doc {
   }
 
   const nodes: Nodes = {};
+  const rekeyed = new Map<Id, string>();
+
   for (const node of Object.values(doc.nodes)) {
-    const children = (buckets.get(node.id) ?? [])
-      .sort((a, b) => (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : a.id < b.id ? -1 : 1))
-      .map((child) => child.id);
-    nodes[node.id] = { ...node, children };
+    const bucket = (buckets.get(node.id) ?? []).sort(bySort);
+
+    // Two devices inserting at the same slot derive the same key from the same
+    // neighbours, so a merge can produce ties. Left alone they would make
+    // `keyBetween` reject its own bounds on the next edit at that spot. The
+    // repair is deterministic, so every device lands on the same keys.
+    let previous: string | null = null;
+    for (const child of bucket) {
+      const sort: string = previous !== null && child.sort <= previous ? keyBetween(previous, null) : child.sort;
+      if (sort !== child.sort) rekeyed.set(child.id, sort);
+      previous = sort;
+    }
+    const children = bucket.map((child) => child.id);
+    // Reusing the object when the order is unchanged is what lets a no-op
+    // merge come back reference-identical, so React can skip the render.
+    nodes[node.id] = sameOrder(node.children, children) ? node : { ...node, children };
   }
-  return withNodes(doc, nodes);
+  for (const [id, sort] of rekeyed) nodes[id] = { ...nodes[id], sort };
+  return rekeyed.size === 0 && Object.values(nodes).every((node) => node === doc.nodes[node.id])
+    ? doc
+    : withNodes(doc, nodes);
+}
+
+function sameOrder(a: Id[], b: Id[]): boolean {
+  return a.length === b.length && a.every((id, index) => id === b[index]);
+}
+
+/** Position order for siblings; the id keeps ties stable across devices. */
+function bySort(a: { sort: string; id: Id }, b: { sort: string; id: Id }): number {
+  if (a.sort !== b.sort) return a.sort < b.sort ? -1 : 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -265,6 +300,16 @@ export function splitAt(doc: Doc, id: Id, offset: number): Edit {
 
   const parentId = node.parent;
   if (!parentId) return { doc };
+
+  // At offset 0 the whole line moves to the tail. Reusing the original id for
+  // the tail would leave the original id holding an empty row, so a merge
+  // could resolve another device's text back into the blank one.
+  if (offset <= 0) {
+    const nodes = draft(doc);
+    insert(nodes, parentId, makeNode(), doc.nodes[parentId].children.indexOf(id));
+    return { doc: withNodes(doc, nodes), focusId: id, caret: 0 };
+  }
+
   const fresh = makeNode({ text: tail });
 
   // Hand the children over before placing, so both lists stay consistent.
@@ -298,7 +343,8 @@ export function mergeIntoPrevious(doc: Doc, zoomId: Id, id: Id): Edit {
   if (previous.id !== parentId) nodes[previous.id] = { ...nodes[previous.id], collapsed: false };
 
   const merged = nodes[previous.id];
-  nodes[previous.id] = { ...merged, text: merged.text + node.text, note: merged.note || node.note, edited: stamp() };
+  const note = [merged.note, node.note].filter(Boolean).join("\n");
+  nodes[previous.id] = { ...merged, text: merged.text + node.text, note, edited: stamp() };
   delete nodes[id];
   return { doc: { ...doc, nodes, graves: { ...doc.graves, [id]: stamp() } }, focusId: previous.id, caret };
 }
@@ -341,26 +387,9 @@ export function moveVertically(doc: Doc, id: Id, direction: -1 | 1): Edit {
   return { doc: withNodes(doc, nodes), focusId: id };
 }
 
-/** Deletes `id` and everything under it. Focus lands on the neighbour above, else below. */
-export function removeNode(doc: Doc, zoomId: Id, id: Id): Edit {
-  const rows = visibleRows(doc, zoomId);
-  const neighbour = rowBefore(rows, id) ?? rowAfter(rows, id);
-  const doomed = subtree(doc, id);
-  if (doomed.includes(zoomId)) return { doc };
-
-  const nodes = draft(doc);
-  const graves = { ...doc.graves };
-  removeInto(nodes, graves, id);
-  return {
-    doc: { ...doc, nodes, graves },
-    focusId: neighbour?.id,
-    caret: neighbour ? nodes[neighbour.id]?.text.length : 0
-  };
-}
-
 /** Moves `id` (with subtree) to position `index` under `newParentId`. Used by drag & drop. */
 export function reparent(doc: Doc, id: Id, newParentId: Id, index: number): Edit {
-  if (id === newParentId || subtree(doc, id).includes(newParentId)) return { doc };
+  if (id === newParentId || !doc.nodes[newParentId] || subtree(doc, id).includes(newParentId)) return { doc };
   const nodes = draft(doc);
   move(nodes, id, newParentId, index);
   if (nodes[newParentId]?.collapsed) nodes[newParentId] = { ...nodes[newParentId], collapsed: false };
@@ -384,7 +413,8 @@ export function reveal(doc: Doc, id: Id): Doc {
 
 /** Adds an empty row at the end of `parentId`, or focuses the trailing empty one. */
 export function appendChild(doc: Doc, parentId: Id): Edit {
-  const children = doc.nodes[parentId]?.children ?? [];
+  if (!doc.nodes[parentId]) return { doc };
+  const children = doc.nodes[parentId].children;
   const last = children[children.length - 1];
   if (last && doc.nodes[last].text === "" && doc.nodes[last].children.length === 0) {
     return { doc, focusId: last, caret: 0 };
@@ -433,8 +463,18 @@ export function bulkOutdent(doc: Doc, zoomId: Id, ids: Id[]): Edit {
 }
 
 export function bulkMove(doc: Doc, zoomId: Id, ids: Id[], direction: -1 | 1): Edit {
+  const ordered = topLevel(doc, zoomId, ids);
+  // If any selected row is already at the wall the others would move through
+  // it, quietly reordering the selection. Refuse the whole thing instead.
+  const blocked = ordered.some((id) => {
+    const siblings = doc.nodes[doc.nodes[id]?.parent ?? ""]?.children;
+    if (!siblings) return true;
+    const target = siblings.indexOf(id) + direction;
+    return target < 0 || target >= siblings.length;
+  });
+  if (blocked) return { doc };
   // Moving down starts from the bottom so rows do not step over each other.
-  return bulk(doc, topLevel(doc, zoomId, ids), direction === 1, (nodes, id) => moveVerticallyInto(nodes, id, direction));
+  return bulk(doc, ordered, direction === 1, (nodes, id) => moveVerticallyInto(nodes, id, direction));
 }
 
 export function bulkRemove(doc: Doc, zoomId: Id, ids: Id[]): Edit {
@@ -483,7 +523,7 @@ export function setCollapsedDeep(doc: Doc, fromId: Id, collapsed: boolean): Edit
  * Two spaces or one tab per level; blank lines are dropped.
  */
 export function insertOutlineText(doc: Doc, afterId: Id, text: string): Edit {
-  const lines = text.replace(/\r\n?/g, "\n").split("\n").filter((line) => line.trim() !== "");
+  const lines = parseOutlineLines(text);
   const target = doc.nodes[afterId];
   const parentId = target?.parent;
   if (lines.length === 0 || !parentId) return { doc };
@@ -493,10 +533,8 @@ export function insertOutlineText(doc: Doc, afterId: Id, text: string): Edit {
   let index = doc.nodes[parentId].children.indexOf(afterId) + 1;
   let lastId = afterId;
 
-  for (const line of lines) {
-    const indentWidth = (line.match(/^[\t ]*/)?.[0] ?? "").replace(/\t/g, "  ").length;
-    const depth = indentWidth >> 1;
-    const fresh = makeNode(parseOutlineLine(line.trim()));
+  for (const { depth, patch } of lines) {
+    const fresh = makeNode(patch);
 
     while (stack.length > 0 && stack[stack.length - 1].depth >= depth) stack.pop();
     const owner = stack[stack.length - 1];
@@ -521,12 +559,12 @@ export function insertOutlineText(doc: Doc, afterId: Id, text: string): Edit {
 }
 
 /** Serializes a subtree as indented plain text, for the clipboard and exports. */
-export function toOutlineText(doc: Doc, ids: Id[], bullet = ""): string {
+export function toOutlineText(doc: Doc, ids: Id[]): string {
   const lines: string[] = [];
   const walk = (id: Id, depth: number) => {
     const node = doc.nodes[id];
     if (!node) return;
-    lines.push(`${"  ".repeat(depth)}${bullet}${node.text}`);
+    lines.push(`${"  ".repeat(depth)}${node.text}`);
     if (node.note) {
       for (const line of node.note.split("\n")) lines.push(`${"  ".repeat(depth + 1)}${line}`);
     }
@@ -537,10 +575,26 @@ export function toOutlineText(doc: Doc, ids: Id[], bullet = ""): string {
 }
 
 /**
- * Reads one line of markdown-ish outline text: an optional bullet, then an
- * optional `[ ]`/`[x]` checkbox, then up to three leading `#` for a heading.
+ * Reads indented outline text into depths and node fields — the single
+ * definition of the text format, shared by paste and by file import.
+ *
+ * Blank lines are dropped and depth is measured from the shallowest line, so a
+ * nested block copied out of another editor keeps its structure.
  */
-export function parseOutlineLine(line: string): Partial<Node> {
+export function parseOutlineLines(text: string): { depth: number; patch: Partial<Node> }[] {
+  const lines = text.replace(/\r\n?/g, "\n").split("\n").filter((line) => line.trim() !== "");
+  if (lines.length === 0) return [];
+
+  const indents = lines.map((line) => (line.match(/^[\t ]*/)?.[0] ?? "").replace(/\t/g, "  ").length);
+  const base = Math.min(...indents);
+  return lines.map((line, at) => ({ depth: (indents[at] - base) >> 1, patch: parseOutlineLine(line.trim()) }));
+}
+
+/**
+ * Reads one line: an optional bullet, then an optional `[ ]`/`[x]` checkbox,
+ * then up to three leading `#` for a heading.
+ */
+function parseOutlineLine(line: string): Partial<Node> {
   let text = line.replace(/^(?:[-*+]|\d+[.)])\s+/, "");
   let done = false;
   let heading: Node["heading"] = 0;

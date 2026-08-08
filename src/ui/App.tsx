@@ -26,10 +26,18 @@ export function App() {
     localStorage.setItem("outliner:theme", theme);
   }, [theme]);
 
+  // Stable identities: these reach every row and the window listener, and a
+  // new function each render would defeat the memo on Row.
+  const storeRef = useRef(store);
+  storeRef.current = store;
   const openSearch = useCallback((query = "") => setOverlay({ kind: "search", query }), []);
+  const openDoc = useCallback((title: string) => openDocByTitle(storeRef.current, title), []);
+
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      // The IME owns the keyboard while a syllable is being composed.
+      if (event.isComposing) return;
       const mod = event.metaKey || event.ctrlKey;
       if (mod && (event.key === "k" || event.key === "f")) {
         event.preventDefault();
@@ -45,8 +53,8 @@ export function App() {
         // Plain inputs (search, rename) keep their native undo.
         if ((event.target as HTMLElement).tagName === "INPUT") return;
         event.preventDefault();
-        if (event.shiftKey) store.redo();
-        else store.undo();
+        if (event.shiftKey) storeRef.current.redo();
+        else storeRef.current.undo();
         return;
       }
       if (mod && event.key === "\\") {
@@ -56,7 +64,7 @@ export function App() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [store, openSearch]);
+  }, [openSearch]);
 
   if (!store.ready) return <div className="booting">불러오는 중…</div>;
 
@@ -69,8 +77,12 @@ export function App() {
     const anchor = document.createElement("a");
     anchor.href = url;
     anchor.download = name;
+    // Some browsers need the anchor in the document, and revoking the URL in
+    // the same tick can cancel the download before it starts.
+    document.body.append(anchor);
     anchor.click();
-    URL.revokeObjectURL(url);
+    anchor.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   };
 
   const onExport = (format: Format | "backup") => {
@@ -98,6 +110,11 @@ export function App() {
       {sidebarOpen ? <Sidebar store={store} onTagClick={openSearch} /> : null}
 
       <main className="main" ref={scroller}>
+        {store.saveFailed ? (
+          <p className="save-warning" role="alert">
+            이 기기에 저장하지 못하고 있습니다. 저장 공간이 가득 찼을 수 있습니다 — 백업을 내려받아 두세요.
+          </p>
+        ) : null}
         <header className="topbar">
           <button type="button" className="ghost" title="사이드바 (⌘\)" onClick={() => setSidebarOpen((open) => !open)}>
             ☰
@@ -181,12 +198,7 @@ export function App() {
 
         {zoomed ? <h1 className="zoom-title">{doc.nodes[view.zoomId]?.text || "(빈 항목)"}</h1> : null}
 
-        <Outline
-          store={store}
-          scrollRef={scroller}
-          onTagClick={openSearch}
-          onDocLinkClick={(title) => openDocByTitle(store, title)}
-        />
+        <Outline store={store} scrollRef={scroller} onTagClick={openSearch} onDocLinkClick={openDoc} />
       </main>
 
       <input

@@ -10,11 +10,12 @@ import {
   moveVertically,
   outdent,
   patchNode,
-  removeNode,
   reparent,
   splitAt,
   toOutlineText,
+  bulkMove,
   linkChildren,
+  subtree,
   visibleRows
 } from "./tree";
 import { makeDoc, makeNode, type Doc, type Id } from "./types";
@@ -169,7 +170,7 @@ a
 b
   b1`);
     const before = Object.keys(doc.nodes).length;
-    const { doc: next, focusId } = removeNode(doc, doc.rootId, find(doc, "b"));
+    const { doc: next, focusId } = bulkRemove(doc, doc.rootId, [find(doc, "b")]);
     expect(shape(next)).toBe("a");
     expect(Object.keys(next.nodes).length).toBe(before - 2);
     expect(next.nodes[focusId!].text).toBe("a");
@@ -254,6 +255,73 @@ one
 two`);
     const text = toOutlineText(doc, doc.nodes[doc.rootId].children);
     expect(text).toBe("one\n  one-a\ntwo");
+  });
+});
+
+describe("regressions", () => {
+  it("pressing Enter at the start of a line keeps that row's identity", () => {
+    // Reusing the id for the tail would leave the original id holding an empty
+    // row, so a merge could resolve another device's text into the blank one.
+    const doc = build(`
+hello
+  child`);
+    const hello = find(doc, "hello");
+    const { doc: next } = splitAt(doc, hello, 0);
+    expect(shape(next)).toBe("\nhello\n  child");
+    expect(next.nodes[hello].text).toBe("hello");
+    expect(next.nodes[hello].children).toHaveLength(1);
+  });
+
+  it("a selection already at the edge does not reorder itself", () => {
+    const doc = build("a\nb\nc");
+    const bottom = [find(doc, "b"), find(doc, "c")];
+    const top = [find(doc, "a"), find(doc, "b")];
+    expect(shape(bulkMove(doc, doc.rootId, bottom, 1).doc)).toBe("a\nb\nc");
+    expect(shape(bulkMove(doc, doc.rootId, top, -1).doc)).toBe("a\nb\nc");
+  });
+
+  it("keeps both notes when two rows are joined", () => {
+    let doc = build("one\ntwo");
+    doc = patchNode(doc, find(doc, "one"), { note: "note one" });
+    doc = patchNode(doc, find(doc, "two"), { note: "note two" });
+    const { doc: next } = mergeIntoPrevious(doc, doc.rootId, find(doc, "two"));
+    expect(next.nodes[find(next, "onetwo")].note).toBe("note one\nnote two");
+  });
+
+  it("never focuses a row it just deleted", () => {
+    const doc = build(`
+a
+  a1
+b`);
+    const { doc: next, focusId } = bulkRemove(doc, doc.rootId, [find(doc, "a")]);
+    expect(next.nodes[focusId!]).toBeDefined();
+    expect(next.nodes[focusId!].text).toBe("b");
+  });
+
+  it("leaves the document alone when the target parent is gone", () => {
+    const doc = build("a\nb");
+    expect(appendChild(doc, "missing").doc).toBe(doc);
+    const { doc: next } = reparent(doc, find(doc, "b"), "missing", 0);
+    expect(shape(next)).toBe("a\nb");
+  });
+
+  it("keeps relative nesting when pasted text is uniformly indented", () => {
+    // Copying a nested block out of another editor brings its leading indent
+    // along; measuring depth from the shallowest line preserves the structure.
+    const doc = build("keep");
+    const { doc: next } = insertOutlineText(doc, find(doc, "keep"), "    parent\n      child\n    sibling");
+    expect(shape(next)).toBe("keep\nparent\n  child\nsibling");
+  });
+
+  it("does not hang on a document that contains a cycle", () => {
+    const doc = build(`
+a
+  a1`);
+    const a = find(doc, "a");
+    const a1 = find(doc, "a1");
+    const cyclic = { ...doc, nodes: { ...doc.nodes, [a1]: { ...doc.nodes[a1], children: [a] } } };
+    expect(() => visibleRows(cyclic, cyclic.rootId)).not.toThrow();
+    expect(() => subtree(cyclic, a)).not.toThrow();
   });
 });
 

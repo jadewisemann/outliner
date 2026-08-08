@@ -10,8 +10,6 @@ type Props = {
   focusHint: FocusHint;
   onChange: (value: string) => void;
   onKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>, element: HTMLTextAreaElement) => void;
-  onFocus?: () => void;
-  onBlur?: () => void;
   onPaste?: (event: React.ClipboardEvent<HTMLTextAreaElement>) => void;
 };
 
@@ -30,14 +28,25 @@ export function Editable({
   focusHint,
   onChange,
   onKeyDown,
-  onFocus,
-  onBlur,
   onPaste
 }: Props) {
   const ref = useRef<HTMLTextAreaElement>(null);
   const emitted = useRef(value);
   const composing = useRef(false);
   const appliedSeq = useRef(-1);
+  const latest = useRef(onChange);
+  latest.current = onChange;
+
+  // The row unmounts as soon as focus moves elsewhere, which can happen in the
+  // middle of an IME composition — and mid-composition input events are
+  // deliberately not forwarded. Without this the half-typed syllable is lost.
+  useEffect(
+    () => () => {
+      const element = ref.current;
+      if (element && element.value !== emitted.current) latest.current(element.value);
+    },
+    []
+  );
 
   const resize = () => {
     const element = ref.current;
@@ -102,8 +111,6 @@ export function Editable({
         if (event.nativeEvent.isComposing || composing.current) return;
         onKeyDown?.(event, event.currentTarget);
       }}
-      onFocus={onFocus}
-      onBlur={onBlur}
       onPaste={onPaste}
     />
   );

@@ -2,17 +2,16 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, typ
 import type { Id, Row } from "../core/types";
 
 /** Below this many rows, rendering everything is cheaper than managing a window. */
-export const VIRTUAL_THRESHOLD = 250;
+const VIRTUAL_THRESHOLD = 250;
 
 const ESTIMATE = 28;
 const OVERSCAN = 10;
 
-export type Window = {
+export type RowWindow = {
   start: number;
   end: number;
   padTop: number;
   padBottom: number;
-  virtual: boolean;
 };
 
 /**
@@ -28,7 +27,7 @@ export function useVirtualRows(
   scrollRef: RefObject<HTMLElement>,
   contentRef: RefObject<HTMLElement>,
   pinned: Id | null
-): Window & { onRendered: () => void } {
+): RowWindow {
   const [heights, setHeights] = useState<Record<Id, number>>({});
   const [viewport, setViewport] = useState({ top: 0, height: 0 });
   const measured = useRef(heights);
@@ -71,27 +70,44 @@ export function useVirtualRows(
     };
   }, [virtual, scrollRef, contentRef, rows.length]);
 
-  const window_ = useMemo<Window>(() => {
-    if (!virtual) return { start: 0, end: rows.length, padTop: 0, padBottom: 0, virtual: false };
+  const bounds = useMemo<RowWindow>(() => {
+    if (!virtual) return { start: 0, end: rows.length, padTop: 0, padBottom: 0 };
 
-    let start = search(offsets, viewport.top) - OVERSCAN;
-    let end = search(offsets, viewport.top + Math.max(viewport.height, 1)) + OVERSCAN;
-    start = Math.max(0, start);
-    end = Math.min(rows.length, end + 1);
+    const start = Math.max(0, indexAtOffset(offsets, viewport.top) - OVERSCAN);
+    const end = Math.min(rows.length, indexAtOffset(offsets, viewport.top + Math.max(viewport.height, 1)) + OVERSCAN + 1);
+    return { start, end, padTop: offsets[start], padBottom: offsets[rows.length] - offsets[end] };
+  }, [virtual, rows, offsets, viewport]);
 
-    // The focused row must exist in the DOM even when it is off screen, or the
-    // caret would vanish after a jump from search.
-    if (pinned) {
-      const at = rows.findIndex((row) => row.id === pinned);
-      if (at !== -1) {
-        start = Math.min(start, at);
-        end = Math.max(end, at + 1);
-      }
-    }
-    return { start, end, padTop: offsets[start], padBottom: offsets[rows.length] - offsets[end], virtual: true };
-  }, [virtual, rows, offsets, viewport, pinned]);
+  // A focus request can land on a row far outside the window — a search hit, or
+  // an undo. Scrolling to it brings it into the window on the next frame;
+  // widening the window to reach it would mount every row in between.
+  useEffect(() => {
+    const scroller = scrollRef.current;
+    const content = contentRef.current;
+    if (!virtual || !pinned || !scroller || !content) return;
+    const at = rows.findIndex((row) => row.id === pinned);
+    if (at === -1 || (at >= bounds.start && at < bounds.end)) return;
+
+    const origin = content.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+    scroller.scrollTop = origin + offsets[at] - scroller.clientHeight / 3;
+  }, [virtual, pinned, rows, bounds, offsets, scrollRef, contentRef]);
 
   // Record the real height of everything currently rendered.
+  // Heights are keyed by node id; without this they would accumulate for every
+  // row ever rendered, across every document visited in the session.
+  const rowCount = rows.length;
+  useEffect(() => {
+    setHeights((previous) => {
+      const live = new Set(rows.map((row) => row.id));
+      const kept = Object.keys(previous).filter((id) => live.has(id));
+      if (kept.length === Object.keys(previous).length) return previous;
+      return Object.fromEntries(kept.map((id) => [id, previous[id]]));
+    });
+    // Deliberately keyed on the row count: pruning on every keystroke would
+    // cost more than the entries it reclaims.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rowCount]);
+
   const onRendered = useCallback(() => {
     const content = contentRef.current;
     if (!content) return;
@@ -109,11 +125,11 @@ export function useVirtualRows(
     if (virtual) onRendered();
   });
 
-  return { ...window_, onRendered };
+  return bounds;
 }
 
 /** Index of the last offset at or before `position`. */
-function search(offsets: Float64Array, position: number): number {
+function indexAtOffset(offsets: Float64Array, position: number): number {
   let low = 0;
   let high = offsets.length - 1;
   while (low < high) {

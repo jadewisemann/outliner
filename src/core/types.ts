@@ -127,7 +127,13 @@ export function makeWorkspace(): Workspace {
   };
 }
 
-/** Documents in sidebar order. */
+/**
+ * Documents in sidebar order. Two devices can mint the same `sort` for a
+ * document created at the same position, so the id breaks the tie — otherwise
+ * the sidebar would be ordered differently on each machine.
+ */
 export function docList(workspace: Workspace): Doc[] {
-  return Object.values(workspace.docs).sort((a, b) => (a.sort < b.sort ? -1 : a.sort > b.sort ? 1 : 0));
+  return Object.values(workspace.docs).sort((a, b) =>
+    a.sort !== b.sort ? (a.sort < b.sort ? -1 : 1) : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
+  );
 }

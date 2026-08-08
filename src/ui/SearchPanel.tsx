@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { search, type Hit } from "../core/search";
 import type { Store } from "../core/store";
 import { reveal } from "../core/tree";
+import { Panel } from "./Panel";
 
 type Props = {
   store: Store;
@@ -33,9 +34,8 @@ export function SearchPanel({ store, initialQuery, onClose }: Props) {
   };
 
   return (
-    <div className="overlay" onMouseDown={onClose}>
-      <div className="panel search-panel" onMouseDown={(event) => event.stopPropagation()}>
-        <input
+    <Panel className="search-panel" label="검색" onClose={onClose}>
+      <input
           ref={input}
           className="search-input"
           placeholder="검색 — 단어 또는 #태그"
@@ -84,8 +84,7 @@ export function SearchPanel({ store, initialQuery, onClose }: Props) {
             ))
           )}
         </div>
-        <footer className="search-foot">{hits.length}건 · ↑↓ 이동 · Enter 열기 · Esc 닫기</footer>
-      </div>
-    </div>
+      <footer className="search-foot">{hits.length}건 · ↑↓ 이동 · Enter 열기 · Esc 닫기</footer>
+    </Panel>
   );
 }

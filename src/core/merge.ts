@@ -18,13 +18,34 @@ import type { Doc, Id, Node, Stamp, SyncPayload } from "./types";
  * Concurrent edits to the same field of the same row still resolve to one
  * winner. For a single person across their own devices that is the right
  * trade: the alternative costs an order of magnitude more machinery.
+ *
+ * The merge preserves object identity wherever nothing actually changed, so
+ * `store` can tell a no-op sync from a real one and React can skip the render.
  */
-export function mergeWorkspace(local: SyncPayload, remote: SyncPayload): SyncPayload {
+
+/** Gravestones older than this are forgotten; see `pruneGraves`. */
+export const GRAVE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+export type MergeOptions = {
+  now?: number;
+  /**
+   * Set only on a device's very first sync with an endpoint. Content alone
+   * cannot identify a fresh device — a user who undid their way back to an
+   * empty document looks identical, and adopting the remote there would throw
+   * the undo away.
+   */
+  adoptRemote?: boolean;
+};
+
+export function mergeWorkspace(local: SyncPayload, remote: SyncPayload, options: MergeOptions = {}): SyncPayload {
+  const now = options.now ?? Date.now();
   observeStamps(remote);
 
   // A device signing in for the first time adopts what is already there rather
   // than contributing its untouched starter document.
-  if (isUntouched(local) && Object.keys(remote.docs).length > 0) return remote;
+  if (options.adoptRemote && isUntouched(local) && Object.keys(remote.docs).length > 0) {
+    return normalise(remote, now);
+  }
 
   const graves = mergeGraves(local.graves, remote.graves);
   const docs: Record<Id, Doc> = {};
@@ -32,80 +53,85 @@ export function mergeWorkspace(local: SyncPayload, remote: SyncPayload): SyncPay
   for (const id of union(local.docs, remote.docs)) {
     const mine = local.docs[id];
     const theirs = remote.docs[id];
-    const doc = mine && theirs ? mergeDoc(mine, theirs) : mine ?? theirs;
-    if (buried(graves[id], [doc.titleEdited, doc.moved, ...lastTouched(doc)])) continue;
-    docs[id] = doc;
+    const merged = mine && theirs ? mergeDoc(mine, theirs) : settle(mine ?? theirs);
+    if (buried(graves[id], newestStamp(merged))) continue;
+    docs[id] = merged;
   }
 
-  // A workspace with no documents left is not a state the app can show.
+  // A workspace with no documents left is not a state the app can show. The
+  // choice has to be identical on every device or they would each keep a
+  // different survivor and overwrite each other forever.
   if (Object.keys(docs).length === 0) {
-    const fallback = Object.values(local.docs)[0] ?? Object.values(remote.docs)[0];
-    if (fallback) {
-      docs[fallback.id] = fallback;
-      delete graves[fallback.id];
-    }
+    const candidates = union(local.docs, remote.docs)
+      .map((id) => local.docs[id] ?? remote.docs[id])
+      .sort((a, b) => newestStamp(b).at - newestStamp(a).at || (a.id < b.id ? -1 : 1));
+    if (candidates[0]) docs[candidates[0].id] = settle(candidates[0]);
   }
-  return { docs, graves };
-}
 
-/** True for a workspace nobody has typed into yet. */
-function isUntouched(payload: SyncPayload): boolean {
-  const docs = Object.values(payload.docs);
-  if (docs.length !== 1 || Object.keys(payload.graves).length > 0) return false;
-  const [doc] = docs;
-  return (
-    Object.keys(doc.graves).length === 0 &&
-    Object.values(doc.nodes).every((node) => node.text === "" && node.note === "")
-  );
+  // A document that survived is not dead, whatever its gravestone says —
+  // otherwise a later unrelated edit could make it fall back below the
+  // gravestone and vanish for good.
+  for (const id of Object.keys(docs)) delete graves[id];
+
+  return pruneGraves({ docs, graves }, now);
 }
 
 function mergeDoc(mine: Doc, theirs: Doc): Doc {
-  const title = wins(mine.titleEdited, theirs.titleEdited) ? mine : theirs;
-  const position = wins(mine.moved, theirs.moved) ? mine : theirs;
+  // Ties go to the local side. On an exact tie both sides hold the same edit
+  // anyway, and preferring local keeps object identity for a no-op merge.
+  const title = wins(theirs.titleEdited, mine.titleEdited) ? theirs : mine;
+  const position = wins(theirs.moved, mine.moved) ? theirs : mine;
   const graves = mergeGraves(mine.graves, theirs.graves);
   const nodes: Record<Id, Node> = {};
 
   for (const id of union(mine.nodes, theirs.nodes)) {
     const a = mine.nodes[id];
     const b = theirs.nodes[id];
-    const node = a && b ? mergeNode(a, b) : { ...(a ?? b), children: [] };
-    if (buried(graves[id], [node.edited, node.moved])) continue;
+    const node = a && b ? mergeNode(a, b) : a ?? b;
+    if (buried(graves[id], node.edited, node.moved)) continue;
     nodes[id] = node;
   }
 
   // Anything that outlived its gravestone is no longer dead.
   for (const id of Object.keys(graves)) if (nodes[id]) delete graves[id];
 
-  return rebuildChildren(
-    repair({
-      id: mine.id,
-      rootId: mine.rootId,
-      title: title.title,
-      titleEdited: title.titleEdited,
-      sort: position.sort,
-      moved: position.moved,
-      nodes,
-      graves
-    })
-  );
+  const merged = settle({
+    id: mine.id,
+    rootId: mine.rootId,
+    title: title.title,
+    titleEdited: title.titleEdited,
+    sort: position.sort,
+    moved: position.moved,
+    nodes,
+    graves
+  });
+  return same(mine, merged) ? mine : merged;
 }
 
 function mergeNode(a: Node, b: Node): Node {
-  const content = wins(a.edited, b.edited) ? a : b;
-  const position = wins(a.moved, b.moved) ? a : b;
+  const content = wins(b.edited, a.edited) ? b : a;
+  const position = wins(b.moved, a.moved) ? b : a;
+  // Keeping the original object when one side wins outright is what lets an
+  // unchanged document come back from a merge as the very same object.
+  if (content === position) return content;
   return {
-    id: a.id,
-    text: content.text,
-    note: content.note,
-    collapsed: content.collapsed,
-    done: content.done,
-    heading: content.heading,
-    edited: content.edited,
+    ...content,
     parent: position.parent,
     sort: position.sort,
     moved: position.moved,
-    children: []
+    children: content.children
   };
+}
+
+/** Makes a document structurally valid and its sibling order canonical. */
+function settle(doc: Doc): Doc {
+  return rebuildChildren(repair(doc));
+}
+
+function normalise(payload: SyncPayload, now: number): SyncPayload {
+  const docs: Record<Id, Doc> = {};
+  for (const [id, doc] of Object.entries(payload.docs)) docs[id] = settle(doc);
+  return pruneGraves({ docs, graves: payload.graves }, now);
 }
 
 /**
@@ -114,11 +140,16 @@ function mergeNode(a: Node, b: Node): Node {
  * other's row; the result would otherwise be a detached ring.
  */
 function repair(doc: Doc): Doc {
-  const nodes = { ...doc.nodes };
-  if (!nodes[doc.rootId]) return doc;
-  nodes[doc.rootId] = { ...nodes[doc.rootId], parent: null };
+  if (!doc.nodes[doc.rootId]) return doc;
+  let nodes = doc.nodes;
+  const replace = (id: Id, node: Node) => {
+    if (nodes === doc.nodes) nodes = { ...doc.nodes };
+    nodes[id] = node;
+  };
+  if (nodes[doc.rootId].parent !== null) replace(doc.rootId, { ...nodes[doc.rootId], parent: null });
 
-  for (const id of Object.keys(nodes)) {
+  // Sorted so both devices break the same cycle the same way.
+  for (const id of Object.keys(doc.nodes).sort()) {
     if (id === doc.rootId) continue;
 
     let cursor = nodes[id].parent;
@@ -129,12 +160,42 @@ function repair(doc: Doc): Doc {
     }
     // Reached the root: this node is fine. Anything else is an orphan or a loop.
     if (cursor === doc.rootId) continue;
-    nodes[id] = { ...nodes[id], parent: doc.rootId };
+    replace(id, { ...nodes[id], parent: doc.rootId });
   }
-  return { ...doc, nodes };
+  return nodes === doc.nodes ? doc : { ...doc, nodes };
+}
+
+/** True when nobody has typed into this workspace yet. */
+function isUntouched(payload: SyncPayload): boolean {
+  const docs = Object.values(payload.docs);
+  if (docs.length !== 1 || Object.keys(payload.graves).length > 0) return false;
+  const [doc] = docs;
+  return (
+    doc.title === "Inbox" &&
+    Object.keys(doc.graves).length === 0 &&
+    Object.values(doc.nodes).every(
+      (node) => node.text === "" && node.note === "" && !node.done && !node.collapsed && node.heading === 0
+    )
+  );
 }
 
 /* ------------------------------------------------------------------ */
+
+function same(mine: Doc, merged: Doc): boolean {
+  if (
+    mine.title !== merged.title ||
+    mine.sort !== merged.sort ||
+    mine.titleEdited !== merged.titleEdited ||
+    mine.moved !== merged.moved ||
+    Object.keys(mine.nodes).length !== Object.keys(merged.nodes).length ||
+    Object.keys(mine.graves).length !== Object.keys(merged.graves).length
+  ) {
+    return false;
+  }
+  for (const [id, node] of Object.entries(merged.nodes)) if (mine.nodes[id] !== node) return false;
+  for (const id of Object.keys(merged.graves)) if (!mine.graves[id]) return false;
+  return true;
+}
 
 function mergeGraves(mine: Record<Id, Stamp>, theirs: Record<Id, Stamp>): Record<Id, Stamp> {
   const graves = { ...mine };
@@ -145,17 +206,18 @@ function mergeGraves(mine: Record<Id, Stamp>, theirs: Record<Id, Stamp>): Record
 }
 
 /** A gravestone holds unless something touched the item after it was buried. */
-function buried(grave: Stamp | undefined, touches: Stamp[]): boolean {
-  return grave !== undefined && !touches.some((touch) => touch.at > grave.at);
+function buried(grave: Stamp | undefined, ...touches: Stamp[]): boolean {
+  return grave !== undefined && !touches.some((touch) => wins(touch, grave));
 }
 
-function lastTouched(doc: Doc): Stamp[] {
-  let newest: Stamp = doc.titleEdited;
+/** The most recent stamp anywhere in a document, used against its gravestone. */
+function newestStamp(doc: Doc): Stamp {
+  let newest = wins(doc.titleEdited, doc.moved) ? doc.titleEdited : doc.moved;
   for (const node of Object.values(doc.nodes)) {
-    if (node.edited.at > newest.at) newest = node.edited;
-    if (node.moved.at > newest.at) newest = node.moved;
+    if (wins(node.edited, newest)) newest = node.edited;
+    if (wins(node.moved, newest)) newest = node.moved;
   }
-  return [newest];
+  return newest;
 }
 
 function union(a: Record<Id, unknown>, b: Record<Id, unknown>): Id[] {
@@ -175,15 +237,30 @@ function observeStamps(payload: SyncPayload): void {
   }
 }
 
-/** Drops gravestones older than `maxAgeMs` so they do not accumulate forever. */
-export function pruneGraves(payload: SyncPayload, now: number, maxAgeMs = 30 * 24 * 60 * 60 * 1000): SyncPayload {
-  const keep = (graves: Record<Id, Stamp>) =>
-    Object.fromEntries(Object.entries(graves).filter(([, grave]) => now - grave.at < maxAgeMs));
-
-  return {
-    graves: keep(payload.graves),
-    docs: Object.fromEntries(
-      Object.entries(payload.docs).map(([id, doc]) => [id, { ...doc, graves: keep(doc.graves) }])
-    )
+/**
+ * Forgets gravestones older than the window, so they cannot accumulate for the
+ * life of the workspace. This runs on the merged result rather than only on
+ * what gets uploaded — if one device forgot a gravestone and another still had
+ * it, the two would disagree about that row forever. The cost is that a device
+ * offline for longer than the window can bring a deleted row back.
+ */
+export function pruneGraves(payload: SyncPayload, now: number): SyncPayload {
+  const keep = (graves: Record<Id, Stamp>) => {
+    const stale = Object.keys(graves).some((id) => now - graves[id].at >= GRAVE_TTL_MS);
+    if (!stale) return graves;
+    return Object.fromEntries(Object.entries(graves).filter(([, grave]) => now - grave.at < GRAVE_TTL_MS));
   };
+
+  const docs: Record<Id, Doc> = {};
+  for (const [id, doc] of Object.entries(payload.docs)) {
+    const graves = keep(doc.graves);
+    docs[id] = graves === doc.graves ? doc : { ...doc, graves };
+  }
+  return { docs, graves: keep(payload.graves) };
+}
+
+/** True when the merge adopted anything the local side did not already have. */
+export function changedBy(local: SyncPayload, merged: SyncPayload): boolean {
+  const ids = union(local.docs, merged.docs);
+  return ids.some((id) => local.docs[id] !== merged.docs[id]);
 }

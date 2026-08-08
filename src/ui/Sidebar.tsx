@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { allTags } from "../core/search";
 import type { Store } from "../core/store";
 import { docList, type Id } from "../core/types";
@@ -11,8 +11,10 @@ type Props = {
 export function Sidebar({ store, onTagClick }: Props) {
   const { workspace, docs } = store;
   const [renaming, setRenaming] = useState<Id | null>(null);
-  // Scans every node, so it only reruns when a document actually changes.
-  const tags = useMemo(() => allTags(workspace).slice(0, 20), [workspace.docs]);
+  // Scans every node in every document, and `docs` gets a new identity on each
+  // keystroke — deferring keeps that work off the typing path.
+  const settled = useDeferredValue(workspace);
+  const tags = useMemo(() => allTags(settled).slice(0, 20), [settled]);
   const list = docList(workspace);
 
   return (

@@ -7,7 +7,7 @@ import type { ReactNode } from "react";
 const PATTERN =
   /(\*\*(?!\s)[^*\n]+\*\*|(?<![\w*])\*(?!\s)(?:[^*\n]*[^\s*])?\*|`[^`\n]+`|~~(?!\s)[^~\n]+~~|==(?!\s)[^=\n]+==|\[\[[^\]\n]+\]\]|\[[^\]\n]*\]\([^)\s]+\)|https?:\/\/[^\s<>()]+|(?<![\w#])#[\p{L}\p{N}_/-]+)/gu;
 
-export type InlineHandlers = {
+type InlineHandlers = {
   onTagClick?: (tag: string) => void;
   onDocLinkClick?: (title: string) => void;
 };

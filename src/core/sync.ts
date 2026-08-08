@@ -1,7 +1,10 @@
-import { pruneGraves } from "./merge";
 import type { SyncPayload } from "./types";
+import { readPayload } from "./validate";
 
 export type SyncStatus = "off" | "idle" | "syncing" | "offline" | "error";
+
+/** A request that never answers would otherwise wedge the sync loop for good. */
+const TIMEOUT_MS = 15_000;
 
 export type SyncConfig = {
   /**
@@ -15,14 +18,6 @@ export type SyncConfig = {
   token: string;
 };
 
-export type Stored = { payload: SyncPayload; version: string | null };
-
-export interface Backend {
-  pull(): Promise<Stored | null>;
-  /** Returns `null` when the remote moved on and the caller should re-merge. */
-  push(payload: SyncPayload, version: string | null): Promise<string | null | undefined>;
-}
-
 /**
  * The whole remote protocol: read a JSON document, write a JSON document.
  *
@@ -31,7 +26,7 @@ export interface Backend {
  * the next round. `ETag`/`If-Match` is used when the server offers it, purely
  * to make that round happen sooner.
  */
-export function createRestBackend(config: SyncConfig): Backend {
+export function createRestBackend(config: SyncConfig) {
   const headers = (extra: Record<string, string> = {}) => ({
     "content-type": "application/json",
     ...(config.token ? { authorization: `Bearer ${config.token}` } : {}),
@@ -40,19 +35,27 @@ export function createRestBackend(config: SyncConfig): Backend {
 
   return {
     async pull() {
-      const response = await fetch(config.url, { headers: headers(), cache: "no-store" });
+      const response = await fetch(config.url, {
+        headers: headers(),
+        cache: "no-store",
+        signal: AbortSignal.timeout(TIMEOUT_MS)
+      });
       if (response.status === 404) return { payload: emptyPayload(), version: null };
       if (!response.ok) throw new Error(`sync pull failed: ${response.status}`);
 
-      const body = (await response.json()) as SyncPayload | null;
-      return { payload: isPayload(body) ? body : emptyPayload(), version: response.headers.get("etag") };
+      // Whatever is at the other end is untrusted, even when it is the user's
+      // own server: a malformed body must not be able to damage the workspace.
+      const payload = readPayload(await response.json().catch(() => null));
+      return { payload: payload ?? emptyPayload(), version: response.headers.get("etag") };
     },
 
-    async push(payload, version) {
+    /** Resolves to `null` when the remote moved on and the caller should re-merge. */
+    async push(payload: SyncPayload, version: string | null) {
       const response = await fetch(config.url, {
         method: "PUT",
         headers: headers(version ? { "if-match": version } : {}),
-        body: JSON.stringify(pruneGraves(payload, Date.now()))
+        body: JSON.stringify(payload),
+        signal: AbortSignal.timeout(TIMEOUT_MS)
       });
       if (response.status === 412 || response.status === 409) return null;
       if (!response.ok) throw new Error(`sync push failed: ${response.status}`);
@@ -61,12 +64,8 @@ export function createRestBackend(config: SyncConfig): Backend {
   };
 }
 
-export function emptyPayload(): SyncPayload {
+function emptyPayload(): SyncPayload {
   return { docs: {}, graves: {} };
-}
-
-function isPayload(value: unknown): value is SyncPayload {
-  return typeof value === "object" && value !== null && "docs" in value && typeof (value as SyncPayload).docs === "object";
 }
 
 /* ------------------------------------------------------------------ */
@@ -74,6 +73,28 @@ function isPayload(value: unknown): value is SyncPayload {
 /* ------------------------------------------------------------------ */
 
 const CONFIG_KEY = "outliner:sync";
+const SYNCED_KEY = "outliner:synced";
+
+/**
+ * Whether this device has ever completed a sync with `url`. Used once, to
+ * decide that a first sign-in should adopt the remote rather than merge an
+ * untouched starter document into it.
+ */
+export function hasSynced(url: string): boolean {
+  try {
+    return localStorage.getItem(SYNCED_KEY) === url;
+  } catch {
+    return false;
+  }
+}
+
+export function markSynced(url: string): void {
+  try {
+    localStorage.setItem(SYNCED_KEY, url);
+  } catch {
+    /* private mode — the adoption check just re-runs next time */
+  }
+}
 
 export function loadSyncConfig(): SyncConfig | null {
   try {
