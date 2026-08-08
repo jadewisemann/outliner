@@ -165,6 +165,88 @@ test("an undone edit is not brought back by the next sync", async ({ browser, ba
   await context.close();
 });
 
+test("a GitHub repository works as the backend, sha CAS and Korean text included", async ({ browser, baseURL }) => {
+  // GitHub cadence is deliberately slow (push 10s, pull 30s), so this test
+  // cannot fit Playwright's default 30s budget.
+  test.setTimeout(120_000);
+  const GH = "https://api.github.com/repos/tester/notes/contents/outline.json";
+  const laptop = await browser.newContext();
+  const phone = await browser.newContext();
+
+  // A minimal stand-in for the contents API: GET returns content + sha, PUT
+  // demands the current sha and refuses a stale one, like the real thing.
+  let file: { content: string; sha: string } | null = null;
+  let commits = 0;
+  let conflicts = 0;
+  const decoded = () => (file ? Buffer.from(file.content, "base64").toString("utf8") : "");
+  await Promise.all(
+    [laptop, phone].map((context) =>
+      context.route(`${GH}*`, async (route) => {
+        if (route.request().method() === "PUT") {
+          const body = JSON.parse(route.request().postData() ?? "{}");
+          if (file && body.sha !== file.sha) {
+            conflicts += 1;
+            return route.fulfill({ status: 409, contentType: "application/json", body: "{}" });
+          }
+          commits += 1;
+          file = { content: String(body.content).replace(/\s/g, ""), sha: `sha-${commits}` };
+          return route.fulfill({
+            status: 200,
+            contentType: "application/json",
+            body: JSON.stringify({ content: { sha: file.sha } })
+          });
+        }
+        if (!file) return route.fulfill({ status: 404, contentType: "application/json", body: "{}" });
+        return route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          // GitHub wraps base64 at 60 columns; the client has to cope.
+          body: JSON.stringify({
+            content: file.content.replace(/(.{60})/g, "$1\n"),
+            encoding: "base64",
+            sha: file.sha
+          })
+        });
+      })
+    )
+  );
+
+  const open = async (context: BrowserContext) => {
+    const page = await context.newPage();
+    await page.addInitScript(() =>
+      localStorage.setItem(
+        "outliner:sync",
+        JSON.stringify({ kind: "github", repo: "tester/notes", path: "outline.json", token: "test-pat" })
+      )
+    );
+    await page.goto(baseURL!);
+    await page.locator(".row").first().click();
+    return page;
+  };
+
+  const one = await open(laptop);
+  await one.keyboard.type("깃허브에 저장된 한글 노트");
+  await expect.poll(() => decoded().includes("깃허브에 저장된 한글 노트"), { timeout: 30_000 }).toBe(true);
+
+  const two = await open(phone);
+  await expect(two.getByText("깃허브에 저장된 한글 노트")).toBeVisible({ timeout: 15_000 });
+
+  await two.locator(".row").last().click();
+  await two.keyboard.press("End");
+  await two.keyboard.press("Enter");
+  await two.keyboard.type("폰에서 덧붙인 줄");
+  await expect.poll(() => decoded().includes("폰에서 덧붙인 줄"), { timeout: 30_000 }).toBe(true);
+
+  // Bring the laptop back to the front; visibility wake pulls, the 30s timer
+  // is the fallback either way.
+  await one.bringToFront();
+  await expect(one.getByText("폰에서 덧붙인 줄")).toBeVisible({ timeout: 45_000 });
+
+  expect(commits).toBeGreaterThanOrEqual(2);
+  await laptop.close();
+  await phone.close();
+});
+
 test("a second tab of the same browser picks up the changes", async ({ browser, baseURL }) => {
   const context = await browser.newContext();
   const first = await context.newPage();

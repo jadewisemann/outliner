@@ -5,7 +5,8 @@ import { keyBetween } from "./order";
 import { loadWorkspace, saveWorkspace } from "./persist";
 import {
   announceToOtherTabs,
-  createRestBackend,
+  configKey,
+  createBackend,
   hasSynced,
   loadSyncConfig,
   markSynced,
@@ -30,8 +31,6 @@ import {
 type FocusRequest = { id: Id; caret: number | "end"; seq: number };
 
 const SAVE_DEBOUNCE_MS = 400;
-const PUSH_DEBOUNCE_MS = 1500;
-const PULL_INTERVAL_MS = 10_000;
 /** Longest gap between retries after the endpoint starts failing. */
 const MAX_BACKOFF_MS = 5 * 60_000;
 
@@ -261,7 +260,7 @@ export function useStore() {
   /* sync                                                              */
   /* ---------------------------------------------------------------- */
 
-  const backend = useMemo(() => (syncConfig ? createRestBackend(syncConfig) : null), [syncConfig]);
+  const backend = useMemo(() => (syncConfig ? createBackend(syncConfig) : null), [syncConfig]);
   const running = useRef(false);
   const failures = useRef(0);
   const retryAfter = useRef(0);
@@ -296,11 +295,16 @@ export function useStore() {
         if (!stored) break;
         absorb(
           mergeWorkspace(payloadOf(live.current!), stored.payload, {
-            // Nothing typed here yet, and never synced with this endpoint:
+            // Nothing typed here yet, and never synced with this remote:
             // this device is joining, not contributing a blank document.
-            adoptRemote: edits.current === 0 && !hasSynced(syncConfig!.url)
+            adoptRemote: edits.current === 0 && !hasSynced(configKey(syncConfig!))
           })
         );
+
+        // Nothing of ours is unpushed and the remote has a version, so a push
+        // would only echo back what it already holds. On GitHub every push is
+        // a commit — an idle device must not leave a trail of empty ones.
+        if (edits.current === pushed.current && stored.version !== null) break;
 
         // Captured before the request: anything typed during the round trip
         // must stay pending rather than be marked as sent.
@@ -313,7 +317,7 @@ export function useStore() {
       }
       failures.current = 0;
       retryAfter.current = 0;
-      markSynced(syncConfig!.url);
+      markSynced(configKey(syncConfig!));
       setSyncStatus("idle");
       void saveWorkspace(live.current!);
     } catch {
@@ -341,11 +345,11 @@ export function useStore() {
 
     const push = setInterval(() => {
       if (edits.current !== pushed.current) void syncNow();
-    }, PUSH_DEBOUNCE_MS);
+    }, backend.cadence.pushMs);
     const pull = setInterval(() => {
       // A hidden tab catches up on the visibilitychange below instead.
       if (!document.hidden) void syncNow();
-    }, PULL_INTERVAL_MS);
+    }, backend.cadence.pullMs);
     const wake = () => {
       if (document.visibilityState === "visible") void syncNow();
     };

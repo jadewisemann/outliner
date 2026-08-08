@@ -923,3 +923,28 @@ button {
   outline-offset: 4px;
   border-radius: 6px;
 }
+
+.mode-switch {
+  display: flex;
+  gap: 6px;
+}
+
+.mode-switch button {
+  flex: 1;
+  padding: 7px 10px;
+  font-size: 13px;
+  color: var(--muted);
+  border: 1px solid var(--faint);
+  border-radius: 7px;
+}
+
+.mode-switch .mode-on {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: var(--selection);
+}
+
+.sync-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
