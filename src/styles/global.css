@@ -249,6 +249,9 @@ button {
 .doc-open {
   flex: 1;
   min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   padding: 6px 8px;
   text-align: left;
   font-size: 14px;
@@ -257,12 +260,45 @@ button {
   white-space: nowrap;
 }
 
-.doc-remove {
-  opacity: 0;
+/* Fixed width, so titles line up whether or not the row is a folder. */
+.doc-icon {
+  flex: none;
+  width: 10px;
+  font-size: 10px;
+  color: var(--muted);
 }
 
-.doc-item:hover .doc-remove {
+.doc-remove,
+.doc-pin {
+  opacity: 0;
+  padding: 2px 5px;
+}
+
+.doc-item:hover .doc-remove,
+.doc-item:hover .doc-pin,
+.doc-pin-on {
   opacity: 1;
+}
+
+.doc-pin-on {
+  color: var(--accent);
+}
+
+/* Dropping *onto* a folder files into it; dropping on a document reorders,
+   so the two need to look different before the mouse is released. */
+.doc-item-into {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.doc-item-before {
+  box-shadow: inset 0 2px 0 -1px var(--accent);
+}
+
+.sidebar-empty {
+  margin: 6px 8px;
+  font-size: 13px;
+  color: var(--muted);
 }
 
 .doc-rename {

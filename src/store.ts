@@ -20,6 +20,7 @@ import {
 import { ancestors, ensureEditable, visibleRows, type Edit } from "./outline/tree";
 import { parseQuery } from "./search/query";
 import {
+  docChildren,
   docList,
   makeDoc,
   makeFolder,
@@ -245,7 +246,10 @@ export function useStore() {
         editWorkspace((current) => {
           const remaining = { ...current.docs };
           delete remaining[id];
-          if (Object.keys(remaining).length === 0) return current;
+          // The app always has to have a document open, so the last real one
+          // cannot go. Folders do not count towards that.
+          const survivors = Object.values(remaining).filter((doc) => doc.kind === "doc");
+          if (survivors.length === 0) return current;
           const views = { ...current.views };
           delete views[id];
           return {
@@ -253,7 +257,7 @@ export function useStore() {
             docs: remaining,
             graves: { ...current.graves, [id]: stamp() },
             views,
-            activeDocId: current.activeDocId === id ? Object.keys(remaining)[0] : current.activeDocId
+            activeDocId: current.activeDocId === id ? survivors[0].id : current.activeDocId
           };
         });
       },
@@ -277,15 +281,21 @@ export function useStore() {
         rememberDoc(id);
         if (options.focusId) requestFocus(options.focusId);
       },
-      /** Drops `id` at `toIndex` in the sidebar list. */
-      reorder(id: Id, toIndex: number) {
+      /** Drops `id` at `toIndex` among the children of `parent`. */
+      reorder(id: Id, parent: Id | null, toIndex: number) {
         editWorkspace((current) => {
-          const ordered = docList(current).filter((doc) => doc.id !== id);
+          const doc = current.docs[id];
+          if (!doc || id === parent) return current;
+          // Same guard as `moveInto`: a folder cannot end up inside itself.
+          for (let cursor = parent; cursor; cursor = current.docs[cursor]?.parent ?? null) {
+            if (cursor === id) return current;
+          }
+          const ordered = docChildren(current, parent).filter((entry) => entry.id !== id);
           const at = Math.max(0, Math.min(toIndex, ordered.length));
           const before = ordered[at - 1]?.sort ?? null;
           const after = ordered[at]?.sort ?? null;
           const sort = keyBetween(before, before !== null && after !== null && before >= after ? null : after);
-          return { ...current, docs: { ...current.docs, [id]: { ...current.docs[id], sort, moved: stamp() } } };
+          return { ...current, docs: { ...current.docs, [id]: { ...doc, parent, sort, moved: stamp() } } };
         });
       },
       replaceAll(next: Workspace) {

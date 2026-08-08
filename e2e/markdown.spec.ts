@@ -218,3 +218,27 @@ test("filters with an operator, not just words", async ({ page }) => {
   await page.locator(".filter-input").fill("is:completed");
   expect(await rowTexts(page)).toEqual(["shopping", "bread"]);
 });
+
+test("files a document into a folder and bookmarks it", async ({ page }) => {
+  await page.keyboard.type("first doc");
+  await page.locator('[title="새 폴더"]').click();
+  await expect(page.locator(".doc-item")).toHaveCount(2);
+
+  // Drag the document onto the folder.
+  const doc = page.locator(".doc-item").first();
+  const folder = page.locator(".doc-item").last();
+  await doc.dragTo(folder);
+
+  // The folder opens on drop, so the document is still visible, but indented.
+  await expect(page.locator(".doc-item")).toHaveCount(2);
+  const indented = await page.locator(".doc-item").last().evaluate((el) => (el as HTMLElement).style.paddingLeft);
+  expect(indented).toBe("12px");
+
+  // Closing the folder hides what is inside it.
+  await page.locator(".doc-item").first().locator(".doc-open").click();
+  await expect(page.locator(".doc-item")).toHaveCount(1);
+
+  await page.locator(".doc-item").first().hover();
+  await page.locator(".doc-pin").first().click();
+  await expect(page.locator(".sidebar-title").first()).toHaveText("즐겨찾기");
+});
