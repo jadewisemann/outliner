@@ -1,5 +1,5 @@
 {
-  "name": "local-first-outliner",
+  "name": "outliner",
   "private": true,
   "version": "0.1.0",
   "type": "module",
@@ -7,18 +7,13 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "typecheck": "tsc --noEmit",
-    "complexity": "node scripts/check-complexity.mjs 5",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test"
   },
   "dependencies": {
-    "@lexical/react": "^0.22.0",
-    "firebase": "^11.0.2",
-    "lexical": "^0.22.0",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "yjs": "^13.6.20"
+    "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.0",
