@@ -8,17 +8,18 @@
 Yjs/Lexical/Firebase 기반 9,200줄 TDD 산출물을 폐기하고, 의존성 0(react/react-dom 제외)의
 로컬 우선 아웃라이너로 재작성했다. 자체 병합 모델 기반 기기 간 동기화(임의 REST + **GitHub
 저장소** 백엔드), GitHub OAuth 로그인, 가상화까지가 1차. 그 위에 **문서당 파일 분할 · CSP ·
-종단 간 암호화 · PWA 매니페스트**를 얹었다.
+종단 간 암호화 · PWA 매니페스트 · 모바일 터치 바 · Pages 배포**를 얹었다.
 
 ## 지금 상태
 
-- 소스 ~4,700줄, 유닛 122 / e2e 27 전부 green, `tsc --noEmit` clean, 번들 70KB gzip
+- 소스 ~5,200줄, 유닛 122 / e2e 30 전부 green, `tsc --noEmit` clean, 번들 71KB gzip
 - e2e 실행: `PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome npm run test:e2e`
   (이 환경 기준. GitHub 백엔드 테스트는 케이던스 때문에 `test.setTimeout(120_000)` 필요)
 - e2e는 웹 서버를 **둘** 띄운다: dev(5173)와 `vite preview`(4173). CSP와 매니페스트는 빌드
   결과에서만 발효되므로 그쪽을 상대로 도는 스펙이 따로 있다
-- **배포는 아직 안 함.** OAuth를 켜려면 GitHub OAuth App 생성(callback = 배포 origin) +
-  `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` 환경 변수
+- **배포 준비는 끝, 실행은 계정 소유자만 할 수 있다.** Pages는 저장소 Settings → Pages에서
+  source를 GitHub Actions로 바꾸면 `.github/workflows/pages.yml`이 돈다. Vercel + OAuth는 OAuth
+  App 생성(callback = 배포 origin) + `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` 환경 변수
 
 ## 커밋 히스토리 (이 작업의 서사)
 
@@ -34,6 +35,9 @@ Yjs/Lexical/Firebase 기반 9,200줄 TDD 산출물을 폐기하고, 의존성 0(
 | `86b6440` feat | **CSP 메타 태그**. 엄격한 정책은 `index.html`에, dev 서버용 완화는 Vite 플러그인이. 빌드 산출물을 상대로 도는 e2e |
 | `610d4b1` feat | **종단 간 암호화(선택)**. PBKDF2→AES-GCM, salt는 봉투 안에. `locked` 상태를 실패와 분리 |
 | `ca95c67` feat | **PWA 매니페스트** + 아이콘. 상대 `start_url`이라 하위 경로 서빙도 동작 |
+| `de5e896` feat | **모바일 터치 바**. 폰에 Tab이 없어 들여쓰기가 불가능했던 것 — 편집 중에만 키보드 위에 ⇤ ⇥ ↑ ↓ |
+| `a8c4c9a` build | `base: "./"` + **GitHub Pages 워크플로**. Vercel/Pages 배포 문서화 |
+| `413455e` fix | 긴 문서에서 **편집 중인 행에서 스크롤해 벗어나면 1초 뒤 도로 끌려오던 버그**. large.spec.ts가 가끔 실패하던 진짜 원인 |
 
 ## 세션에서 내린 결정과 근거 (뒤집으려면 이유를 알아야 함)
 
@@ -51,10 +55,11 @@ Yjs/Lexical/Firebase 기반 9,200줄 TDD 산출물을 폐기하고, 의존성 0(
 
 ## 다음 작업 큐
 
-1. **모바일 터치 조작** — 폰에 Tab 키가 없어 들여쓰기가 아예 불가. 실사용 최대 갭.
-2. **Vercel 배포 + GitHub Pages 문서화** — OAuth App 생성과 환경 변수는 계정 소유자만 할 수 있음.
-3. **service worker** — 매니페스트만으로는 오프라인으로 "열리지" 않는다. 노트는 이미 기기에 있고
-   셸 캐시만 없는 상태.
+1. **실제 배포** — 저장소 설정 한 번(Pages) 또는 Vercel import + 환경 변수 두 개. 계정 소유자만
+   할 수 있어서 여기서 멈춰 있다.
+2. **service worker** — 매니페스트만으로는 오프라인으로 "열리지" 않는다. 노트는 이미 기기에 있고
+   셸 캐시만 없는 상태. 홈 화면 아이콘을 눌렀는데 신호가 없으면 빈 화면이 뜬다.
+3. **모바일 스와이프 제스처** — 터치 바로 들여쓰기는 되지만, 익숙해지면 스와이프가 빠르다.
 4. 레퍼런스 셀프 호스트 서버, 날짜 항목/일정 표기, 아주 큰 워크스페이스를 위한 delta 동기화,
    Tauri는 필요해질 때.
 
@@ -69,5 +74,7 @@ Yjs/Lexical/Firebase 기반 9,200줄 TDD 산출물을 폐기하고, 의존성 0(
 - GitHub 백엔드에서 **파일 삭제는 묘비만이 시킨다.** 페이로드에 없다는 건 삭제의 증거가 아니라
   읽지 못한 파일의 모습이기도 하다. 같은 이유로 못 읽는 원격(`locked`)에서는 푸시를 아예 멈춘다.
 - 푸시 여부는 **평문** 직렬화 비교로 정한다. 암호문은 IV 때문에 매번 다르다.
-- `e2e/large.spec.ts`는 타이밍에 민감하다. 전체 병렬 실행에서 한 번 흔들린 적이 있고 단독으로는
-  12/12 통과했다 — 실패하면 단독으로 다시 돌려볼 것.
+- 가상화의 "포커스 행으로 스크롤"은 **새 포커스 요청(`seq` 변화)에만** 반응해야 한다. 창 위치에
+  반응하게 만들면 편집 중인 행에서 스크롤해 벗어나는 게 불가능해진다 (전적 있음).
+- e2e는 웹 서버를 둘 띄운다. `csp.spec.ts`/`install.spec.ts`는 빌드 결과(4173)를 상대로 돈다 —
+  dev 서버에서는 CSP도 매니페스트도 발효되지 않기 때문이다.
