@@ -1,0 +1,17 @@
+{
+  "name": "Outliner",
+  "short_name": "Outliner",
+  "description": "로컬 우선 아웃라이너. 데이터는 내 기기에 남고, 내 기기끼리는 알아서 합쳐진다.",
+  "lang": "ko",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f7f7f5",
+  "theme_color": "#3d7f6e",
+  "icons": [
+    { "src": "./icon.svg", "type": "image/svg+xml", "sizes": "any" },
+    { "src": "./icon-192.png", "type": "image/png", "sizes": "192x192", "purpose": "any maskable" },
+    { "src": "./icon-512.png", "type": "image/png", "sizes": "512x512", "purpose": "any maskable" }
+  ]
+}
