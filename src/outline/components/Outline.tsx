@@ -2,6 +2,7 @@ import type { RefObject } from "react";
 import type { Store } from "../../store";
 import type { Keymap } from "../../app/keymap";
 import { useOutline } from "../useOutline";
+import { useSwipe } from "../useSwipe";
 import { useTouchBar } from "../useTouchBar";
 import { Row } from "./Row";
 import { RowMenu } from "./RowMenu";
@@ -23,6 +24,8 @@ export function Outline({ store, scrollRef, onTagClick, onDocLinkClick, onItemLi
   const outline = useOutline(store, scrollRef, onTagClick, onDocLinkClick, onItemLinkClick, keymap);
   const { rows, window, focus, noteFocus, completion, dropSpot } = outline;
   const touch = useTouchBar();
+  // Only where there is no Tab key to reach for in the first place.
+  useSwipe(outline.containerRef, outline.swipe, touch.coarse);
 
   return (
     <div

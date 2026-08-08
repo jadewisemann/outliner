@@ -85,6 +85,7 @@ export type OutlineView = {
   rows: RowModel[];
   window: { start: number; end: number; padTop: number; padBottom: number };
   activeId: Id | null;
+  swipe: (id: Id, direction: 1 | -1) => void;
   selected: Set<Id>;
   focus: Store["focus"];
   noteFocus: { id: Id; seq: number } | null;
@@ -550,6 +551,14 @@ export function useOutline(
   const focusRef = useRef(focus);
   focusRef.current = focus;
 
+  /** The same two edits a swipe asks for, on a row named by the gesture. */
+  const swipe = useCallback(
+    (id: Id, direction: 1 | -1) => {
+      edit((current) => (direction === 1 ? indent(current, id) : outdent(current, id, zoomRef.current)));
+    },
+    [edit]
+  );
+
   const nudge = useMemo<Nudge>(() => {
     const target = () => focusRef.current?.id ?? null;
     return {
@@ -730,6 +739,7 @@ export function useOutline(
     rows,
     window,
     activeId,
+    swipe,
     selected,
     focus,
     noteFocus,

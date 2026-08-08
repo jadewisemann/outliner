@@ -48,6 +48,38 @@ test.describe("on a phone", () => {
     expect(await rows(page)).toEqual(["parent", "child!"]);
   });
 
+  test("swipes a row sideways to indent and outdent it", async ({ page, baseURL }) => {
+    await page.goto(baseURL!);
+    await page.locator(".row").first().tap();
+    await page.keyboard.type("head");
+    await page.keyboard.press("Enter");
+    await page.keyboard.type("child");
+
+    const box = (await page.locator(".row").last().boundingBox())!;
+    const swipe = async (dx: number) => {
+      await page.evaluate(
+        ([selector, from, to, y]) => {
+          const element = document.querySelectorAll(selector as string)[1] as HTMLElement;
+          const touch = (x: number) => [{ clientX: x, clientY: y as number, identifier: 0, target: element }];
+          const fire = (type: string, x: number) =>
+            element.dispatchEvent(
+              Object.assign(new Event(type, { bubbles: true }), { touches: touch(x), changedTouches: touch(x) })
+            );
+          fire("touchstart", from as number);
+          fire("touchmove", to as number);
+          fire("touchend", to as number);
+        },
+        [".row", box.x + 40, box.x + 40 + dx, box.y + box.height / 2]
+      );
+    };
+
+    await swipe(80);
+    expect(await rows(page)).toEqual(["head", "  child"]);
+
+    await swipe(-80);
+    expect(await rows(page)).toEqual(["head", "child"]);
+  });
+
   test("shows the bar only while a row is being edited", async ({ page, baseURL }) => {
     await page.goto(baseURL!);
     await expect(bar(page)).toBeHidden();

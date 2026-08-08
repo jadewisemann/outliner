@@ -43,3 +43,23 @@ test("a note renders its markdown, and a fenced block becomes code", async ({ pa
   await page.locator(".row-note-rendered").click();
   await expect(page.locator("textarea.row-note")).toHaveValue(/```ts/);
 });
+
+test("renders $$math$$, and shows the source until the renderer arrives", async ({ page }) => {
+  await page.keyboard.type("area is $$\\int_0^1 x^2 dx$$ exactly");
+  await page.locator(".outline-tail").click();
+
+  // KaTeX is fetched on demand, so the source stands in until it lands.
+  await expect(page.locator(".math .katex")).toHaveCount(1, { timeout: 10_000 });
+  await expect(page.locator(".row-rendered").first()).toContainText("area is");
+});
+
+test("code blocks are coloured without a highlighting library", async ({ page }) => {
+  await page.keyboard.type("code");
+  await page.keyboard.press("Shift+Enter");
+  await page.keyboard.type('```js\nconst n = 42; // note\n```');
+  await page.keyboard.press("Escape");
+
+  await expect(page.locator(".tok-keyword")).toHaveText(["const"]);
+  await expect(page.locator(".tok-number")).toHaveText(["42"]);
+  await expect(page.locator(".tok-comment")).toHaveText(["// note"]);
+});

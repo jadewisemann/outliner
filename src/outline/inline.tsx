@@ -1,12 +1,15 @@
 import type { ReactNode } from "react";
+import { highlight } from "./highlight";
+// Named TeX rather than Math: this file does arithmetic with the global one.
+import { TeX } from "./components/TeX";
 
 /**
  * Inline markup understood in a row: **bold**, *italic*, `code`, ~~strike~~,
  * ==highlight==, ![image](url), [label](url), bare URLs, #tag,
- * [[document link]] and ((item link)).
+ * [[document link]], ((item link)) and $$math$$.
  */
 const PATTERN =
-  /(\*\*(?!\s)[^*\n]+\*\*|(?<![\w*])\*(?!\s)(?:[^*\n]*[^\s*])?\*|`[^`\n]+`|~~(?!\s)[^~\n]+~~|==(?!\s)[^=\n]+==|\[\[[^\]\n]+\]\]|\(\([\w-]{1,64}\)\)|!\[[^\]\n]*\]\([^)\s]+\)|\[[^\]\n]*\]\([^)\s]+\)|https?:\/\/[^\s<>()]+|(?<![\w#])#[\p{L}\p{N}_/-]+)/gu;
+  /(\$\$(?!\s)[^$\n]+\$\$|\*\*(?!\s)[^*\n]+\*\*|(?<![\w*])\*(?!\s)(?:[^*\n]*[^\s*])?\*|`[^`\n]+`|~~(?!\s)[^~\n]+~~|==(?!\s)[^=\n]+==|\[\[[^\]\n]+\]\]|\(\([\w-]{1,64}\)\)|!\[[^\]\n]*\]\([^)\s]+\)|\[[^\]\n]*\]\([^)\s]+\)|https?:\/\/[^\s<>()]+|(?<![\w#])#[\p{L}\p{N}_/-]+)/gu;
 
 type InlineHandlers = {
   onTagClick?: (tag: string) => void;
@@ -40,6 +43,10 @@ export function renderInline(source: string, handlers: InlineHandlers = {}): Rea
 }
 
 function renderToken(token: string, key: number, handlers: InlineHandlers): ReactNode {
+  if (token.startsWith("$$")) {
+    const source = token.slice(2, -2);
+    return handlers.inert ? source : <TeX key={key} source={source} block={false} />;
+  }
   if (token.startsWith("**")) return <strong key={key}>{token.slice(2, -2)}</strong>;
   if (token.startsWith("~~")) return <s key={key}>{token.slice(2, -2)}</s>;
   if (token.startsWith("==")) return <mark key={key}>{token.slice(2, -2)}</mark>;
@@ -174,7 +181,7 @@ export function sourceOffset(source: string, renderedOffset: number): number {
 
 function visibleLength(token: string): number {
   if (token.startsWith("**") || token.startsWith("~~") || token.startsWith("==")) return token.length - 4;
-  if (token.startsWith("[[") || token.startsWith("((")) return token.length - 4;
+  if (token.startsWith("[[") || token.startsWith("((") || token.startsWith("$$")) return token.length - 4;
   if (token.startsWith("`") || (token.startsWith("*") && !token.startsWith("**"))) return token.length - 2;
   const label = token.match(/^!?\[([^\]]*)\]\(/);
   if (label) return label[1].length;
@@ -214,7 +221,7 @@ export function renderNote(source: string, handlers: InlineHandlers = {}): React
       at += 1;
       out.push(
         <pre key={out.length} className="note-code" data-language={fence[1] || undefined}>
-          <code>{body.join("\n")}</code>
+          <code>{highlight(body.join("\n"))}</code>
         </pre>
       );
       continue;
