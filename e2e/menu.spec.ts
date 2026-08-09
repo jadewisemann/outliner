@@ -15,7 +15,7 @@ test("right-clicking a bullet opens the item menu and applies what it offers", a
   await page.keyboard.press("Enter");
   await page.keyboard.type("another");
 
-  await page.locator(".row").first().locator(".row-bullet").click({ button: "right" });
+  await page.locator(".row").first().locator(".row-marker").click({ button: "right" });
   await expect(page.locator(".row-menu")).toBeVisible();
 
   await page.locator('[aria-label="색 4"]').click();
@@ -23,18 +23,18 @@ test("right-clicking a bullet opens the item menu and applies what it offers", a
   await expect(page.locator(".row-menu")).toHaveCount(0);
 
   // The list flags act on the parent, so both siblings get a checkbox.
-  await page.locator(".row").first().locator(".row-bullet").click({ button: "right" });
+  await page.locator(".row").first().locator(".row-marker").click({ button: "right" });
   await page.getByRole("menuitem", { name: "체크리스트로" }).click();
   await expect(page.locator(".row-check")).toHaveCount(2);
 
-  await page.locator(".row").first().locator(".row-bullet").click({ button: "right" });
+  await page.locator(".row").first().locator(".row-marker").click({ button: "right" });
   await page.getByRole("menuitem", { name: "인용으로" }).click();
   await expect(page.locator(".row-quote")).toHaveCount(1);
 });
 
 test("Escape closes the menu without doing anything", async ({ page }) => {
   await page.keyboard.type("untouched");
-  await page.locator(".row-bullet").first().click({ button: "right" });
+  await page.locator(".row-marker").first().click({ button: "right" });
   await expect(page.locator(".row-menu")).toBeVisible();
 
   await page.keyboard.press("Escape");
@@ -44,7 +44,7 @@ test("Escape closes the menu without doing anything", async ({ page }) => {
 
 test("copies a link to the row that the outline can follow", async ({ page }) => {
   await page.keyboard.type("link me");
-  await page.locator(".row-bullet").first().click({ button: "right" });
+  await page.locator(".row-marker").first().click({ button: "right" });
   await page.getByRole("menuitem", { name: "항목 링크 복사" }).click();
 
   await page.locator(".outline-tail").click();

@@ -60,11 +60,11 @@ test("zooming narrows the outline and the breadcrumb walks back out", async ({ p
   await page.keyboard.type("Task");
 
   await page.locator(".row", { hasText: "Project" }).first().locator(".row-bullet").click();
-  await expect(page.locator(".zoom-title")).toHaveText("Project");
+  await expect(page.locator(".doc-title-zoomed h1")).toHaveText("Project");
   expect(await rowTexts(page)).toEqual(["Task"]);
 
   await page.locator(".breadcrumb button").first().click();
-  await expect(page.locator(".zoom-title")).toHaveCount(0);
+  await expect(page.locator(".doc-title-zoomed h1")).toHaveCount(0);
 });
 
 test("renders inline markup and finds rows by tag", async ({ page }) => {

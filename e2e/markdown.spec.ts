@@ -102,7 +102,7 @@ test("a numbered prefix numbers the list", async ({ page }) => {
   await page.keyboard.press("Enter");
   await page.keyboard.type("second");
 
-  await expect(page.locator(".row-number")).toHaveText(["1.", "2."]);
+  await expect(page.locator(".row-label-index")).toHaveText(["1.", "2."]);
 });
 
 test("duplicates a row with its children, and deletes one", async ({ page }) => {

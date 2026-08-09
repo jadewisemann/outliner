@@ -1,30 +1,72 @@
+/*
+ * One token per job.
+ *
+ * `--faint` used to be every hairline, every hover wash, every filled chip and
+ * every guide line at once — and a border and a filled surface cannot be the
+ * same value in two themes. In dark they came out at 1.35:1 against the
+ * background, so the sidebar boundary simply vanished while it was clearly
+ * there in light. The themes were structurally different products.
+ *
+ * `--bg` is the recessed chrome and `--surface` is the page, the way every
+ * desktop app the eye is trained on does it. The old file had them the other
+ * way round, which is most of why the light theme read as an unfinished web
+ * page rather than as a document.
+ */
 :root {
-  --bg: #f7f7f5;
+  --bg: #f0f0ec;
   --surface: #ffffff;
-  --text: #2c2c2a;
-  --muted: #8a8a84;
-  --faint: #e6e6e1;
+  --text: #24241f;
+  /* 4.67:1 on --surface. Was #8a8a84 at 3.16:1, which failed AA at 13px —
+     and 13px muted text is the breadcrumb, every note, every panel footer. */
+  --muted: #6e6e68;
+  /* Bullets, arrows, guides. Deliberately lighter than --muted: a marker that
+     weighs as much as secondary text competes with the words. */
+  --mark: #bcbcb4;
+  --line: #e4e4de;
+  --fill: #f3f3ef;
+  --hover: rgba(0, 0, 0, 0.045);
   --accent: #3d7f6e;
-  --selection: #dceae5;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
-  --row-indent: 22px;
-  /* Horizontal centre of a bullet, measured from the row's indent origin. */
-  --guide-x: 25px;
-  --font: "Inter", ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", "Pretendard", "Malgun Gothic",
-    sans-serif;
-  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+  /* Accent text sits on --accent-soft, where plain --accent is 3.80:1. */
+  --accent-ink: #2f6a5b;
+  --accent-soft: #e2efe9;
+  /* Selection is neutral on purpose: a selected row and a tag were the same
+     tint before, so "this is selected" and "this is a tag" read alike. */
+  --selection: #e9e9e3;
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 16px rgba(0, 0, 0, 0.07);
+  --shadow-modal: 0 2px 6px rgba(0, 0, 0, 0.06), 0 24px 60px rgba(0, 0, 0, 0.16);
+  --shadow: var(--shadow-pop);
+
+  --row-indent: calc(var(--body-size, 15px) * 1.6);
+  /* arrow + gap + marker + gap. The single origin every gutter offset uses. */
+  --marker: 24px;
+  --gutter: calc(16px + 2px + var(--marker) + 2px);
+  /* Horizontal centre of the marker, measured from the row's indent origin. */
+  --guide-x: 30px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic",
+    "Noto Sans KR", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Cascadia Mono", "D2Coding", monospace;
+  --focus: 0 0 0 2px var(--surface), 0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent);
   color-scheme: light;
 }
 
 :root[data-theme="dark"] {
-  --bg: #16181a;
-  --surface: #1d2022;
-  --text: #e6e6e2;
-  --muted: #8c918f;
-  --faint: #2c3033;
+  --bg: #131517;
+  --surface: #1b1e20;
+  --text: #e7e7e3;
+  --muted: #969b99;
+  --mark: #4f5755;
+  --line: #33383b;
+  --fill: #23272a;
+  --hover: rgba(255, 255, 255, 0.055);
   --accent: #6fbfa7;
-  --selection: #253632;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 8px 24px rgba(0, 0, 0, 0.35);
+  --accent-ink: #86d0b8;
+  --accent-soft: #22322e;
+  --selection: #262a2d;
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.4);
+  --shadow-modal: 0 2px 6px rgba(0, 0, 0, 0.5), 0 24px 60px rgba(0, 0, 0, 0.55);
   color-scheme: dark;
 }
 
@@ -80,6 +122,7 @@ button {
 .main {
   min-width: 0;
   overflow-y: auto;
+  background: var(--surface);
 }
 
 .topbar {
@@ -90,9 +133,10 @@ button {
   align-items: center;
   gap: 8px;
   padding: 10px 20px;
-  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  min-height: 46px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
   backdrop-filter: blur(8px);
-  border-bottom: 1px solid var(--faint);
+  border-bottom: 1px solid var(--line);
 }
 
 .ghost {
@@ -103,7 +147,7 @@ button {
 }
 
 .ghost:hover {
-  background: var(--faint);
+  background: var(--hover);
   color: var(--text);
 }
 
@@ -112,7 +156,8 @@ button {
   min-width: 0;
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  overflow: hidden;
   gap: 2px;
   font-size: 13px;
   color: var(--muted);
@@ -129,7 +174,7 @@ button {
 
 .breadcrumb button:hover {
   color: var(--text);
-  background: var(--faint);
+  background: var(--hover);
 }
 
 .breadcrumb-sep {
@@ -167,9 +212,9 @@ button {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border: 1px solid var(--faint);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
 }
 
 .menu-body button {
@@ -180,21 +225,34 @@ button {
 }
 
 .menu-body button:hover {
-  background: var(--faint);
+  background: var(--hover);
 }
 
 .menu-body hr {
   margin: 5px 8px;
   border: none;
-  border-top: 1px solid var(--faint);
+  border-top: 1px solid var(--line);
 }
 
-.zoom-title {
-  margin: 22px 20px 0;
-  padding-left: 24px;
-  font-size: 26px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
+/* The page's own name, at the top of the text column rather than as a 13px
+   crumb in the chrome — and on the same left edge as the rows it heads. */
+.doc-title {
+  max-width: var(--measure, 780px);
+  margin: 0 auto;
+  padding: 40px 20px 0;
+}
+
+.doc-title h1 {
+  margin: 0;
+  padding-left: var(--gutter);
+  font-size: calc(var(--body-size, 15px) * 1.6);
+  font-weight: 660;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+
+.doc-title-zoomed h1 {
+  color: var(--text);
 }
 
 /* ------------------------------------------------------------------ */
@@ -207,8 +265,8 @@ button {
   gap: 14px;
   padding: 12px 10px;
   overflow-y: auto;
-  border-right: 1px solid var(--faint);
-  background: color-mix(in srgb, var(--bg) 60%, var(--surface));
+  border-right: 1px solid var(--line);
+  background: var(--bg);
 }
 
 .sidebar-head {
@@ -218,11 +276,11 @@ button {
   padding-left: 8px;
 }
 
+/* No uppercase and no tracking: `text-transform` is a no-op on Hangul and
+   0.08em on 문서 / 태그 reads as a spacing bug rather than as a label. */
 .sidebar-title {
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  font-size: 12px;
+  font-weight: 640;
   color: var(--muted);
 }
 
@@ -235,11 +293,11 @@ button {
 .doc-item {
   display: flex;
   align-items: center;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
 }
 
 .doc-item:hover {
-  background: var(--faint);
+  background: var(--hover);
 }
 
 .doc-item-active {
@@ -250,7 +308,7 @@ button {
   flex: 1;
   min-width: 0;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
   padding: 6px 8px;
   text-align: left;
@@ -265,7 +323,7 @@ button {
   flex: none;
   width: 10px;
   font-size: 10px;
-  color: var(--muted);
+  color: var(--mark);
 }
 
 .doc-remove,
@@ -326,8 +384,8 @@ button {
   gap: 4px;
   padding: 2px 7px;
   font-size: 12px;
-  color: var(--accent);
-  background: var(--selection);
+  color: var(--accent-ink);
+  background: var(--accent-soft);
   border-radius: 999px;
 }
 
@@ -346,12 +404,33 @@ button {
   margin: 0 auto;
   /* The tail below already supplies the room to click into; a second screenful
      of padding only pushed the backlinks off the bottom of the world. */
-  padding: 18px 20px 0;
+  padding: 6px 20px 0;
   outline: none;
 }
 
+/*
+ * The container is focusable so selection mode has somewhere to send the
+ * keyboard, but a ring around it is a ring around the whole document — and
+ * since the tail below is a third of the viewport, that ring was the largest
+ * object on screen. The focused *row* says the same thing in the right place.
+ */
+.outline:focus-visible {
+  outline: none;
+}
+
+.outline:focus-visible .row-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
 .outline-tail {
-  height: 30vh;
+  height: 22vh;
   cursor: text;
 }
 
@@ -368,8 +447,8 @@ button {
   gap: 4px;
   padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
   background: var(--surface);
-  border-top: 1px solid var(--faint);
-  box-shadow: 0 -1px 8px rgba(0, 0, 0, 0.06);
+  /* A shadow this faint is invisible in dark; the hairline is not. */
+  border-top: 1px solid var(--line);
 }
 
 .touch-bar button {
@@ -377,9 +456,9 @@ button {
   /* A comfortable touch target, and the same height as the keys below it. */
   min-height: 40px;
   border: 0;
-  border-radius: 8px;
-  background: var(--faint);
-  color: var(--text);
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
   font-size: 18px;
   line-height: 1;
   /* No double-tap zoom, no lingering blue wash, no selecting the glyph. */
@@ -398,10 +477,22 @@ button {
   align-items: flex-start;
   gap: 2px;
   padding-left: calc(var(--depth) * var(--row-indent));
-  border-radius: 5px;
+  border-radius: var(--r-sm);
+
+  /*
+   * Height of this row's first line box. Every marker in the gutter centres
+   * itself in it instead of sitting at a fixed pixel offset — otherwise a
+   * bullet drifts 6px above the middle of an h1, and every marker moves as
+   * the size slider does.
+   */
+  --lead: calc(var(--body-size, 15px) * var(--body-leading, 1.55) + 4px);
 
   /* One guide line per ancestor level, aligned with that ancestor's bullet. */
-  background-image: repeating-linear-gradient(to right, var(--faint) 0 1px, transparent 1px var(--row-indent));
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--line) 65%, transparent) 0 1px,
+    transparent 1px var(--row-indent)
+  );
   background-size: calc(var(--depth) * var(--row-indent)) 100%;
   background-position: var(--guide-x) 0;
   background-repeat: no-repeat;
@@ -411,18 +502,50 @@ button {
   background-color: var(--selection);
 }
 
+.row-arrow,
+.row-marker {
+  height: var(--lead);
+  display: flex;
+  align-items: center;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.row-arrow {
+  justify-content: center;
+}
+
+/*
+ * The one marker slot. Fixed width and right-aligned, so `H1`, `12.`, a
+ * checkbox and a dot all end at the same x and the text after them starts on
+ * the same left edge on every row.
+ */
+.row-marker {
+  flex: none;
+  width: var(--marker);
+  justify-content: flex-end;
+  position: relative;
+  cursor: grab;
+}
+
 .row-arrow {
   width: 16px;
-  padding: 3px 0 0;
   font-size: 10px;
-  color: var(--muted);
+  color: var(--mark);
   opacity: 0;
-  transition: transform 0.12s ease;
+  transition: transform 0.12s ease, opacity 0.1s ease;
   transform: rotate(90deg);
 }
 
 .row:hover .row-arrow {
   opacity: 1;
+}
+
+/* There is no hover on a phone, so the disclosure would never exist there. */
+@media (hover: none) {
+  .row-arrow {
+    opacity: 0.55;
+  }
 }
 
 .row-arrow-collapsed {
@@ -434,34 +557,51 @@ button {
   visibility: hidden;
 }
 
-.row-bullet {
-  flex: none;
-  width: 16px;
-  height: 24px;
-  position: relative;
-  cursor: grab;
-}
-
 .row-bullet::after {
   content: "";
-  position: absolute;
-  left: 4px;
-  top: 9px;
-  width: 7px;
-  height: 7px;
+  width: 6.5px;
+  height: 6.5px;
   border-radius: 50%;
-  background: var(--muted);
+  background: var(--mark);
+}
+
+/* The dot is inset from the cell's right edge; the collapsed halo has to be
+   centred on the dot, not on the cell, or it reads as a crescent. */
+.row-marker {
+  padding-right: 4.5px;
+}
+
+/* A labelled marker carries its own glyphs; the dot would be a second one. */
+.row-bullet-labelled::after {
+  display: none;
+}
+
+.row-label {
+  font-family: var(--mono);
+  font-size: 0.68em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--mark);
+}
+
+.row-label-index {
+  font-family: inherit;
+  font-size: 0.85em;
+  font-weight: inherit;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
 }
 
 .row-bullet-collapsed::before {
   content: "";
   position: absolute;
-  left: 0;
-  top: 5px;
+  right: 0.5px;
+  top: 50%;
+  transform: translateY(-50%);
   width: 15px;
   height: 15px;
   border-radius: 50%;
-  background: var(--faint);
+  background: var(--fill);
 }
 
 .row-body {
@@ -476,43 +616,44 @@ button {
   gap: 5px;
 }
 
-/* Only lists that asked for checkboxes get them; a ticked row keeps its own. */
+/*
+ * Only lists that asked for checkboxes get them; a ticked row keeps its own.
+ *
+ * Still a real `<input type=checkbox>`, so the keyboard and the accessibility
+ * tree are untouched — only the paint is ours. The browser default rendered as
+ * a grey square in dark mode, which is not a state anyone recognises as "done".
+ */
 .row-check {
   flex: none;
-  width: 12px;
-  height: 12px;
-  margin: 7px 0 0;
-  accent-color: var(--accent);
+  width: 15px;
+  min-height: 15px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1.5px solid var(--mark);
+  border-radius: 4.5px;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
 }
 
-/* The number sits where the bullet would, and the bullet shrinks out of the
-   way — a numbered list still needs its bullet as the drag and zoom handle. */
-.row-number {
-  flex: none;
-  min-width: 18px;
-  padding-top: 3px;
-  font-variant-numeric: tabular-nums;
-  font-size: 13px;
-  color: var(--muted);
-  text-align: right;
+.row-check:checked {
+  background: var(--accent);
+  border-color: var(--accent);
 }
 
-/* On a numbered list the number is the marker, so the bullet steps back to
-   being only what it also is: the drag and zoom handle. */
-.row-bullet-numbered {
-  width: 10px;
-}
-
-.row-bullet-numbered::after {
-  left: 1px;
-  top: 11px;
+.row-check:checked::after {
+  content: "";
+  display: block;
   width: 4px;
-  height: 4px;
-  opacity: 0;
+  height: 8px;
+  margin: -1px 0 0 4px;
+  border: solid var(--surface);
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(43deg);
 }
 
-.row:hover .row-bullet-numbered::after {
-  opacity: 1;
+.row-check {
+  margin-right: 1px;
 }
 
 /* Colour labels tint the row's text, not its background: a page of six
@@ -532,7 +673,14 @@ button {
 :root[data-theme="dark"] .row-c6 .row-text { color: var(--muted); }
 
 .row-bookmarked > .row-bullet::after {
-  box-shadow: 0 0 0 3px var(--selection);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* The rendered half shrink-wraps so a trailing badge sits beside its row
+   instead of being pushed to the far edge of the measure; the textarea keeps
+   flex: 1 so there is something to type into. */
+.row-rendered {
+  flex: 0 1 auto;
 }
 
 /* Anchored under the row being typed in, so the caret and the list are in the
@@ -546,9 +694,9 @@ button {
   min-width: 180px;
   max-width: 320px;
   background: var(--surface);
-  border: 1px solid var(--faint);
-  border-radius: 8px;
-  box-shadow: var(--shadow);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
 }
 
 .row-complete button {
@@ -567,15 +715,27 @@ button {
   background: var(--selection);
 }
 
-/* The editor and its rendered twin must share metrics so swapping is invisible. */
+/*
+ * The editor and its rendered twin must share metrics so swapping is invisible.
+ *
+ * `line-height` reads the variable rather than a constant: hard-coding 1.55
+ * here beat inheritance, so the 줄 간격 slider moved the chrome and left the
+ * document exactly where it was.
+ *
+ * `overflow-wrap: anywhere` used to break Hangul between any two syllables —
+ * Korean has no interword spaces, so the browser split 사용자인터뷰 wherever it
+ * liked. `keep-all` breaks at eojeol boundaries; `break-word` still rescues a
+ * long URL.
+ */
 .row-text {
   flex: 1;
   min-width: 0;
   padding: 2px 2px 2px 0;
   font: inherit;
-  line-height: 1.55;
+  line-height: var(--body-leading, 1.55);
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: keep-all;
 }
 
 .row-input {
@@ -589,7 +749,7 @@ button {
   overflow: hidden;
 }
 
-.row-rendered {
+.row-body {
   cursor: text;
 }
 
@@ -598,27 +758,59 @@ button {
   text-decoration: line-through;
 }
 
+/*
+ * Relative, so the size slider moves them too — at 24px body the old fixed
+ * 21px h1 was *smaller* than body text. Display type also wants tighter
+ * leading than prose: 1.55 on a heading is why they read as rows rather than
+ * as anchors.
+ */
 .row-h1 .row-text {
-  font-size: 21px;
-  font-weight: 650;
+  font-size: 1.5em;
+  font-weight: 660;
+  line-height: 1.28;
+  letter-spacing: -0.015em;
 }
 
 .row-h2 .row-text {
-  font-size: 18px;
-  font-weight: 620;
+  font-size: 1.25em;
+  font-weight: 640;
+  line-height: 1.32;
+  letter-spacing: -0.01em;
 }
 
 .row-h3 .row-text {
-  font-size: 16px;
-  font-weight: 600;
+  font-size: 1.0625em;
+  font-weight: 640;
+  line-height: 1.4;
+}
+
+.row-h1 { --lead: calc(var(--body-size, 15px) * 1.5 * 1.28 + 4px); }
+.row-h2 { --lead: calc(var(--body-size, 15px) * 1.25 * 1.32 + 4px); }
+.row-h3 { --lead: calc(var(--body-size, 15px) * 1.0625 * 1.4 + 4px); }
+
+/*
+ * Air above a section, so a heading and its first child are not the same
+ * distance apart as two unrelated sections. Padding rather than margin:
+ * margins collapse and are excluded from `offsetHeight`, which is what the
+ * virtualiser measures.
+ */
+.row-h1 { padding-top: 20px; }
+.row-h2 { padding-top: 15px; }
+.row-h3 { padding-top: 11px; }
+
+.row-h1:first-child,
+.row-h2:first-child,
+.row-h3:first-child {
+  padding-top: 0;
 }
 
 .row-count {
   align-self: center;
+  margin-left: 6px;
   padding: 0 6px;
-  font-size: 11px;
+  font-size: 0.75em;
   color: var(--muted);
-  background: var(--faint);
+  background: var(--fill);
   border-radius: 999px;
 }
 
@@ -628,22 +820,34 @@ button {
   margin-top: 1px;
   padding: 0;
   font: inherit;
-  font-size: 13px;
+  font-size: 0.87em;
   color: var(--muted);
   background: none;
   border: none;
   outline: none;
   resize: none;
   overflow: hidden;
-  line-height: 1.5;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+  word-break: keep-all;
 }
 
+/*
+ * Rendered chips must cost no layout width.
+ *
+ * The textarea shows `#tag` as plain 1em text with no padding. When the chip
+ * added 6px of padding, a row near the wrap boundary reflowed to a different
+ * number of lines the moment you clicked into it — text jumping on focus is
+ * the one thing this whole two-halves design exists to avoid. A spread
+ * box-shadow paints the same inset without occupying space.
+ */
 .row-text code,
-.row-note code {
-  padding: 1px 4px;
+.row-note-rendered code {
+  padding: 0;
   font-family: var(--mono);
-  font-size: 0.88em;
-  background: var(--faint);
+  font-size: 0.9em;
+  background: var(--fill);
+  box-shadow: 0 0 0 3px var(--fill);
   border-radius: 4px;
 }
 
@@ -658,16 +862,19 @@ button {
 }
 
 .row-text a {
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
+/* Same zero-width trick as inline code, and for the same reason: a tag is far
+   more common in a row than a code span is. */
 .inline-tag,
 .inline-doclink {
-  padding: 0 3px;
+  padding: 0;
   border-radius: 4px;
-  color: var(--accent);
-  background: var(--selection);
-  font-size: 0.93em;
+  font-size: inherit;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2.5px var(--accent-soft);
 }
 
 .inline-doclink {
@@ -680,7 +887,7 @@ button {
 .row-drop-after::after {
   content: "";
   position: absolute;
-  left: calc(var(--depth) * var(--row-indent) + 18px);
+  left: calc(var(--depth) * var(--row-indent) + var(--gutter));
   right: 0;
   height: 2px;
   background: var(--accent);
@@ -710,8 +917,9 @@ button {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 12vh;
-  background: rgba(0, 0, 0, 0.28);
+  padding-top: max(72px, 11vh);
+  background: color-mix(in srgb, #1a1a17 26%, transparent);
+  animation: overlay-in 0.1s ease-out;
 }
 
 .panel {
@@ -720,9 +928,26 @@ button {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
+  /* Both, not just a shadow: on a dark scrim over a dark page a soft shadow
+     leaves a panel with no edge at all. */
+  border: 1px solid var(--line);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-modal);
   overflow: hidden;
+  animation: panel-in 0.14s cubic-bezier(0.2, 0.7, 0.3, 1);
+}
+
+@keyframes overlay-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.985);
+  }
 }
 
 .panel-head {
@@ -730,12 +955,14 @@ button {
   align-items: center;
   justify-content: space-between;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--faint);
+  border-bottom: 1px solid var(--line);
 }
 
 .panel-head h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: 13px;
+  font-weight: 640;
+  color: var(--muted);
 }
 
 .search-input {
@@ -745,12 +972,20 @@ button {
   color: inherit;
   background: none;
   border: none;
-  border-bottom: 1px solid var(--faint);
+  border-bottom: 1px solid var(--line);
   outline: none;
+  transition: border-color 0.12s ease;
+}
+
+.search-input:focus {
+  border-bottom-color: var(--accent);
 }
 
 .search-results {
   flex: 1;
+  /* A two-result palette should not collapse into a sliver floating over the
+     page; it wants roughly the shape it has when it is full. */
+  min-height: 116px;
   overflow-y: auto;
   padding: 6px;
 }
@@ -768,7 +1003,12 @@ button {
   width: 100%;
   padding: 8px 12px;
   text-align: left;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
+  transition: background-color 0.12s ease;
+}
+
+.search-hit:hover {
+  background: var(--hover);
 }
 
 .search-hit-active {
@@ -793,16 +1033,20 @@ button {
 
 .search-foot,
 .panel-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   padding: 9px 16px;
   font-size: 12px;
   color: var(--muted);
-  border-top: 1px solid var(--faint);
+  border-top: 1px solid var(--line);
 }
 
 .panel-foot code {
   padding: 1px 4px;
   font-family: var(--mono);
-  background: var(--faint);
+  background: var(--fill);
   border-radius: 4px;
 }
 
@@ -876,7 +1120,7 @@ button {
 }
 
 .sync-badge:hover {
-  background: var(--faint);
+  background: var(--fill);
 }
 
 .sync-dot {
@@ -897,7 +1141,9 @@ button {
 
 .sync-syncing .sync-dot {
   background: var(--accent);
-  animation: sync-pulse 1s ease-in-out infinite;
+  /* Slow and shallow: a 1s blink to 0.25 in the corner of the eye reads as an
+     alarm for as long as a sync takes. */
+  animation: sync-pulse 1.8s ease-in-out infinite;
 }
 
 .sync-error .sync-dot,
@@ -908,7 +1154,7 @@ button {
 
 @keyframes sync-pulse {
   50% {
-    opacity: 0.25;
+    opacity: 0.35;
   }
 }
 
@@ -931,7 +1177,7 @@ button {
   padding: 1px 4px;
   font-family: var(--mono);
   font-size: 0.9em;
-  background: var(--faint);
+  background: var(--fill);
   border-radius: 4px;
   overflow-wrap: anywhere;
 }
@@ -950,7 +1196,7 @@ button {
   font-size: 14px;
   color: var(--text);
   background: var(--bg);
-  border: 1px solid var(--faint);
+  border: 1px solid var(--line);
   border-radius: 7px;
   outline: none;
 }
@@ -981,11 +1227,11 @@ button {
   padding: 7px 13px;
   border-radius: 7px;
   font-size: 13px;
-  border: 1px solid var(--faint);
+  border: 1px solid var(--line);
 }
 
 .sync-actions button:hover {
-  background: var(--faint);
+  background: var(--fill);
 }
 
 .sync-actions .primary {
@@ -1048,7 +1294,7 @@ button {
 .crash-actions button {
   padding: 8px 14px;
   font-size: 13px;
-  border: 1px solid var(--faint);
+  border: 1px solid var(--line);
   border-radius: 7px;
 }
 
@@ -1064,18 +1310,12 @@ button {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--muted);
-  background: var(--faint);
+  background: var(--fill);
   border-radius: 7px;
   overflow-wrap: anywhere;
 }
 
 /* A keyboard user needs to see where they are. */
-.outline:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 4px;
-  border-radius: 6px;
-}
-
 .mode-switch {
   display: flex;
   gap: 6px;
@@ -1086,7 +1326,7 @@ button {
   padding: 7px 10px;
   font-size: 13px;
   color: var(--muted);
-  border: 1px solid var(--faint);
+  border: 1px solid var(--line);
   border-radius: 7px;
 }
 
@@ -1131,29 +1371,26 @@ button {
   width: 100%;
   padding: 7px 10px;
   text-align: left;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
+  transition: background-color 0.12s ease;
 }
 
 .palette-hit-active {
   background: var(--selection);
 }
 
-/* Fixed width, so the labels line up into a column the eye can skip. */
+/* Fixed width, so the labels line up into a column the eye can skip. The
+   border round it turned a label into what looked like a broken tiny input. */
 .palette-kind {
   flex: none;
-  width: 30px;
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  color: var(--muted);
-  text-align: center;
-  padding: 1px 0;
-  border: 1px solid var(--faint);
-  border-radius: 4px;
+  width: 34px;
+  font-size: 11px;
+  color: var(--mark);
+  text-align: left;
 }
 
 .palette-kind-command {
-  color: var(--accent);
-  border-color: var(--accent);
+  color: var(--accent-ink);
 }
 
 .palette-label {
@@ -1166,8 +1403,8 @@ button {
 
 /* The characters the matcher actually landed on. */
 .palette-label b {
-  color: var(--accent);
-  font-weight: 600;
+  color: var(--accent-ink);
+  font-weight: 640;
 }
 
 .palette-hint {
@@ -1184,49 +1421,59 @@ button {
 /* filter bar                                                          */
 /* ------------------------------------------------------------------ */
 
-/* Always mounted so ⌘F has something to focus, but out of the way until it
-   is used: a permanent second toolbar would cost every reader a line. */
+/*
+ * Always mounted so ⌘F has something to focus, but genuinely out of the way
+ * until it is used.
+ *
+ * `height: 0` was not enough: with border-box the padding and border still
+ * render, so every document carried a 10px ghost strip above it for ever.
+ * Visually hidden rather than `display: none`, because a field that is not
+ * displayed cannot be focused, and ⌘F focuses it.
+ */
 .filter-bar {
   display: flex;
   align-items: center;
   gap: 6px;
   max-width: var(--measure, 780px);
   margin: 0 auto;
-  padding: 0 20px;
+  padding: 0 20px 0 calc(20px + var(--gutter));
+}
+
+.filter-bar-on,
+.filter-bar:focus-within {
+  padding-top: 14px;
+}
+
+.filter-bar:not(.filter-bar-on) .filter-input:not(:focus) {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  clip-path: inset(50%);
+  overflow: hidden;
 }
 
 .filter-input {
-  flex: 1;
+  flex: 0 1 340px;
   min-width: 0;
-  padding: 4px 8px;
+  padding: 5px 9px;
   font: inherit;
-  font-size: 13px;
+  font-size: 0.87em;
   color: inherit;
-  background: none;
+  background: var(--fill);
   border: 1px solid transparent;
-  border-radius: 6px;
-  opacity: 0;
-  height: 0;
-  transition: opacity 0.1s ease;
-}
-
-.filter-input:focus,
-.filter-bar-on .filter-input {
-  height: auto;
-  opacity: 1;
+  border-radius: var(--r-sm);
   outline: none;
-  margin-top: 12px;
-  background: var(--surface);
-  border-color: var(--faint);
 }
 
 .filter-input:focus {
-  border-color: var(--accent);
+  border-color: var(--line);
+  box-shadow: var(--focus);
 }
 
 .filter-count,
 .filter-flag {
-  margin-top: 12px;
   font-size: 12px;
   color: var(--muted);
   white-space: nowrap;
@@ -1235,7 +1482,11 @@ button {
 .filter-flag {
   padding: 3px 8px;
   border-radius: 999px;
-  background: var(--faint);
+  background: var(--fill);
+}
+
+.filter-bar .ghost {
+  padding: 2px 6px;
 }
 
 /* ------------------------------------------------------------------ */
@@ -1307,7 +1558,7 @@ button {
   margin: 0;
   padding: 0;
   list-style: none;
-  border-top: 1px solid var(--faint);
+  border-top: 1px solid var(--line);
 }
 
 .backlinks button {
@@ -1322,7 +1573,7 @@ button {
 }
 
 .backlinks button:hover {
-  background: var(--faint);
+  background: var(--hover);
 }
 
 .backlink-text {
@@ -1345,7 +1596,7 @@ button {
 
 .row-quote > .row-body > .row-line {
   padding-left: 10px;
-  border-left: 3px solid var(--faint);
+  border-left: 3px solid var(--line);
 }
 
 .row-quote .row-text {
@@ -1368,30 +1619,33 @@ button {
 
 .row-note-rendered blockquote {
   padding-left: 8px;
-  border-left: 2px solid var(--faint);
+  border-left: 2px solid var(--line);
 }
 
 .note-code {
-  margin: 4px 0;
-  padding: 8px 10px;
+  position: relative;
+  margin: 5px 0;
+  padding: 9px 11px;
   overflow-x: auto;
   font-family: var(--mono);
-  font-size: 12.5px;
-  line-height: 1.5;
-  background: var(--faint);
-  border-radius: 6px;
+  font-size: 0.83em;
+  line-height: 1.55;
+  background: var(--fill);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
 }
 
 .note-code code {
   white-space: pre;
 }
 
-/* Names the language without a highlighter, which would be the first
-   runtime dependency this project has. */
+/* Names the language without a highlighter. Out of the flow and top-right,
+   so one line of code stays a one-line block. */
 .note-code[data-language]::before {
   content: attr(data-language);
-  display: block;
-  margin-bottom: 4px;
+  position: absolute;
+  top: 5px;
+  right: 9px;
   font-size: 10px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -1410,9 +1664,10 @@ button {
   display: flex;
   flex-direction: column;
   background: var(--surface);
-  border: 1px solid var(--faint);
-  border-radius: 10px;
-  box-shadow: var(--shadow);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  animation: panel-in 0.12s cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
 .row-menu button {
@@ -1423,13 +1678,13 @@ button {
 }
 
 .row-menu button:hover {
-  background: var(--faint);
+  background: var(--hover);
 }
 
 .row-menu hr {
   margin: 5px 8px;
   border: none;
-  border-top: 1px solid var(--faint);
+  border-top: 1px solid var(--line);
 }
 
 .row-menu-danger:hover {
@@ -1442,23 +1697,26 @@ button {
   padding: 2px 4px 6px;
 }
 
+/* Letters in the ink, not blocks of it: the label tints a row's *text*, and a
+   saturated 18px fill promised something the feature does not do. */
 .row-menu-color {
   flex: 1;
-  height: 18px;
+  height: 22px;
   padding: 0 !important;
-  border-radius: 4px !important;
-  border: 1px solid transparent;
+  border-radius: var(--r-sm) !important;
+  background: none !important;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center !important;
+  line-height: 1;
 }
 
 .row-menu-color-on {
-  border-color: var(--text);
+  box-shadow: inset 0 0 0 1.5px currentColor;
 }
 
 .row-menu-color-none {
-  color: var(--muted);
-  background: var(--faint);
-  text-align: center !important;
-  line-height: 1;
+  color: var(--mark);
 }
 
 .sidebar-toggle {
@@ -1472,10 +1730,10 @@ button {
 }
 
 .search-save {
-  float: right;
+  flex: none;
   padding: 0;
   font-size: 12px;
-  color: var(--accent);
+  color: var(--accent-ink);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1496,7 +1754,7 @@ button {
 .history-list {
   overflow-y: auto;
   padding: 6px;
-  border-right: 1px solid var(--faint);
+  border-right: 1px solid var(--line);
 }
 
 .history-hit {
@@ -1508,7 +1766,7 @@ button {
 }
 
 .history-hit:hover {
-  background: var(--faint);
+  background: var(--hover);
 }
 
 .history-hit-active {
@@ -1573,6 +1831,12 @@ button {
   font-size: 13px;
 }
 
+/* Without this the OS paints its own blue, which becomes the loudest colour
+   in a green app. */
+.settings-body input[type="range"] {
+  accent-color: var(--accent);
+}
+
 .settings-body em {
   font-style: normal;
   font-variant-numeric: tabular-nums;
@@ -1588,14 +1852,14 @@ button {
 .settings-choice {
   padding: 4px 10px;
   font-size: 13px;
-  border: 1px solid var(--faint);
+  border: 1px solid var(--line);
   border-radius: 6px;
 }
 
 .settings-choice-on {
-  color: var(--accent);
+  color: var(--accent-ink);
   border-color: var(--accent);
-  background: var(--selection);
+  background: var(--accent-soft);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1649,7 +1913,7 @@ button {
   font-family: var(--mono);
   font-size: 12px;
   color: var(--muted);
-  background: var(--faint);
+  background: var(--fill);
   border-radius: 5px;
 }
 
@@ -1697,4 +1961,91 @@ button {
 
 .attachment-missing {
   text-decoration: line-through;
+}
+
+/* ------------------------------------------------------------------ */
+/* focus, motion                                                       */
+/* ------------------------------------------------------------------ */
+
+/*
+ * One focus treatment for everything that takes focus. Chrome's default ring
+ * is a black box, which is what the settings panel's close button was showing.
+ */
+.ghost:focus-visible,
+.settings-choice:focus-visible,
+.search-hit:focus-visible,
+.palette-hit:focus-visible,
+.doc-open:focus-visible,
+.doc-pin:focus-visible,
+.doc-remove:focus-visible,
+.menu summary:focus-visible,
+.row-menu button:focus-visible,
+.backlinks button:focus-visible,
+.history-hit:focus-visible,
+.keys-bind:focus-visible,
+.search-save:focus-visible,
+.sidebar-toggle:focus-visible {
+  outline: none;
+  border-radius: var(--r-sm);
+  box-shadow: var(--focus);
+}
+
+.row-check:focus-visible {
+  outline: none;
+  box-shadow: var(--focus);
+}
+
+/*
+ * What may move, and what may not.
+ *
+ * Nothing on a row transitions. A colour transition on a row puts work on the
+ * keystroke path, and a size transition would hand the virtualiser a
+ * measurement that is still moving — it measures real heights.
+ */
+.ghost,
+.doc-item,
+.backlinks button,
+.row-menu button,
+.menu-body button,
+.settings-choice,
+.history-hit,
+.keys-bind,
+.tag-chip {
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Stroked, currentColor, one size — so an icon weighs what the text beside it
+   weighs, which is the thing emoji could never do. */
+.ico {
+  display: block;
+  width: 17px;
+  height: 17px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.sidebar-head .ico {
+  width: 15px;
+  height: 15px;
+}
+
+/* The chrome sheds its least-used buttons on a narrow screen rather than
+   squeezing the breadcrumb to nothing. */
+@media (max-width: 640px) {
+  .topbar {
+    padding: 8px 12px;
+  }
 }

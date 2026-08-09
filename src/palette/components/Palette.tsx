@@ -83,7 +83,7 @@ export function Palette({ store, commands, initialQuery, onClose, onSearch }: Pr
       <input
         ref={input}
         className="search-input"
-        placeholder="어디로, 또는 무엇을 — `>` 명령, `>>` 항목 이동, `#` 태그"
+        placeholder="어디로, 또는 무엇을 — › 명령 · » 항목 이동 · # 태그"
         value={query}
         autoFocus
         onChange={(event) => {

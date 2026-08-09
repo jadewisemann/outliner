@@ -24,8 +24,11 @@ export function Panel({
 
   useEffect(() => {
     const restore = document.activeElement as HTMLElement | null;
-    const first = panel.current?.querySelector<HTMLElement>(FOCUSABLE);
-    (first ?? panel.current)?.focus({ preventScroll: true });
+    // The panel itself, not its first focusable: autofocusing the close button
+    // put a focus ring on `×` every time a panel opened, which reads as an
+    // error state. Anything that wants the caret asks for it (the search
+    // input autofocuses itself).
+    panel.current?.focus({ preventScroll: true });
     return () => restore?.focus({ preventScroll: true });
   }, []);
 

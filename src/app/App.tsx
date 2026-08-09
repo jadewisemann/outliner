@@ -13,6 +13,7 @@ import { SyncBadge, SyncSettings, type OauthPrefill } from "../sync/components/S
 import { useTransfer } from "../transfer/useTransfer";
 import { applyAppearance, forgetShare, loadAppearance, saveAppearance, sharedText, type Appearance } from "./appearance";
 import { Backlinks } from "./Backlinks";
+import { Icon } from "./Icon";
 import { loadKeymap, matches, saveKeymap, type Keymap } from "./keymap";
 import { Keys } from "./Keys";
 import { Settings } from "./Settings";
@@ -34,7 +35,10 @@ export function App() {
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 900);
   const [theme, setTheme] = useState<"light" | "dark">(
-    () => (localStorage.getItem("outliner:theme") as "light" | "dark") ?? "light"
+    () =>
+      (localStorage.getItem("outliner:theme") as "light" | "dark" | null) ??
+      // A machine in dark mode should not be greeted with a white flash.
+      (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
   );
   const [appearance, setAppearance] = useState<Appearance>(loadAppearance);
   const [keymap, setKeymap] = useState<Keymap>(loadKeymap);
@@ -176,7 +180,7 @@ export function App() {
         ) : null}
         <header className="topbar">
           <button type="button" className="ghost" title="사이드바 (⌘\)" onClick={() => setSidebarOpen((open) => !open)}>
-            ☰
+            <Icon name="menu" />
           </button>
 
           <nav className="breadcrumb">
@@ -195,37 +199,23 @@ export function App() {
 
           <div className="topbar-actions">
             <SyncBadge store={store} onClick={() => setOverlay({ kind: "sync" })} />
+            {/*
+              Undo, redo, fold and unfold used to sit here too. In an app where
+              ⌘P reaches every command, a permanent seat in the chrome is not
+              what makes a feature available — it is only what makes the bar
+              look like a toolbar from another decade.
+            */}
             <button type="button" className="ghost" title="팔레트 (⌘P)" onClick={() => openPalette()}>
-              ⌘
+              <Icon name="command" />
             </button>
             <button type="button" className="ghost" title="검색 (⌘⇧F)" onClick={() => openSearch()}>
-              🔍
-            </button>
-            <button type="button" className="ghost" title="실행 취소 (⌘Z)" onClick={store.undo}>
-              ↩
-            </button>
-            <button type="button" className="ghost" title="다시 실행 (⇧⌘Z)" onClick={store.redo}>
-              ↪
-            </button>
-            <button
-              type="button"
-              className="ghost"
-              title="모두 접기"
-              onClick={() => store.edit((current) => setCollapsedDeep(current, view.zoomId, true), { transient: true })}
-            >
-              ⊟
-            </button>
-            <button
-              type="button"
-              className="ghost"
-              title="모두 펼치기"
-              onClick={() => store.edit((current) => setCollapsedDeep(current, view.zoomId, false), { transient: true })}
-            >
-              ⊞
+              <Icon name="search" />
             </button>
 
             <details className="menu">
-              <summary className="ghost">⋯</summary>
+              <summary className="ghost">
+                <Icon name="more" />
+              </summary>
               <div className="menu-body">
                 <button type="button" onClick={() => transfer.exportAs("markdown")}>
                   Markdown 내보내기
@@ -287,7 +277,10 @@ export function App() {
           ) : null}
         </div>
 
-        {zoomed ? <h1 className="zoom-title">{doc.nodes[view.zoomId]?.text || "(빈 항목)"}</h1> : null}
+        {/* The page's own name, always — not a 13px crumb in the chrome. */}
+        <div className={`doc-title${zoomed ? " doc-title-zoomed" : ""}`}>
+          <h1>{zoomed ? doc.nodes[view.zoomId]?.text || "(빈 항목)" : doc.title}</h1>
+        </div>
 
         <Outline
           store={store}

@@ -91,36 +91,59 @@ function RowView({ row, active, selected, focusHint, noteFocusHint, completion, 
         ▸
       </button>
 
-      {row.numbered ? <span className="row-number">{row.index + 1}.</span> : null}
-      <button
-        type="button"
-        className={`row-bullet${node.collapsed && hasChildren ? " row-bullet-collapsed" : ""}${
-          row.numbered ? " row-bullet-numbered" : ""
-        }`}
-        aria-label={`${node.text || "빈 항목"} 확대`}
-        tabIndex={-1}
-        draggable
-        onContextMenu={(event) => api.openMenu(event, row)}
-        onDragStart={(event) => api.dragStart(event, row.id)}
-        onClick={(event) => {
-          event.stopPropagation();
-          api.zoom(row.id);
-        }}
-      />
+      {/*
+        One marker per row, and what is drawn in it says what kind of row this
+        is: a checkbox for a to-do, `1.` for a numbered list, `H1` for a
+        heading, a dot for prose. Before this a checklist row carried a bullet
+        *and* a checkbox — two markers for one row — and headings had no
+        marker of their own at all.
+
+        The cell is a fixed width with its contents right-aligned, so every
+        row's text still starts on the same left edge whatever the marker is.
+      */}
+      {row.checklist ? (
+        <span
+          className="row-marker"
+          draggable
+          onContextMenu={(event) => api.openMenu(event, row)}
+          onDragStart={(event) => api.dragStart(event, row.id)}
+        >
+          <input
+            type="checkbox"
+            className="row-check"
+            checked={node.done}
+            tabIndex={-1}
+            aria-label="완료 표시"
+            onChange={() => api.toggleDone(row.id)}
+            onMouseDown={(event) => event.stopPropagation()}
+          />
+        </span>
+      ) : (
+        <button
+          type="button"
+          className={`row-marker row-bullet${node.collapsed && hasChildren ? " row-bullet-collapsed" : ""}${
+            row.numbered || node.heading > 0 ? " row-bullet-labelled" : ""
+          }`}
+          aria-label={`${node.text || "빈 항목"} 확대`}
+          tabIndex={-1}
+          draggable
+          onContextMenu={(event) => api.openMenu(event, row)}
+          onDragStart={(event) => api.dragStart(event, row.id)}
+          onClick={(event) => {
+            event.stopPropagation();
+            api.zoom(row.id);
+          }}
+        >
+          {row.numbered ? (
+            <span className="row-label row-label-index">{row.index + 1}.</span>
+          ) : node.heading > 0 ? (
+            <span className="row-label">H{node.heading}</span>
+          ) : null}
+        </button>
+      )}
 
       <div className="row-body">
         <div className="row-line">
-          {row.checklist ? (
-            <input
-              type="checkbox"
-              className="row-check"
-              checked={node.done}
-              tabIndex={-1}
-              aria-label="완료 표시"
-              onChange={() => api.toggleDone(row.id)}
-              onMouseDown={(event) => event.stopPropagation()}
-            />
-          ) : null}
           {active ? (
             <Editable
               value={node.text}

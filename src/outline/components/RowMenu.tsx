@@ -56,9 +56,9 @@ export function RowMenu({ spot, api, onClose, onMove }: {
       ref={ref}
       className="row-menu"
       role="menu"
-      // Clamped so a right-click near the bottom edge does not open a menu
-      // that runs off the screen.
-      style={{ left: Math.min(spot.x, window.innerWidth - 190), top: Math.min(spot.y, window.innerHeight - 300) }}
+      // Offset below the pointer so the menu does not cover the row it is
+      // about to act on, and clamped so it stays on screen.
+      style={{ left: Math.min(spot.x, window.innerWidth - 190), top: Math.min(spot.y + 8, window.innerHeight - 312) }}
     >
       <div className="row-menu-colors">
         {COLORS.map(([color, swatch]) => (

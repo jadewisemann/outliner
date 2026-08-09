@@ -4,6 +4,7 @@ import { bookmarks } from "../palette/commands";
 import { allTags } from "../search/search";
 import type { Store } from "../store";
 import { docTree, trashed, type Id } from "../types";
+import { Icon } from "./Icon";
 
 type Props = {
   store: Store;
@@ -86,10 +87,10 @@ export function Sidebar({ store, onTagClick, onSearch }: Props) {
         <div className="sidebar-head">
           <span className="sidebar-title">문서</span>
           <button type="button" className="ghost" title="새 폴더" onClick={() => docs.createFolder()}>
-            ▤
+            <Icon name="folder" />
           </button>
           <button type="button" className="ghost" title="새 문서" onClick={() => docs.create()}>
-            +
+            <Icon name="plus" />
           </button>
         </div>
 
