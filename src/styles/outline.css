@@ -61,13 +61,13 @@
   flex: 1;
   /* A comfortable touch target, and the same height as the keys below it. */
   min-height: 40px;
+  display: grid;
+  place-items: center;
   border: 0;
   border-radius: var(--r-sm);
   background: none;
   color: var(--muted);
-  font-size: 18px;
-  line-height: 1;
-  /* No double-tap zoom, no lingering blue wash, no selecting the glyph. */
+  /* No double-tap zoom, no lingering blue wash, no selecting the icon. */
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   user-select: none;

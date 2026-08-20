@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { Nudge } from "../useOutline";
 
 type Props = {
@@ -7,11 +8,68 @@ type Props = {
   inset: number;
 };
 
-const BUTTONS: { label: string; title: string; run: (nudge: Nudge) => void }[] = [
-  { label: "⇤", title: "내어쓰기", run: (nudge) => nudge.outdent() },
-  { label: "⇥", title: "들여쓰기", run: (nudge) => nudge.indent() },
-  { label: "↑", title: "위로 이동", run: (nudge) => nudge.move(-1) },
-  { label: "↓", title: "아래로 이동", run: (nudge) => nudge.move(1) }
+/** Drawn inline so the bar stays dependency-free; sized to read at 40px keys. */
+function Icon({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      viewBox="0 0 20 20"
+      width="20"
+      height="20"
+      aria-hidden="true"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {children}
+    </svg>
+  );
+}
+
+const BUTTONS: { icon: ReactNode; title: string; run: (nudge: Nudge) => void }[] = [
+  {
+    title: "내어쓰기",
+    icon: (
+      <Icon>
+        <path d="M4.5 5v10" />
+        <path d="M16 10H8" />
+        <path d="M11.5 6.5 8 10l3.5 3.5" />
+      </Icon>
+    ),
+    run: (nudge) => nudge.outdent()
+  },
+  {
+    title: "들여쓰기",
+    icon: (
+      <Icon>
+        <path d="M15.5 5v10" />
+        <path d="M4 10h8" />
+        <path d="M8.5 6.5 12 10l-3.5 3.5" />
+      </Icon>
+    ),
+    run: (nudge) => nudge.indent()
+  },
+  {
+    title: "위로 이동",
+    icon: (
+      <Icon>
+        <path d="M10 15.5V5" />
+        <path d="M5.5 9.5 10 5l4.5 4.5" />
+      </Icon>
+    ),
+    run: (nudge) => nudge.move(-1)
+  },
+  {
+    title: "아래로 이동",
+    icon: (
+      <Icon>
+        <path d="M10 4.5V15" />
+        <path d="M5.5 10.5 10 15l4.5-4.5" />
+      </Icon>
+    ),
+    run: (nudge) => nudge.move(1)
+  }
 ];
 
 /**
@@ -25,7 +83,7 @@ export function TouchBar({ activeId, nudge, inset }: Props) {
     <div className="touch-bar" role="toolbar" aria-label="편집 도구" style={{ bottom: inset }}>
       {BUTTONS.map((button) => (
         <button
-          key={button.label}
+          key={button.title}
           type="button"
           title={button.title}
           aria-label={button.title}
@@ -35,7 +93,7 @@ export function TouchBar({ activeId, nudge, inset }: Props) {
           onPointerDown={(event) => event.preventDefault()}
           onClick={() => button.run(nudge)}
         >
-          {button.label}
+          {button.icon}
         </button>
       ))}
     </div>
