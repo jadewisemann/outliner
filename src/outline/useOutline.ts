@@ -19,11 +19,7 @@ import { writeField } from "./components/Editable";
 import { autoFormat, isUrl, linkTo, toggleLink, toggleWrap, type Selection, type WrapKind } from "./markdown";
 import {
   appendChild,
-  bulkIndent,
-  bulkMove,
-  bulkOutdent,
   bulkRemove,
-  bulkSetCollapsed,
   duplicate,
   indent,
   insertOutlineText,
@@ -34,14 +30,13 @@ import {
   patchNode,
   rowAfter,
   rowBefore,
-  splitAt,
-  toOutlineText,
-  topLevel
+  splitAt
 } from "./tree";
 import { useCompletion, type Completion } from "./useCompletion";
 import { useLive } from "./useLive";
 import { useRowDrag } from "./useRowDrag";
 import { useRowMenu } from "./useRowMenu";
+import { useRowSelection } from "./useRowSelection";
 import { useVirtualRows } from "./useVirtualRows";
 
 // Row.tsx and the palette reach these through here, from before they moved.
@@ -106,19 +101,16 @@ export function useOutline(
 ): OutlineView {
   const { doc, view, rows, focus, edit, setView, requestFocus } = store;
 
-  const [selection, setSelection] = useState<Id[]>([]);
   const [noteFocus, setNoteFocus] = useState<{ id: Id; seq: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const anchor = useRef<Id | null>(null);
   const noteSeq = useRef(0);
   const autoUndo = useRef<AutoUndo | null>(null);
 
   const live = useLive({ rows, doc, workspace: store.workspace, zoomId: view.zoomId, focus });
   const drag = useRowDrag(live, edit);
   const rowMenu = useRowMenu(requestFocus);
-  const selectionRef = useRef(selection);
-  selectionRef.current = selection;
+  const rowSelection = useRowSelection(live, edit, requestFocus, containerRef);
   const keys = useRef(keymap);
   keys.current = keymap;
 
@@ -177,15 +169,6 @@ export function useOutline(
     [edit, store.sync.files]
   );
 
-  /* ---------------------------------------------------------------- */
-  /* selection                                                         */
-  /* ---------------------------------------------------------------- */
-
-  const enterSelection = useCallback((ids: Id[]) => {
-    setSelection(ids);
-    if (ids.length > 0) containerRef.current?.focus({ preventScroll: true });
-  }, []);
-
   const focusNote = useCallback((id: Id) => {
     noteSeq.current += 1;
     setNoteFocus({ id, seq: noteSeq.current });
@@ -197,13 +180,13 @@ export function useOutline(
 
   const zoom = useCallback(
     (id: Id) => {
-      setSelection([]);
+      rowSelection.clear();
       setView({ zoomId: id });
       // An empty target gets its editable row from the store's own guard.
       const first = live.current.doc.nodes[id]?.children[0];
       if (first) requestFocus(first);
     },
-    [setView, requestFocus]
+    [rowSelection.clear, setView, requestFocus]
   );
 
   const zoomOut = useCallback(() => {
@@ -376,11 +359,10 @@ export function useOutline(
       if (event.key === "Escape") {
         stop();
         element.blur();
-        anchor.current = row.id;
-        enterSelection([row.id]);
+        rowSelection.select(row.id);
       }
     },
-    [edit, requestFocus, focusNote, enterSelection, zoom, zoomOut, completions.onKeyDown, completions.clear]
+    [edit, requestFocus, focusNote, rowSelection.select, zoom, zoomOut, completions.onKeyDown, completions.clear]
   );
 
   const onNoteKeyDown = useCallback(
@@ -396,79 +378,6 @@ export function useOutline(
       requestFocus(row.id);
     },
     [requestFocus]
-  );
-
-  /* ---------------------------------------------------------------- */
-  /* keyboard while rows are selected                                  */
-  /* ---------------------------------------------------------------- */
-
-  const onContainerKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>) => {
-      const chosen = selectionRef.current;
-      if (chosen.length === 0 || (event.target as HTMLElement).tagName === "TEXTAREA") return;
-      const mod = event.metaKey || event.ctrlKey;
-      const visible = live.current.rows;
-      const zoomId = live.current.zoomId;
-      const stop = () => event.preventDefault();
-
-      if (event.key === "Escape" || event.key === "Enter") {
-        stop();
-        setSelection([]);
-        requestFocus(chosen[chosen.length - 1]);
-        return;
-      }
-      if (mod && event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
-        stop();
-        edit((current) => bulkMove(current, zoomId, chosen, event.key === "ArrowUp" ? -1 : 1));
-        return;
-      }
-      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-        stop();
-        const up = event.key === "ArrowUp";
-        const edge = (up ? rowBefore : rowAfter)(visible, chosen[up ? 0 : chosen.length - 1]);
-        if (!edge) return;
-        if (event.shiftKey) {
-          enterSelection(rangeBetween(visible, anchor.current ?? chosen[0], edge.id));
-        } else {
-          anchor.current = edge.id;
-          enterSelection([edge.id]);
-        }
-        return;
-      }
-      if (event.key === "Tab") {
-        stop();
-        edit((current) => (event.shiftKey ? bulkOutdent(current, zoomId, chosen) : bulkIndent(current, zoomId, chosen)));
-        return;
-      }
-      if (event.key === "Backspace" || event.key === "Delete") {
-        stop();
-        setSelection([]);
-        edit((current) => bulkRemove(current, zoomId, chosen));
-        return;
-      }
-      if (mod && (event.key === "c" || event.key === "x")) {
-        stop();
-        const now = live.current.doc;
-        void navigator.clipboard?.writeText(toOutlineText(now, topLevel(now, zoomId, chosen)));
-        if (event.key === "x") {
-          setSelection([]);
-          edit((current) => bulkRemove(current, zoomId, chosen));
-        }
-        return;
-      }
-      if (mod && event.key === "a") {
-        stop();
-        enterSelection(visible.map((row) => row.id));
-        return;
-      }
-      if (event.key === " ") {
-        stop();
-        const now = live.current.doc;
-        const collapsing = chosen.some((id) => now.nodes[id]?.children.length && !now.nodes[id].collapsed);
-        edit((current) => bulkSetCollapsed(current, chosen, collapsing), { transient: true });
-      }
-    },
-    [edit, enterSelection, requestFocus]
   );
 
   /* ---------------------------------------------------------------- */
@@ -550,18 +459,6 @@ export function useOutline(
         requestFocus(id, caret);
       },
       focusNote,
-      pointerSelect(event: MouseEvent, row) {
-        if (event.shiftKey) {
-          event.preventDefault();
-          enterSelection(rangeBetween(live.current.rows, anchor.current ?? row.id, row.id));
-          return;
-        }
-        if (selectionRef.current.length > 0) setSelection([]);
-        anchor.current = row.id;
-      },
-      clearSelection() {
-        setSelection([]);
-      },
       setColor(id, color: Color) {
         edit((current) => patchNode(current, id, { color }));
       },
@@ -595,6 +492,7 @@ export function useOutline(
       resolveItem: (id) => labelOf(live.current.workspace, id),
       resolveFile: (name) => attachmentUrl(store.sync.files, name),
       ...completions.api,
+      ...rowSelection.api,
       ...rowMenu.api,
       ...drag.api
     }),
@@ -604,7 +502,6 @@ export function useOutline(
       onNoteKeyDown,
       zoom,
       requestFocus,
-      enterSelection,
       onTagClick,
       onDocLinkClick,
       onItemLinkClick,
@@ -615,6 +512,7 @@ export function useOutline(
       completions.refresh,
       completions.clear,
       completions.api,
+      rowSelection.api,
       rowMenu.api,
       drag.api
     ]
@@ -622,8 +520,7 @@ export function useOutline(
 
   /* ---------------------------------------------------------------- */
 
-  const selected = useMemo(() => new Set(selection), [selection]);
-  const pin = selection.length > 0 ? null : focus;
+  const pin = rowSelection.selection.length > 0 ? null : focus;
   const activeId = pin?.id ?? null;
   const window = useVirtualRows(rows, scrollRef, containerRef, pin);
 
@@ -634,7 +531,7 @@ export function useOutline(
     window,
     activeId,
     swipe,
-    selected,
+    selected: rowSelection.selected,
     focus,
     noteFocus,
     completion: completions.completion,
@@ -646,16 +543,16 @@ export function useOutline(
       onFocus(event) {
         // Focusing the container with nothing selected puts the caret back
         // where the reader left off.
-        if (event.target !== event.currentTarget || selectionRef.current.length > 0) return;
+        if (event.target !== event.currentTarget || rowSelection.selection.length > 0) return;
         const landing = live.current.rows.find((row) => row.id === view.focusId) ?? live.current.rows[0];
         if (landing) requestFocus(landing.id);
       },
-      onKeyDown: onContainerKeyDown,
+      onKeyDown: rowSelection.onKeyDown,
       onDragEnd: drag.onDragEnd
     },
     onTailMouseDown(event) {
       event.preventDefault();
-      setSelection([]);
+      rowSelection.clear();
       edit((current) => appendChild(current, live.current.zoomId));
     }
   };
@@ -666,13 +563,4 @@ function pick(node: Node | undefined, patch: Partial<Node>): Partial<Node> {
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(patch)) out[key] = node?.[key as keyof Node];
   return out as Partial<Node>;
-}
-
-/** Inclusive visible-row range between two ids, in document order. */
-function rangeBetween(rows: RowModel[], from: Id, to: Id): Id[] {
-  const start = rows.findIndex((row) => row.id === from);
-  const end = rows.findIndex((row) => row.id === to);
-  if (start === -1 || end === -1) return [to];
-  const [low, high] = start <= end ? [start, end] : [end, start];
-  return rows.slice(low, high + 1).map((row) => row.id);
 }

@@ -98,7 +98,9 @@ src/
                 appearance.ts(글꼴·너비·공유 캡처)
   outline/      트리 연산(tree.ts), 인라인 마크다운, markdown.ts(서식 키보드),
                 highlight.tsx(라이브러리 없는 코드 색), 가상화·스와이프,
-                useOutline(모든 동작) + useRowDrag(드래그)
+                useOutline(조립 + 행 키보드·메모·확대·첨부)와 관심사별 훅 —
+                useLive(공유 최신값) · useRowDrag(드래그) · useRowMenu(메뉴) ·
+                useCompletion([[/# 자동완성) · useRowSelection(행 선택)
     components/   Outline, Row, RowMenu, Editable, TouchBar, TeX, Attachment — 렌더링만
   palette/      palette.ts(후보 랭킹), commands.ts(앱의 모든 명령) + Palette
   sync/         merge.ts(병합 규칙), useSync.ts(pull–merge–push 루프·백오프·탭 간 핑)

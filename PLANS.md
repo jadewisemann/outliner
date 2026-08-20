@@ -21,7 +21,9 @@ DESIGN.md(및 하위 문서)에 반영한다.
     - [x] 3단계 `useRowMenu` — menu 상태·openMenu/closeMenu (787 → 783줄)
     - [x] 4단계 `useCompletion` — Choice/Completion 타입·후보 계산·키 처리, "키를 먹었는가"
       boolean으로 순서 유지, 기존 import 경로는 재수출로 보존 (783 → 678줄)
-    - [ ] `useRowSelection`, 남는 것 350줄 아래 목표
+    - [x] 5단계 `useRowSelection` — selection/anchor 상태·컨테이너 키보드·pointerSelect
+      (678 → 566줄). 350줄 목표는 계획 내부 모순으로 실측 갱신 —
+      IMPLEMENTATION_NOTES.md 2026-08-20 참고. 추가 축소는 "행 키보드" 훅 분리 결정이 필요.
 - **완료 기준:** 유닛·e2e 개수 불변 전부 green, `Outline.tsx`/`Row.tsx` 무변경(R2),
   `grep -rn 'from "../app/' src/outline …`이 비어 있음(R1 — 달성).
 
