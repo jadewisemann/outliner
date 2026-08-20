@@ -13,14 +13,14 @@ DESIGN.md(및 하위 문서)에 반영한다.
 1. **실제 배포** — 저장소 Settings → Pages에서 source를 GitHub Actions로 (계정 소유자만.
    main의 Pages 워크플로 deploy 잡이 이것 때문에 빨갛다). Vercel + OAuth 로그인은 OAuth App
    생성(callback = 배포 origin) + `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`.
-2. **백엔드 능력 비대칭의 결정** — 히스토리·첨부는 GitHub 백엔드에만 있다. 선을 긋거나(권장:
-   "저장소 백엔드만의 기능"으로 문서·UI에 명시), REST에도 능력을 주거나, 능력 없는 UI를
-   일급으로. [refactor-plan.md](./docs/design/refactor-plan.md) 「남겨둔 리스크」.
-3. **디자인 리뷰 잔여** — 본문 여백·측정값 미세조정, 터치바 아이콘화. 큰 것(지면과 도형,
+2. **디자인 리뷰 잔여** — 본문 여백·측정값 미세조정, 터치바 아이콘화. 큰 것(지면과 도형,
    거터 정렬, 토큰 분리, 마커 통합)은 끝났다.
-4. 레퍼런스 셀프 호스트 서버 (정적 파일 + `GET`/`PUT` + `If-Match`, 파일 하나면 된다)
-5. 아주 큰 워크스페이스를 위한 delta 동기화
-6. R5(`Doc` 판별 유니온 — **물면 그때**) · R6(CSS 분할 — 급하지 않음)
+3. 레퍼런스 셀프 호스트 서버 (정적 파일 + `GET`/`PUT` + `If-Match`, 파일 하나면 된다)
+4. 아주 큰 워크스페이스를 위한 delta 동기화
+5. R5(`Doc` 판별 유니온 — **물면 그때**) · R6(CSS 분할 — 급하지 않음)
+
+(백엔드 능력 비대칭의 결정은 2026-08-20 해소 — 선을 긋는 쪽으로,
+[ADR-0005](./docs/adr/0005-backend-capability-line.md).)
 
 ## 범위에서 뺀 것 (다시 논의하려면 근거부터)
 
