@@ -92,23 +92,26 @@ api/            Vercel serverless — OAuth code↔token 교환 (client secret �
 public/sw.js    셸 캐시 — 오프라인으로 "여는" 것만 담당
 src/
   types.ts      Node / Doc / Workspace 모델, 문서 트리(폴더) (코드가 정본)
-  store.ts      상태 + 자동 저장 + 동기화 루프 + 문서·폴더 조작
+  store.ts      상태 + 자동 저장 + 문서·폴더 조작 (동기화 루프는 sync/useSync.ts)
   history.ts    실행 취소 — 재스탬프 (원칙 10)
   app/          레이아웃 껍데기: App, Sidebar, Backlinks, Settings, Keys, Shortcuts
-                keymap.ts(재바인딩 가능한 키 전부), appearance.ts(글꼴·너비·공유 캡처)
+                appearance.ts(글꼴·너비·공유 캡처)
   outline/      트리 연산(tree.ts), 인라인 마크다운, markdown.ts(서식 키보드),
-                highlight.tsx(라이브러리 없는 코드 색), 가상화·스와이프, useOutline(모든 동작)
+                highlight.tsx(라이브러리 없는 코드 색), 가상화·스와이프,
+                useOutline(모든 동작) + useRowDrag(드래그)
     components/   Outline, Row, RowMenu, Editable, TouchBar, TeX, Attachment — 렌더링만
   palette/      palette.ts(후보 랭킹), commands.ts(앱의 모든 명령) + Palette
-  sync/         merge.ts(병합 규칙)
-    api/          remote.ts(REST·GitHub 백엔드 + 히스토리·첨부), cipher.ts(E2EE),
-                  attachments.ts(내용 해시 이름과 object URL), githubAuth.ts(OAuth 플로)
-    components/   SyncSettings, SyncBadge, HistoryPanel
+  sync/         merge.ts(병합 규칙), useSync.ts(pull–merge–push 루프·백오프·탭 간 핑)
+    api/          remote/(전송 — contract·rest·github·codec·settings, 입구는 index.ts),
+                  cipher.ts(E2EE), attachments.ts(내용 해시 이름과 object URL),
+                  githubAuth.ts(OAuth 플로)
+    components/   SyncSettings(+SyncBadge), HistoryPanel
   storage/      persist(IndexedDB), migrate(스키마 — v6), validate(신뢰 경계)
   search/       query.ts(질의 언어), search.ts(전체 검색), links.ts(항목 링크·백링크)
                 + SearchPanel
   transfer/     Markdown/OPML/백업 변환 + useTransfer(파일 입출력)
-  shared/       order(정렬 키), clock(논리 시계), download, Panel(모달)
+  shared/       order(정렬 키), clock(논리 시계), keymap.ts(재바인딩 가능한 키 전부),
+                download, Panel(모달)
 ```
 
 경계 규칙: 도메인 폴더를 가로지르는 import는 `shared/`·`types.ts`·`store.ts`를 통해서만.
@@ -132,7 +135,7 @@ src/
 고친다:
 
 - `src/types.ts` — Node / Doc / Workspace 데이터 모델 타입
-- `src/app/keymap.ts` — 재바인딩 가능한 키의 전체 테이블
+- `src/shared/keymap.ts` — 재바인딩 가능한 키의 전체 테이블
 - `index.html`의 CSP 정책 값
 - `public/manifest.webmanifest`, `public/icon.svg`(아이콘의 정본은 SVG, PNG는 파생), `public/sw.js`
 - `package.json`의 스크립트·의존성 목록

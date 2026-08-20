@@ -1,6 +1,6 @@
 import type { RefObject } from "react";
 import type { Store } from "../../store";
-import type { Keymap } from "../../app/keymap";
+import type { Keymap } from "../../shared/keymap";
 import { useOutline } from "../useOutline";
 import { useSwipe } from "../useSwipe";
 import { useTouchBar } from "../useTouchBar";

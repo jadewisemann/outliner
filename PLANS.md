@@ -11,12 +11,15 @@ DESIGN.md(및 하위 문서)에 반영한다.
   이전 코드 위에서 같은 취지의 분할을 실행한 **참고 구현**이다 (그대로 병합은 불가 — 기능
   이전 코드 기준이라 내용이 낡았다).
 - **체크리스트:**
-  - [ ] R1 — `app/keymap.ts` → `shared/keymap.ts` (의존성 간선 제거)
-  - [ ] R3 — `sync/api/remote.ts` 분할 (contract / rest / github / codec / settings)
-  - [ ] R4 — `store.ts`에서 동기화 루프를 `sync/useSync.ts`로
-  - [ ] R2 — `useOutline.ts` 834줄을 관심사별 훅으로 (단계별로, 매 단계 전체 테스트)
+  - [x] R1 — `app/keymap.ts` → `shared/keymap.ts` (의존성 간선 제거)
+  - [x] R3 — `sync/api/remote.ts` 분할 → `sync/api/remote/{index,contract,rest,github,codec,settings}.ts`
+  - [x] R4 — `store.ts`에서 동기화 루프를 `sync/useSync.ts`로 (615 → 454줄)
+  - [ ] R2 — `useOutline.ts`를 관심사별 훅으로 (단계별로, 매 단계 전체 테스트)
+    - [x] 1단계 `useRowDrag` (834 → 796줄)
+    - [ ] `useLive`(공유 ref 묶음) → `useRowMenu` → `useCompletion` → `useRowSelection`,
+      남는 것 350줄 아래 목표
 - **완료 기준:** 유닛·e2e 개수 불변 전부 green, `Outline.tsx`/`Row.tsx` 무변경(R2),
-  `grep -rn 'from "../app/' src/outline …`이 비어 있음(R1).
+  `grep -rn 'from "../app/' src/outline …`이 비어 있음(R1 — 달성).
 
 ## 대기열 — 계획으로 승격 전
 

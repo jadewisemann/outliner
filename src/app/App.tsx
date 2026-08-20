@@ -14,7 +14,7 @@ import { useTransfer } from "../transfer/useTransfer";
 import { applyAppearance, forgetShare, loadAppearance, saveAppearance, sharedText, type Appearance } from "./appearance";
 import { Backlinks } from "./Backlinks";
 import { Icon } from "./Icon";
-import { loadKeymap, matches, saveKeymap, type Keymap } from "./keymap";
+import { loadKeymap, matches, saveKeymap, type Keymap } from "../shared/keymap";
 import { Keys } from "./Keys";
 import { Settings } from "./Settings";
 import { Shortcuts } from "./Shortcuts";

@@ -3,14 +3,13 @@ import {
   useMemo,
   useRef,
   useState,
-  type DragEvent,
   type FocusEvent,
   type KeyboardEvent,
   type MouseEvent,
   type RefObject
 } from "react";
 import type { Store } from "../store";
-import { matches, type Action, type Keymap } from "../app/keymap";
+import { matches, type Action, type Keymap } from "../shared/keymap";
 import { labelOf } from "../search/links";
 import { MAX_ATTACHMENT_BYTES, attachmentUrl, nameFor, rememberUpload } from "../sync/api/attachments";
 import { allTags } from "../search/search";
@@ -46,13 +45,13 @@ import {
   outdent,
   parentOf,
   patchNode,
-  reparent,
   rowAfter,
   rowBefore,
   splitAt,
   toOutlineText,
   topLevel
 } from "./tree";
+import { useRowDrag } from "./useRowDrag";
 import { useVirtualRows } from "./useVirtualRows";
 
 /** One offer from `[[` or `#`: what it reads as, and what it writes. */
@@ -125,17 +124,15 @@ export function useOutline(
   const [noteFocus, setNoteFocus] = useState<{ id: Id; seq: number } | null>(null);
   const [completion, setCompletion] = useState<Completion | null>(null);
   const [menu, setMenu] = useState<MenuSpot | null>(null);
-  const [dropSpot, setDropSpot] = useState<{ id: Id; position: DropPosition } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const anchor = useRef<Id | null>(null);
-  const dragId = useRef<Id | null>(null);
-  const dropRef = useRef<{ id: Id; position: DropPosition } | null>(null);
   const noteSeq = useRef(0);
   const autoUndo = useRef<AutoUndo | null>(null);
 
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
+  const drag = useRowDrag(rowsRef, edit);
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   const zoomRef = useRef(view.zoomId);
@@ -718,39 +715,7 @@ export function useOutline(
       openItem: onItemLinkClick,
       resolveItem: (id) => labelOf(workspaceRef.current, id),
       resolveFile: (name) => attachmentUrl(store.sync.files, name),
-      dragStart(event: DragEvent, id) {
-        dragId.current = id;
-        event.dataTransfer.effectAllowed = "move";
-        event.dataTransfer.setData("text/plain", id);
-      },
-      dragOver(event: DragEvent, row) {
-        if (!dragId.current) return;
-        event.preventDefault();
-        const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
-        const ratio = (event.clientY - box.top) / box.height;
-        const indented = event.clientX - box.left > 40 + row.depth * 22;
-        const next = { id: row.id, position: (ratio < 0.35 ? "before" : indented ? "child" : "after") as DropPosition };
-        if (dropRef.current?.id !== next.id || dropRef.current.position !== next.position) {
-          dropRef.current = next;
-          setDropSpot(next);
-        }
-      },
-      drop(event: DragEvent) {
-        event.preventDefault();
-        const source = dragId.current;
-        const spot = dropRef.current;
-        dragId.current = null;
-        dropRef.current = null;
-        setDropSpot(null);
-        if (!source || !spot || source === spot.id) return;
-        const target = rowsRef.current.find((row) => row.id === spot.id);
-        if (!target) return;
-        edit((current) =>
-          spot.position === "child"
-            ? reparent(current, source, spot.id, 0)
-            : reparent(current, source, target.parentId, target.index + (spot.position === "after" ? 1 : 0))
-        );
-      }
+      ...drag.api
     }),
     [
       edit,
@@ -767,7 +732,8 @@ export function useOutline(
       refreshCompletion,
       acceptCompletion,
       attach,
-      store.sync.files
+      store.sync.files,
+      drag.api
     ]
   );
 
@@ -792,7 +758,7 @@ export function useOutline(
     completion,
     menu,
     closeMenu,
-    dropSpot,
+    dropSpot: drag.dropSpot,
     api,
     containerProps: {
       onFocus(event) {
@@ -803,11 +769,7 @@ export function useOutline(
         if (landing) requestFocus(landing.id);
       },
       onKeyDown: onContainerKeyDown,
-      onDragEnd() {
-        dragId.current = null;
-        dropRef.current = null;
-        setDropSpot(null);
-      }
+      onDragEnd: drag.onDragEnd
     },
     onTailMouseDown(event) {
       event.preventDefault();

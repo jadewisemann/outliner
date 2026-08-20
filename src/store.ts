@@ -1,22 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createHistory } from "./history";
 import { rememberDoc } from "./palette/palette";
-import { changedBy, mergeWorkspace } from "./sync/merge";
-import { isLocked } from "./sync/api/cipher";
+import { useSync } from "./sync/useSync";
 import { keyBetween } from "./shared/order";
 import { loadWorkspace, saveWorkspace } from "./storage/persist";
-import {
-  announceToOtherTabs,
-  configKey,
-  createBackend,
-  hasSynced,
-  loadSyncConfig,
-  markSynced,
-  saveSyncConfig,
-  watchOtherTabs,
-  type SyncConfig,
-  type SyncStatus
-} from "./sync/api/remote";
+import { announceToOtherTabs } from "./sync/api/remote";
 import { ancestors, cutSubtree, ensureEditable, graftSubtree, visibleRows, type Edit } from "./outline/tree";
 import { parseQuery } from "./search/query";
 import {
@@ -32,15 +20,12 @@ import {
   type Doc,
   type DocView,
   type Id,
-  type SyncPayload,
   type Workspace
 } from "./types";
 
 type FocusRequest = { id: Id; caret: number | "end"; seq: number };
 
 const SAVE_DEBOUNCE_MS = 400;
-/** Longest gap between retries after the endpoint starts failing. */
-const MAX_BACKOFF_MS = 5 * 60_000;
 
 type EditOptions = {
   /** Consecutive edits sharing a key within a short window collapse into one undo step. */
@@ -54,8 +39,6 @@ export type Store = ReturnType<typeof useStore>;
 export function useStore() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [focus, setFocus] = useState<FocusRequest | null>(null);
-  const [syncConfig, setSyncConfigState] = useState<SyncConfig | null>(() => loadSyncConfig());
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>(() => (loadSyncConfig() ? "idle" : "off"));
   const [saveFailed, setSaveFailed] = useState(false);
 
   // Mirrors `workspace` so several edits dispatched in one tick compose
@@ -63,10 +46,6 @@ export function useStore() {
   const live = useRef<Workspace | null>(null);
   const history = useRef(createHistory()).current;
   const focusSeq = useRef(0);
-
-  /** Counts edits worth syncing, so a push knows exactly what it covered. */
-  const edits = useRef(0);
-  const pushed = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -104,14 +83,19 @@ export function useStore() {
     setWorkspace(next);
   }, []);
 
+  // Undo snapshots predate work this device did not author; replaying one
+  // would delete the other device's rows — so an absorbed merge clears them.
+  const onAbsorb = useCallback(() => history.clear(), [history]);
+  const sync = useSync({ live, apply: applyWorkspace, onAbsorb, ready: workspace !== null });
+
   const commit = useCallback(
     (next: Workspace, previous: Workspace, options: EditOptions) => {
       if (!options.transient) history.record(previous, options.coalesceKey);
       // Zoom and focus live on this device only; they should not wake sync.
-      if (next.docs !== previous.docs || next.graves !== previous.graves) edits.current += 1;
+      if (next.docs !== previous.docs || next.graves !== previous.graves) sync.noteEdit();
       applyWorkspace(next);
     },
-    [applyWorkspace, history]
+    [applyWorkspace, history, sync.noteEdit]
   );
 
   const editWorkspace = useCallback(
@@ -191,10 +175,10 @@ export function useStore() {
       if (!current) return;
       const next = take(current);
       if (!next) return;
-      edits.current += 1;
+      sync.noteEdit();
       applyWorkspace(next);
     },
-    [applyWorkspace]
+    [applyWorkspace, sync.noteEdit]
   );
 
   const undo = useCallback(() => step((current) => history.undo(current)), [step, history]);
@@ -382,7 +366,7 @@ export function useStore() {
        * Both documents change in one edit, but they are two files on the
        * remote, so a device that pulls between the two writes sees the row in
        * both places. It converges on the next round — the merge does not care
-       * about order — and `remote.ts` pushes the document that did the burying
+       * about order — and `sync/api/remote` pushes the document that did the burying
        * first, which makes that window as small as it can be.
        */
       moveToDoc(nodeId: Id, targetDocId: Id) {
@@ -399,147 +383,6 @@ export function useStore() {
       }
     };
   }, [editWorkspace, requestFocus]);
-
-  /* ---------------------------------------------------------------- */
-  /* sync                                                              */
-  /* ---------------------------------------------------------------- */
-
-  const backend = useMemo(() => (syncConfig ? createBackend(syncConfig) : null), [syncConfig]);
-  const running = useRef(false);
-  const failures = useRef(0);
-  const retryAfter = useRef(0);
-
-  /** Applies a merge result, but only when it actually brought something in. */
-  const absorb = useCallback(
-    (payload: SyncPayload) => {
-      const current = live.current;
-      if (!current || !changedBy({ docs: current.docs, graves: current.graves }, payload)) return;
-      // Undo snapshots predate work this device did not author; replaying one
-      // would delete the other device's rows.
-      history.clear();
-
-      const active = payload.docs[current.activeDocId] ? current.activeDocId : Object.keys(payload.docs)[0];
-      if (!active) return;
-      const views = { ...current.views };
-      for (const id of Object.keys(views)) if (!payload.docs[id]) delete views[id];
-      applyWorkspace({ ...current, ...payload, activeDocId: active, views });
-    },
-    [applyWorkspace, history]
-  );
-
-  const syncNow = useCallback(async () => {
-    if (!backend || running.current || !live.current || Date.now() < retryAfter.current) return;
-    running.current = true;
-    setSyncStatus("syncing");
-    try {
-      // Pull, merge into whatever is local right now, then offer the result
-      // back. A lost race just means the next round settles it.
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-        const stored = await backend.pull();
-        if (!stored) break;
-        absorb(
-          mergeWorkspace(payloadOf(live.current!), stored.payload, {
-            // Nothing typed here yet, and never synced with this remote:
-            // this device is joining, not contributing a blank document.
-            adoptRemote: edits.current === 0 && !hasSynced(configKey(syncConfig!))
-          })
-        );
-
-        // Nothing of ours is unpushed and the remote has a version, so a push
-        // would only echo back what it already holds. On GitHub every push is
-        // a commit — an idle device must not leave a trail of empty ones.
-        if (edits.current === pushed.current && stored.version !== null) break;
-
-        // Captured before the request: anything typed during the round trip
-        // must stay pending rather than be marked as sent.
-        const covered = edits.current;
-        const accepted = await backend.push(payloadOf(live.current!), stored.version);
-        if (accepted !== null) {
-          pushed.current = covered;
-          break;
-        }
-      }
-      failures.current = 0;
-      retryAfter.current = 0;
-      markSynced(configKey(syncConfig!));
-      setSyncStatus("idle");
-      void saveWorkspace(live.current!);
-    } catch (error) {
-      if (isLocked(error)) {
-        // The remote holds bytes this device cannot read. Retrying is pointless
-        // until the passphrase changes — and pushing would be worse than
-        // pointless, since it would write over notes nobody here can recover.
-        retryAfter.current = Date.now() + MAX_BACKOFF_MS;
-        setSyncStatus("locked");
-        return;
-      }
-      // Back off, or a dead endpoint means a failing request every 1.5s forever.
-      failures.current += 1;
-      retryAfter.current = Date.now() + Math.min(2 ** failures.current * 1000, MAX_BACKOFF_MS);
-      setSyncStatus(navigator.onLine === false ? "offline" : "error");
-    } finally {
-      running.current = false;
-    }
-  }, [backend, absorb, syncConfig]);
-
-  // Push shortly after edits settle, pull on a slow timer, and catch up
-  // whenever the tab or the network comes back. Waits for the local workspace
-  // to load first, since there is nothing to merge against before then.
-  const loaded = workspace !== null;
-  useEffect(() => {
-    if (!backend) {
-      setSyncStatus("off");
-      return;
-    }
-    if (!loaded) return;
-    setSyncStatus("idle");
-    void syncNow();
-
-    const push = setInterval(() => {
-      if (edits.current !== pushed.current) void syncNow();
-    }, backend.cadence.pushMs);
-    const pull = setInterval(() => {
-      // A hidden tab catches up on the visibilitychange below instead.
-      if (!document.hidden) void syncNow();
-    }, backend.cadence.pullMs);
-    const wake = () => {
-      if (document.visibilityState === "visible") void syncNow();
-    };
-    window.addEventListener("online", wake);
-    document.addEventListener("visibilitychange", wake);
-    return () => {
-      clearInterval(push);
-      clearInterval(pull);
-      window.removeEventListener("online", wake);
-      document.removeEventListener("visibilitychange", wake);
-    };
-  }, [backend, loaded, syncNow]);
-
-  // Another tab of this browser is just another device: re-read the shared
-  // database and merge it the same way. The save effect above does the
-  // announcing, so there is no second timer here.
-  useEffect(() => {
-    let cancelled = false;
-    const stop = watchOtherTabs(() => {
-      void loadWorkspace().then((stored) => {
-        if (cancelled || !live.current || !stored) return;
-        // A tab that has not been typed into defers to what is already in the
-        // shared database rather than adding its own starter document.
-        absorb(mergeWorkspace(payloadOf(live.current), payloadOf(stored), { adoptRemote: edits.current === 0 }));
-      });
-    });
-    return () => {
-      cancelled = true;
-      stop();
-    };
-  }, [absorb]);
-
-  const setSyncConfig = useCallback((next: SyncConfig | null) => {
-    saveSyncConfig(next);
-    failures.current = 0;
-    retryAfter.current = 0;
-    setSyncConfigState(next);
-  }, []);
 
   /* ---------------------------------------------------------------- */
 
@@ -597,19 +440,15 @@ export function useStore() {
     redo,
     docs,
     sync: {
-      status: syncStatus,
-      config: syncConfig,
-      setConfig: setSyncConfig,
-      now: syncNow,
+      status: sync.status,
+      config: sync.config,
+      setConfig: sync.setConfig,
+      now: sync.now,
       /** Present only on a backend that keeps history — today, GitHub. */
-      history: backend?.history ?? null,
+      history: sync.history,
       /** Likewise for somewhere to put attachment bytes. */
-      files: backend?.files ?? null
+      files: sync.files
     },
     saveFailed
   };
-}
-
-function payloadOf(workspace: Workspace): SyncPayload {
-  return { docs: workspace.docs, graves: workspace.graves };
 }
