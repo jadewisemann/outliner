@@ -53,6 +53,7 @@ import {
 } from "./tree";
 import { useLive } from "./useLive";
 import { useRowDrag } from "./useRowDrag";
+import { useRowMenu } from "./useRowMenu";
 import { useVirtualRows } from "./useVirtualRows";
 
 /** One offer from `[[` or `#`: what it reads as, and what it writes. */
@@ -124,7 +125,6 @@ export function useOutline(
   const [selection, setSelection] = useState<Id[]>([]);
   const [noteFocus, setNoteFocus] = useState<{ id: Id; seq: number } | null>(null);
   const [completion, setCompletion] = useState<Completion | null>(null);
-  const [menu, setMenu] = useState<MenuSpot | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const anchor = useRef<Id | null>(null);
@@ -133,6 +133,7 @@ export function useOutline(
 
   const live = useLive({ rows, doc, workspace: store.workspace, zoomId: view.zoomId, focus });
   const drag = useRowDrag(live, edit);
+  const rowMenu = useRowMenu(requestFocus);
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
   const completionRef = useRef(completion);
@@ -668,12 +669,6 @@ export function useOutline(
       clearSelection() {
         setSelection([]);
       },
-      openMenu(event, row) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestFocus(row.id);
-        setMenu({ row, x: event.clientX, y: event.clientY });
-      },
       setColor(id, color: Color) {
         edit((current) => patchNode(current, id, { color }));
       },
@@ -706,6 +701,7 @@ export function useOutline(
       openItem: onItemLinkClick,
       resolveItem: (id) => labelOf(live.current.workspace, id),
       resolveFile: (name) => attachmentUrl(store.sync.files, name),
+      ...rowMenu.api,
       ...drag.api
     }),
     [
@@ -724,13 +720,13 @@ export function useOutline(
       acceptCompletion,
       attach,
       store.sync.files,
+      rowMenu.api,
       drag.api
     ]
   );
 
   /* ---------------------------------------------------------------- */
 
-  const closeMenu = useCallback(() => setMenu(null), []);
   const selected = useMemo(() => new Set(selection), [selection]);
   const pin = selection.length > 0 ? null : focus;
   const activeId = pin?.id ?? null;
@@ -747,8 +743,8 @@ export function useOutline(
     focus,
     noteFocus,
     completion,
-    menu,
-    closeMenu,
+    menu: rowMenu.menu,
+    closeMenu: rowMenu.closeMenu,
     dropSpot: drag.dropSpot,
     api,
     containerProps: {
