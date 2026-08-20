@@ -9,7 +9,7 @@ import {
   type RefObject
 } from "react";
 import type { Store } from "../store";
-import { matches, type Action, type Keymap } from "../shared/keymap";
+import { COLOR_ACTIONS, matches, type Action, type Keymap } from "../shared/keymap";
 import { labelOf } from "../search/links";
 import { MAX_ATTACHMENT_BYTES, attachmentUrl, nameFor, rememberUpload } from "../sync/api/attachments";
 import { type Color, type Id, type Node, type Row as RowModel } from "../types";
@@ -52,6 +52,18 @@ const WRAP_ACTIONS: [Action, WrapKind][] = [
   ["strike", "strike"],
   ["highlight", "highlight"]
 ];
+
+/**
+ * Checkbox and numbering are the *list's*, so they toggle on the parent — the
+ * same asymmetry the row menu and the palette already work with
+ * (docs/design/editing.md). Colour is the row's own.
+ */
+const LIST_FLAGS: [Action, (parent: Node) => Partial<Node>][] = [
+  ["checklist", (parent) => ({ checklist: !parent.checklist })],
+  ["numbered", (parent) => ({ numbered: !parent.numbered })]
+];
+
+
 
 /** The edits a phone cannot reach, since it has no Tab key and no ⌘⇧↑↓. */
 export type Nudge = {
@@ -110,9 +122,9 @@ export function useOutline(
   const live = useLive({ rows, doc, workspace: store.workspace, zoomId: view.zoomId, focus });
   const drag = useRowDrag(live, edit);
   const rowMenu = useRowMenu(requestFocus);
-  const rowSelection = useRowSelection(live, edit, requestFocus, containerRef);
   const keys = useRef(keymap);
   keys.current = keymap;
+  const rowSelection = useRowSelection(live, edit, requestFocus, containerRef, keys);
 
   /* ---------------------------------------------------------------- */
   /* writing into the focused field                                    */
@@ -260,6 +272,27 @@ export function useOutline(
       if (bound("indent") || bound("outdent")) {
         stop();
         edit((current) => (bound("outdent") ? outdent(current, row.id, zoomId) : indent(current, row.id)));
+        return;
+      }
+
+      // The display flags the palette already reached. Without these the
+      // keyboard cannot colour a row at all, which is a hole regardless of
+      // which preset is loaded.
+      for (const [action, patch] of LIST_FLAGS) {
+        if (!bound(action)) continue;
+        stop();
+        const parentId = live.current.doc.nodes[row.id]?.parent;
+        if (!parentId) return;
+        edit((current) => {
+          const parent = current.nodes[parentId];
+          return parent ? patchNode(current, parentId, patch(parent)) : current;
+        });
+        return;
+      }
+      for (const [action, color] of COLOR_ACTIONS) {
+        if (!bound(action)) continue;
+        stop();
+        edit((current) => patchNode(current, row.id, { color }));
         return;
       }
 

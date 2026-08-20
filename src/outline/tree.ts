@@ -621,6 +621,28 @@ export function bulkSetCollapsed(doc: Doc, ids: Id[], collapsed: boolean): Edit 
   return { doc: nodes ? withNodes(doc, nodes) : doc };
 }
 
+/**
+ * One display patch across a whole selection, in a single draft.
+ *
+ * Structure is untouched — `parent`, `sort` and `children` are not in reach —
+ * so this is for the display fields (colour, done, checklist) that a selection
+ * gets given all at once.
+ */
+export function bulkPatch(doc: Doc, ids: Id[], patch: Partial<Node>): Edit {
+  const now = stamp();
+  let nodes: Nodes | null = null;
+  for (const id of ids) {
+    const node = (nodes ?? doc.nodes)[id];
+    if (!node) continue;
+    // Same-value writes are skipped so an unchanged selection stays the same
+    // object, the way merge() and the render skip both expect (DESIGN 원칙 4).
+    if ((Object.keys(patch) as (keyof Node)[]).every((field) => node[field] === patch[field])) continue;
+    nodes ??= draft(doc);
+    nodes[id] = { ...node, ...patch, edited: now };
+  }
+  return { doc: nodes ? withNodes(doc, nodes) : doc };
+}
+
 /** Collapses or expands every descendant of `fromId`. */
 export function setCollapsedDeep(doc: Doc, fromId: Id, collapsed: boolean): Edit {
   return bulkSetCollapsed(doc, subtree(doc, fromId).filter((id) => id !== fromId), collapsed);

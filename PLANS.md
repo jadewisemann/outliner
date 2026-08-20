@@ -3,7 +3,13 @@
 계획마다 **목표 / 원칙 / 단계별 체크리스트 / 완료 기준**을 적는다. 끝난 계획은 지우고 결과를
 DESIGN.md(및 하위 문서)에 반영한다.
 
-(진행 중인 계획 없음 — 모듈 리팩터 R1~R4는 2026-08-20 완료.
+(진행 중인 계획 없음 — 단축키 Dynalist 호환 작업은 2026-08-20 완료: `editor`·`dynalist`
+두 프리셋과 "바인딩 없음", 팔레트로만 닿던 표시 기능의 키 부여, 도움말 패널의 키맵 연동.
+결정은 [ADR-0006](./docs/adr/0006-keymap-presets.md), 동작 상세는
+[editing.md](./docs/design/editing.md) 「단축키는 테이블 하나」.
+검증: 유닛 203(keymap 19·tree 35), e2e 70(신규 keymap.spec.ts 6) 전부 green.
+
+모듈 리팩터 R1~R4는 2026-08-20 완료.
 실행 기록은 [docs/design/refactor-plan.md](./docs/design/refactor-plan.md)의 「실행 현황」,
 결과는 DESIGN.md 구조 트리에 반영. R2 완료 기준 전부 충족: 유닛 191·e2e 64 개수 불변
 전부 green, `Outline.tsx`/`Row.tsx` 무변경, `useOutline.ts` 834 → 566줄.)
@@ -20,6 +26,9 @@ DESIGN.md(및 하위 문서)에 반영한다.
 3. 레퍼런스 셀프 호스트 서버 (정적 파일 + `GET`/`PUT` + `If-Match`, 파일 하나면 된다)
 4. 아주 큰 워크스페이스를 위한 delta 동기화
 5. R5(`Doc` 판별 유니온 — **물면 그때**)
+6. **단축키 잔여** — 프리셋을 기기 사이에서 옮기는 것(지금은 `localStorage`라 기기마다 다시
+   고른다), 그리고 Dynalist에 대응 키가 없어 `editor` 값을 물려받은 액션들(취소선·강조·복제·
+   명령 팔레트)을 실사용에서 Dynalist 손이 어디로 찾는지 관찰한 뒤 조정. **물면 그때.**
 
 (R6 CSS 분할은 2026-08-20 완료 — tokens/chrome/outline/panels 네 파일, 규칙 순서 불변.
 [refactor-plan.md](./docs/design/refactor-plan.md) 「R6」.)

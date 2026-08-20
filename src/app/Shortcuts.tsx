@@ -1,40 +1,83 @@
 import { Panel } from "../shared/components/Panel";
+import {
+  ACTION_LABELS,
+  PRESET_LABELS,
+  UNBOUND,
+  describe,
+  presetOf,
+  type Action,
+  type Keymap
+} from "../shared/keymap";
 
-const GROUPS: { title: string; items: [string, string][] }[] = [
+/**
+ * An action reads its keys out of the live keymap; a pair is written out
+ * literally.
+ *
+ * The literals are the keys no preset can move — Enter, Tab, the arrows — plus
+ * the typing that turns into formatting. Everything else has to come from the
+ * table, or the panel starts lying the moment a key is rebound or a preset
+ * switched, and a shortcut reference that lies is worse than none.
+ */
+type Entry = Action | [string, string];
+
+const GROUPS: { title: string; items: Entry[] }[] = [
   {
     title: "편집",
     items: [
       ["Enter", "커서 위치에서 항목 분리"],
       ["Shift+Enter", "메모 편집"],
       ["Tab / Shift+Tab", "들여쓰기 / 내어쓰기"],
-      ["⌘/Ctrl+] / [", "들여쓰기 / 내어쓰기"],
+      "indent",
+      "outdent",
       ["Backspace (줄 맨 앞)", "위 항목과 합치기"],
-      ["⌘/Ctrl+Enter", "완료 표시"],
-      ["⌘/Ctrl+D", "항목 복제 (자식까지)"],
-      ["⌘/Ctrl+⇧+K", "항목 삭제"],
-      ["⌘/Ctrl+Z, ⇧⌘Z", "실행 취소 / 다시 실행"]
+      "done",
+      "duplicate",
+      "delete",
+      "undo",
+      "redo"
     ]
   },
   {
     title: "서식",
     items: [
-      ["⌘/Ctrl+B / I / E", "굵게 / 기울임 / 코드"],
-      ["⌘/Ctrl+⇧+X / H", "취소선 / 강조"],
-      ["⌘/Ctrl+K", "링크 (선택 영역을 감싼다)"],
+      "bold",
+      "italic",
+      "code",
+      "strike",
+      "highlight",
+      "link",
       ["`# `, `## `, `### `", "제목 1·2·3"],
-      ["`[] `", "이 목록을 체크리스트로"],
-      ["`1. `", "이 목록을 번호 목록으로"],
+      ["`> `", "인용"],
       ["Backspace (변환 직후)", "변환 되돌리기"],
       ["`[[`, `#`", "문서 · 태그 자동 완성"]
     ]
   },
   {
-    title: "이동과 구조",
+    title: "목록과 색",
+    items: [
+      "checklist",
+      "numbered",
+      "color1",
+      "color2",
+      "color3",
+      "color4",
+      "color5",
+      "color6",
+      "colorNone",
+      ["`[] `, `1. `", "타이핑으로 체크리스트 · 번호 목록"]
+    ]
+  },
+  {
+    title: "이동과 보기",
     items: [
       ["↑ / ↓", "위·아래 항목으로 이동"],
-      ["⌘/Ctrl+⇧+↑ / ↓", "항목을 위·아래로 옮기기"],
-      ["⌘/Ctrl+.", "접기 / 펼치기"],
-      ["⌘/Ctrl+⇧+. / ,", "확대 / 축소"],
+      "moveUp",
+      "moveDown",
+      "collapse",
+      "collapseAll",
+      "expandAll",
+      "zoomIn",
+      "zoomOut",
       ["Bullet 드래그", "다른 위치로 옮기기"]
     ]
   },
@@ -45,19 +88,13 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
       ["⇧+↑ / ↓, ⇧+클릭", "선택 범위 넓히기"],
       ["Tab, ⌘⇧↑↓, Backspace", "선택 항목 일괄 조작"],
       ["Space", "선택 항목 접기 / 펼치기"],
+      ["색 키, 완료 키", "선택 항목에 일괄 적용"],
       ["⌘/Ctrl+C, X", "들여쓰기 텍스트로 복사 / 잘라내기"]
     ]
   },
   {
     title: "찾기와 실행",
-    items: [
-      ["⌘/Ctrl+P", "팔레트 — 문서·항목으로 이동"],
-      ["⌘/Ctrl+⇧+P", "팔레트 — 명령 실행"],
-      ["⌘/Ctrl+F", "이 문서 안에서 거르기 (제자리 필터)"],
-      ["⌘/Ctrl+⇧+F", "워크스페이스 전체 검색"],
-      ["⌘/Ctrl+\\", "사이드바 열고 닫기"],
-      ["⌘/Ctrl+/", "이 도움말"]
-    ]
+    items: ["palette", "commands", "filter", "search", "sidebar", "help"]
   },
   {
     title: "검색·필터 연산자",
@@ -73,33 +110,47 @@ const GROUPS: { title: string; items: [string, string][] }[] = [
   }
 ];
 
-export function Shortcuts({ onClose }: { onClose: () => void }) {
+export function Shortcuts({ keymap, onClose }: { keymap: Keymap; onClose: () => void }) {
+  const preset = presetOf(keymap);
+
   return (
     <Panel className="shortcuts-panel" label="단축키" onClose={onClose}>
       <header className="panel-head">
         <h2>단축키</h2>
+        <span className="shortcuts-preset">
+          {preset ? `${PRESET_LABELS[preset]} 프리셋` : "직접 바꾼 키"}
+        </span>
         <button type="button" className="ghost" onClick={onClose}>
           ×
         </button>
       </header>
       <div className="shortcuts-grid">
-          {GROUPS.map((group) => (
-            <section key={group.title}>
-              <h3>{group.title}</h3>
-              <dl>
-                {group.items.map(([keys, description]) => (
-                  <div key={keys}>
-                    <dt>{keys}</dt>
-                    <dd>{description}</dd>
-                  </div>
-                ))}
-              </dl>
-            </section>
-          ))}
+        {GROUPS.map((group) => (
+          <section key={group.title}>
+            <h3>{group.title}</h3>
+            <dl>
+              {group.items
+                // An action this preset leaves empty is simply not a shortcut
+                // here — listing it as "없음" would only be noise.
+                .filter((item) => Array.isArray(item) || keymap[item] !== UNBOUND)
+                .map((item) => {
+                  const [keys, description] = Array.isArray(item)
+                    ? item
+                    : [describe(keymap[item]), ACTION_LABELS[item]];
+                  return (
+                    <div key={Array.isArray(item) ? item[0] : item}>
+                      <dt>{keys}</dt>
+                      <dd>{description}</dd>
+                    </div>
+                  );
+                })}
+            </dl>
+          </section>
+        ))}
       </div>
       <footer className="panel-foot">
         마크다운 표기: <code>**굵게**</code> <code>*기울임*</code> <code>`코드`</code> <code>~~취소~~</code>{" "}
-        <code>==강조==</code> <code>[[문서]]</code> <code>#태그</code>
+        <code>==강조==</code> <code>[[문서]]</code> <code>((항목))</code> <code>#태그</code>
       </footer>
     </Panel>
   );

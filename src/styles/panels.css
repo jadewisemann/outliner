@@ -1031,6 +1031,58 @@
   color: #c1543c;
 }
 
+/* A slot this preset leaves empty on purpose, not a missing value. */
+.keys-bind-unbound {
+  color: var(--muted);
+  background: none;
+  border: 1px dashed var(--line);
+}
+
+/* ------------------------------------------------------------------ */
+/* keymap presets                                                      */
+/* ------------------------------------------------------------------ */
+
+.keys-presets {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 12px 16px 0;
+}
+
+.keys-preset {
+  padding: 4px 12px;
+  font-size: 12px;
+  color: var(--muted);
+  background: var(--fill);
+  border-radius: 999px;
+}
+
+.keys-preset:hover {
+  color: var(--text);
+}
+
+.keys-preset-active {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.keys-preset-note {
+  flex: 1 1 100%;
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+/* Which table the help panel is describing, next to its title. */
+.shortcuts-preset {
+  margin-right: auto;
+  padding-left: 10px;
+  font-size: 11px;
+  color: var(--muted);
+}
+
 /* Approximate, language-agnostic highlighting — see highlight.tsx. */
 .tok-string { color: #3f7f4f; }
 .tok-comment { color: var(--muted); font-style: italic; }
@@ -1083,6 +1135,7 @@
 .backlinks button:focus-visible,
 .history-hit:focus-visible,
 .keys-bind:focus-visible,
+.keys-preset:focus-visible,
 .search-save:focus-visible,
 .sidebar-toggle:focus-visible {
   outline: none;
@@ -1110,6 +1163,7 @@
 .settings-choice,
 .history-hit,
 .keys-bind,
+.keys-preset,
 .tag-chip {
   transition: background-color 0.12s ease, color 0.12s ease;
 }

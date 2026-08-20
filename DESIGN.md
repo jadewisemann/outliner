@@ -112,7 +112,8 @@ src/
   search/       query.ts(질의 언어), search.ts(전체 검색), links.ts(항목 링크·백링크)
                 + SearchPanel
   transfer/     Markdown/OPML/백업 변환 + useTransfer(파일 입출력)
-  shared/       order(정렬 키), clock(논리 시계), keymap.ts(재바인딩 가능한 키 전부),
+  shared/       order(정렬 키), clock(논리 시계),
+                keymap.ts(재바인딩 가능한 키 전부 + editor·dynalist 두 프리셋),
                 download, Panel(모달)
 ```
 
@@ -168,4 +169,10 @@ src/
 - **암호를 잃으면 원격 사본은 끝이다.** 복구 경로가 있으면 그건 종단 간 암호화가 아니다.
 - 암호는 토큰 옆 `localStorage`에 있다. 막아주는 것은 "저장소를 가진 쪽이 읽는 것"이지 "이
   브라우저 프로필을 가진 사람"이 아니다.
+- **단축키 프리셋은 둘이고, 둘을 합칠 수는 없다.** 마크다운 에디터 관례(⌘K = 링크)와
+  Dynalist 관례(⌘] = 확대)는 같은 키를 다르게 쓰기 때문에 한 표로는 둘 다 만족시킬 수 없다.
+  기본값은 `editor`이고 Dynalist 프리셋은 한 번 눌러 켜는 것이다 (ADR-0006).
+- **프리셋은 액션을 비워 둘 수 있다.** Dynalist 프리셋에서 ⌘]는 확대라 들여쓰기 바인딩이
+  비어 있다 — Tab·Shift+Tab이 바인딩이 아니라서 손해가 없다.
+- 키맵은 기기 로컬(`localStorage`)이다. 동기화 대상이 아니다.
 - `Node` 타입 이름이 DOM의 `Node`를 가린다.
