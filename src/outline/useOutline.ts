@@ -12,24 +12,11 @@ import type { Store } from "../store";
 import { matches, type Action, type Keymap } from "../shared/keymap";
 import { labelOf } from "../search/links";
 import { MAX_ATTACHMENT_BYTES, attachmentUrl, nameFor, rememberUpload } from "../sync/api/attachments";
-import { allTags } from "../search/search";
-import { docList, type Color, type Id, type Node, type Row as RowModel } from "../types";
+import { type Color, type Id, type Node, type Row as RowModel } from "../types";
 import type { DropPosition, RowApi } from "./components/Row";
 import type { MenuSpot } from "./components/RowMenu";
 import { writeField } from "./components/Editable";
-import {
-  applyCompletion,
-  autoFormat,
-  completionAt,
-  fuzzy,
-  isUrl,
-  linkTo,
-  toggleLink,
-  toggleWrap,
-  type Selection,
-  type Trigger,
-  type WrapKind
-} from "./markdown";
+import { autoFormat, isUrl, linkTo, toggleLink, toggleWrap, type Selection, type WrapKind } from "./markdown";
 import {
   appendChild,
   bulkIndent,
@@ -51,16 +38,14 @@ import {
   toOutlineText,
   topLevel
 } from "./tree";
+import { useCompletion, type Completion } from "./useCompletion";
 import { useLive } from "./useLive";
 import { useRowDrag } from "./useRowDrag";
 import { useRowMenu } from "./useRowMenu";
 import { useVirtualRows } from "./useVirtualRows";
 
-/** One offer from `[[` or `#`: what it reads as, and what it writes. */
-export type Choice = { label: string; insert: string; hint?: string };
-
-/** What `[[` or `#` is offering right now, and where it will be inserted. */
-export type Completion = { rowId: Id; trigger: Trigger; items: Choice[]; index: number };
+// Row.tsx and the palette reach these through here, from before they moved.
+export type { Choice, Completion } from "./useCompletion";
 
 /** Enough to put back a markdown prefix the editor swallowed one keystroke ago. */
 type AutoUndo = { rowId: Id; prefix: string; node?: Partial<Node>; parentId?: Id; parent?: Partial<Node> };
@@ -72,7 +57,6 @@ const WRAP_ACTIONS: [Action, WrapKind][] = [
   ["strike", "strike"],
   ["highlight", "highlight"]
 ];
-const COMPLETION_LIMIT = 8;
 
 /** The edits a phone cannot reach, since it has no Tab key and no ⌘⇧↑↓. */
 export type Nudge = {
@@ -124,7 +108,6 @@ export function useOutline(
 
   const [selection, setSelection] = useState<Id[]>([]);
   const [noteFocus, setNoteFocus] = useState<{ id: Id; seq: number } | null>(null);
-  const [completion, setCompletion] = useState<Completion | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const anchor = useRef<Id | null>(null);
@@ -136,8 +119,6 @@ export function useOutline(
   const rowMenu = useRowMenu(requestFocus);
   const selectionRef = useRef(selection);
   selectionRef.current = selection;
-  const completionRef = useRef(completion);
-  completionRef.current = completion;
   const keys = useRef(keymap);
   keys.current = keymap;
 
@@ -158,60 +139,7 @@ export function useOutline(
     [edit]
   );
 
-  /* ---------------------------------------------------------------- */
-  /* completion                                                        */
-  /* ---------------------------------------------------------------- */
-
-  /**
-   * `[[` offers documents *and* rows, because "link to the thing I mean" is
-   * one intent — but they are written differently, so each offer carries the
-   * literal text it will insert.
-   */
-  const candidates = useCallback((trigger: Trigger): Choice[] => {
-    const workspace = live.current.workspace;
-    const pool: Choice[] = [];
-
-    if (trigger.kind === "tag") {
-      for (const entry of allTags(workspace)) pool.push({ label: entry.tag, insert: entry.tag });
-    } else {
-      for (const entry of docList(workspace)) {
-        if (entry.kind === "doc") pool.push({ label: entry.title, insert: `[[${entry.title}]]`, hint: "문서" });
-      }
-      for (const entry of docList(workspace)) {
-        if (entry.kind === "folder") continue;
-        for (const node of Object.values(entry.nodes)) {
-          if (node.id === entry.rootId || node.text.trim() === "") continue;
-          pool.push({ label: node.text, insert: `((${node.id}))`, hint: entry.title });
-        }
-      }
-    }
-
-    const term = trigger.kind === "tag" ? `#${trigger.query}` : trigger.query;
-    return pool
-      .map((choice) => ({ choice, match: fuzzy(choice.label, term) }))
-      .filter((entry) => entry.match !== null)
-      .sort((a, b) => b.match!.score - a.match!.score)
-      .slice(0, COMPLETION_LIMIT)
-      .map((entry) => entry.choice);
-  }, []);
-
-  /**
-   * Recomputed from the live field rather than from the store: the store lags
-   * a keystroke behind and does not know where the caret is.
-   */
-  const refreshCompletion = useCallback(
-    (rowId: Id) => {
-      const element = document.activeElement;
-      if (!(element instanceof HTMLTextAreaElement) || element.selectionStart !== element.selectionEnd) {
-        setCompletion(null);
-        return;
-      }
-      const trigger = completionAt(element.value, element.selectionStart);
-      const items = trigger ? candidates(trigger) : [];
-      setCompletion(trigger && items.length > 0 ? { rowId, trigger, items, index: 0 } : null);
-    },
-    [candidates]
-  );
+  const completions = useCompletion(live, applyText);
 
   /**
    * Pasting an image uploads it and leaves a reference behind.
@@ -247,16 +175,6 @@ export function useOutline(
       });
     },
     [edit, store.sync.files]
-  );
-
-  const acceptCompletion = useCallback(
-    (element: HTMLTextAreaElement, rowId: Id, choice: Choice) => {
-      const open = completionRef.current;
-      if (!open) return;
-      applyText(element, rowId, applyCompletion(element.value, element.selectionStart, open.trigger, choice.insert));
-      setCompletion(null);
-    },
-    [applyText]
   );
 
   /* ---------------------------------------------------------------- */
@@ -315,25 +233,7 @@ export function useOutline(
       // The completion list owns the arrows and Enter while it is open, the
       // way it does in an editor. Everything below is unreachable until it
       // closes, which is why this runs first.
-      const open = completionRef.current;
-      if (open && open.rowId === row.id) {
-        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-          stop();
-          const step = event.key === "ArrowDown" ? 1 : -1;
-          setCompletion({ ...open, index: (open.index + step + open.items.length) % open.items.length });
-          return;
-        }
-        if (event.key === "Enter" || event.key === "Tab") {
-          stop();
-          acceptCompletion(element, row.id, open.items[open.index]);
-          return;
-        }
-        if (event.key === "Escape") {
-          stop();
-          setCompletion(null);
-          return;
-        }
-      }
+      if (completions.onKeyDown(event, element, row)) return;
 
       // One Backspace puts back a prefix the editor swallowed. Without it the
       // only way out of an unwanted heading is to notice which key did it.
@@ -402,7 +302,7 @@ export function useOutline(
             const patched = patchNode(current, row.id, { text: applied.text, ...applied.node });
             return parentId ? patchNode(patched, parentId, applied.parent!) : patched;
           });
-          setCompletion(null);
+          completions.clear();
           return;
         }
       }
@@ -480,7 +380,7 @@ export function useOutline(
         enterSelection([row.id]);
       }
     },
-    [edit, requestFocus, focusNote, enterSelection, zoom, zoomOut]
+    [edit, requestFocus, focusNote, enterSelection, zoom, zoomOut, completions.onKeyDown, completions.clear]
   );
 
   const onNoteKeyDown = useCallback(
@@ -611,7 +511,7 @@ export function useOutline(
     () => ({
       setText(id, text) {
         edit((current) => patchNode(current, id, { text }), { coalesceKey: `text:${id}` });
-        refreshCompletion(id);
+        completions.refresh(id);
       },
       setNote(id, note) {
         edit((current) => patchNode(current, id, { note }), { coalesceKey: `note:${id}` });
@@ -637,13 +537,6 @@ export function useOutline(
         event.preventDefault();
         edit((current) => insertOutlineText(current, row.id, text));
       },
-      pickCompletion(id, choice) {
-        const element = document.activeElement;
-        if (element instanceof HTMLTextAreaElement) acceptCompletion(element, id, choice);
-      },
-      hoverCompletion(index) {
-        setCompletion((open) => (open ? { ...open, index } : open));
-      },
       toggleCollapse(id) {
         edit((current) => patchNode(current, id, { collapsed: !current.nodes[id]?.collapsed }), { transient: true });
       },
@@ -653,7 +546,7 @@ export function useOutline(
       zoom,
       focusText(id, caret) {
         setNoteFocus(null);
-        setCompletion(null);
+        completions.clear();
         requestFocus(id, caret);
       },
       focusNote,
@@ -701,6 +594,7 @@ export function useOutline(
       openItem: onItemLinkClick,
       resolveItem: (id) => labelOf(live.current.workspace, id),
       resolveFile: (name) => attachmentUrl(store.sync.files, name),
+      ...completions.api,
       ...rowMenu.api,
       ...drag.api
     }),
@@ -716,10 +610,11 @@ export function useOutline(
       onItemLinkClick,
       focusNote,
       applyText,
-      refreshCompletion,
-      acceptCompletion,
       attach,
       store.sync.files,
+      completions.refresh,
+      completions.clear,
+      completions.api,
       rowMenu.api,
       drag.api
     ]
@@ -742,7 +637,7 @@ export function useOutline(
     selected,
     focus,
     noteFocus,
-    completion,
+    completion: completions.completion,
     menu: rowMenu.menu,
     closeMenu: rowMenu.closeMenu,
     dropSpot: drag.dropSpot,
