@@ -5,6 +5,7 @@ import {
   bulkOutdent,
   bulkRemove,
   indent,
+  insertAfter,
   insertOutlineText,
   mergeIntoPrevious,
   moveVertically,
@@ -331,5 +332,49 @@ describe("appendChild", () => {
     const { doc: next, focusId } = appendChild(doc, doc.rootId);
     expect(next).toBe(doc);
     expect(next.nodes[focusId!].text).toBe("");
+  });
+});
+
+describe("visibleRows as a filter", () => {
+  it("keeps matches and the ancestors that place them", () => {
+    let doc = makeDoc("filter");
+    const first = doc.nodes[doc.rootId].children[0];
+    doc = patchNode(doc, first, { text: "Projects" });
+    const child = insertAfter(doc, first, "");
+    doc = indent(child.doc, child.focusId!).doc;
+    doc = patchNode(doc, child.focusId!, { text: "ship the outliner" });
+    const other = insertAfter(doc, first, "Groceries");
+    doc = other.doc;
+
+    const rows = visibleRows(doc, doc.rootId, { match: (node) => node.text.includes("outliner") });
+    expect(rows.map((row) => row.node.text)).toEqual(["Projects", "ship the outliner"]);
+  });
+
+  it("looks inside collapsed parents, which a reader cannot open while filtering", () => {
+    let doc = makeDoc("filter");
+    const first = doc.nodes[doc.rootId].children[0];
+    doc = patchNode(doc, first, { text: "box" });
+    const child = insertAfter(doc, first, "");
+    doc = indent(child.doc, child.focusId!).doc;
+    doc = patchNode(doc, child.focusId!, { text: "needle" });
+    doc = patchNode(doc, first, { collapsed: true });
+
+    expect(visibleRows(doc, doc.rootId).map((row) => row.node.text)).toEqual(["box"]);
+    expect(
+      visibleRows(doc, doc.rootId, { match: (node) => node.text === "needle" }).map((row) => row.node.text)
+    ).toEqual(["box", "needle"]);
+  });
+
+  it("hides a completed row together with everything under it", () => {
+    let doc = makeDoc("filter");
+    const first = doc.nodes[doc.rootId].children[0];
+    doc = patchNode(doc, first, { text: "done thing", done: true });
+    const sibling = insertAfter(doc, first, "still open");
+    doc = sibling.doc;
+    const child = appendChild(doc, first);
+    doc = patchNode(child.doc, child.focusId!, { text: "under it" });
+
+    expect(visibleRows(doc, doc.rootId).map((row) => row.node.text)).toEqual(["done thing", "under it", "still open"]);
+    expect(visibleRows(doc, doc.rootId, { hideCompleted: true }).map((row) => row.node.text)).toEqual(["still open"]);
   });
 });

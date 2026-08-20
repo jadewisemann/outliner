@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { detectFormat, exportBackup, exportDoc, importDoc, parseBackup } from "../formats";
-import { makeWorkspace, type Doc } from "../../types";
+import { makeDoc, makeWorkspace, type Doc } from "../../types";
+import { patchNode, visibleRows } from "../../outline/tree";
 
 const outline = (doc: Doc) => exportDoc(doc, "markdown");
 
@@ -67,5 +68,67 @@ describe("backup", () => {
     expect(parseBackup(exportBackup(workspace))?.activeDocId).toBe(workspace.activeDocId);
     expect(parseBackup("not json")).toBeNull();
     expect(parseBackup('{"version":1}')).toBeNull();
+  });
+});
+
+describe("OPML from another outliner", () => {
+  it("reads whichever spelling the exporter chose", () => {
+    const opml = `<?xml version="1.0"?><opml version="2.0"><head><title>x</title></head><body>
+      <outline text="workflowy row" _note="a" _complete="true" _collapsed="true"/>
+      <outline text="dynalist row" note="b" complete="true" collapsed="true" checkbox="true" numbered="true" colorLabel="3"/>
+    </body></opml>`;
+    const doc = importDoc("x", opml, "opml");
+    const rows = visibleRows(doc, doc.rootId).map((row) => row.node);
+
+    expect(rows[0].note).toBe("a");
+    expect(rows[0].done).toBe(true);
+    expect(rows[0].collapsed).toBe(true);
+    expect(rows[1].note).toBe("b");
+    expect(rows[1].done).toBe(true);
+    expect(rows[1].checklist).toBe(true);
+    expect(rows[1].numbered).toBe(true);
+    expect(rows[1].color).toBe(3);
+  });
+
+  it("keeps the exporter's ids, so links into the outline still land", () => {
+    const opml = `<?xml version="1.0"?><opml version="2.0"><body>
+      <outline text="kept" id="node-42"/>
+    </body></opml>`;
+    const doc = importDoc("x", opml, "opml");
+    expect(doc.nodes["node-42"]?.text).toBe("kept");
+  });
+
+  it("does not let a repeated id overwrite a row", () => {
+    const opml = `<?xml version="1.0"?><opml version="2.0"><body>
+      <outline text="first" id="same"/><outline text="second" id="same"/>
+    </body></opml>`;
+    const doc = importDoc("x", opml, "opml");
+    expect(visibleRows(doc, doc.rootId).map((row) => row.node.text)).toEqual(["first", "second"]);
+  });
+
+  it("round-trips our own export with every flag and id intact", () => {
+    let doc = makeDoc("round trip");
+    const first = doc.nodes[doc.rootId].children[0];
+    doc = patchNode(doc, first, {
+      text: "row",
+      note: "note",
+      done: true,
+      checklist: true,
+      numbered: true,
+      heading: 2,
+      color: 5
+    });
+
+    const back = importDoc("round trip", exportDoc(doc, "opml"), "opml");
+    const node = back.nodes[first];
+    expect(node).toMatchObject({
+      text: "row",
+      note: "note",
+      done: true,
+      checklist: true,
+      numbered: true,
+      heading: 2,
+      color: 5
+    });
   });
 });

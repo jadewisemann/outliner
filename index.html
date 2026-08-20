@@ -13,13 +13,13 @@
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self'; manifest-src 'self'; connect-src *; base-uri 'none'; form-action 'none'"
+      content="default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' blob:; font-src 'self'; manifest-src 'self'; connect-src *; base-uri 'none'; form-action 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Outliner</title>
     <meta name="color-scheme" content="light dark" />
-    <!-- Installed to a phone's home screen it opens as its own window. Offline
-         *launch* would need a service worker; the notes are already local. -->
+    <!-- Installed to a phone's home screen it opens as its own window, and
+         `public/sw.js` caches the shell so it opens without a network too. -->
     <link rel="manifest" href="./manifest.webmanifest" />
     <link rel="icon" href="./icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="./apple-touch-icon.png" />

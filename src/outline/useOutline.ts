@@ -10,8 +10,27 @@ import {
   type RefObject
 } from "react";
 import type { Store } from "../store";
-import type { Id, Row as RowModel } from "../types";
+import { matches, type Action, type Keymap } from "../app/keymap";
+import { labelOf } from "../search/links";
+import { MAX_ATTACHMENT_BYTES, attachmentUrl, nameFor, rememberUpload } from "../sync/api/attachments";
+import { allTags } from "../search/search";
+import { docList, type Color, type Id, type Node, type Row as RowModel } from "../types";
 import type { DropPosition, RowApi } from "./components/Row";
+import type { MenuSpot } from "./components/RowMenu";
+import { writeField } from "./components/Editable";
+import {
+  applyCompletion,
+  autoFormat,
+  completionAt,
+  fuzzy,
+  isUrl,
+  linkTo,
+  toggleLink,
+  toggleWrap,
+  type Selection,
+  type Trigger,
+  type WrapKind
+} from "./markdown";
 import {
   appendChild,
   bulkIndent,
@@ -19,6 +38,7 @@ import {
   bulkOutdent,
   bulkRemove,
   bulkSetCollapsed,
+  duplicate,
   indent,
   insertOutlineText,
   mergeIntoPrevious,
@@ -35,6 +55,24 @@ import {
 } from "./tree";
 import { useVirtualRows } from "./useVirtualRows";
 
+/** One offer from `[[` or `#`: what it reads as, and what it writes. */
+export type Choice = { label: string; insert: string; hint?: string };
+
+/** What `[[` or `#` is offering right now, and where it will be inserted. */
+export type Completion = { rowId: Id; trigger: Trigger; items: Choice[]; index: number };
+
+/** Enough to put back a markdown prefix the editor swallowed one keystroke ago. */
+type AutoUndo = { rowId: Id; prefix: string; node?: Partial<Node>; parentId?: Id; parent?: Partial<Node> };
+
+const WRAP_ACTIONS: [Action, WrapKind][] = [
+  ["bold", "bold"],
+  ["italic", "italic"],
+  ["code", "code"],
+  ["strike", "strike"],
+  ["highlight", "highlight"]
+];
+const COMPLETION_LIMIT = 8;
+
 /** The edits a phone cannot reach, since it has no Tab key and no ⌘⇧↑↓. */
 export type Nudge = {
   indent(): void;
@@ -48,9 +86,13 @@ export type OutlineView = {
   rows: RowModel[];
   window: { start: number; end: number; padTop: number; padBottom: number };
   activeId: Id | null;
+  swipe: (id: Id, direction: 1 | -1) => void;
   selected: Set<Id>;
   focus: Store["focus"];
   noteFocus: { id: Id; seq: number } | null;
+  completion: Completion | null;
+  menu: MenuSpot | null;
+  closeMenu(): void;
   dropSpot: { id: Id; position: DropPosition } | null;
   api: RowApi;
   containerProps: {
@@ -73,12 +115,16 @@ export function useOutline(
   store: Store,
   scrollRef: RefObject<HTMLElement>,
   onTagClick: (tag: string) => void,
-  onDocLinkClick: (title: string) => void
+  onDocLinkClick: (title: string) => void,
+  onItemLinkClick: (id: Id) => void,
+  keymap: Keymap
 ): OutlineView {
   const { doc, view, rows, focus, edit, setView, requestFocus } = store;
 
   const [selection, setSelection] = useState<Id[]>([]);
   const [noteFocus, setNoteFocus] = useState<{ id: Id; seq: number } | null>(null);
+  const [completion, setCompletion] = useState<Completion | null>(null);
+  const [menu, setMenu] = useState<MenuSpot | null>(null);
   const [dropSpot, setDropSpot] = useState<{ id: Id; position: DropPosition } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -86,6 +132,7 @@ export function useOutline(
   const dragId = useRef<Id | null>(null);
   const dropRef = useRef<{ id: Id; position: DropPosition } | null>(null);
   const noteSeq = useRef(0);
+  const autoUndo = useRef<AutoUndo | null>(null);
 
   const rowsRef = useRef(rows);
   rowsRef.current = rows;
@@ -95,6 +142,130 @@ export function useOutline(
   zoomRef.current = view.zoomId;
   const docRef = useRef(doc);
   docRef.current = doc;
+  const workspaceRef = useRef(store.workspace);
+  workspaceRef.current = store.workspace;
+  const completionRef = useRef(completion);
+  completionRef.current = completion;
+  const keys = useRef(keymap);
+  keys.current = keymap;
+
+  /* ---------------------------------------------------------------- */
+  /* writing into the focused field                                    */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * A formatting shortcut has to write the DOM itself: the field is
+   * uncontrolled while it has focus, so waiting for the store to come back
+   * round would lose the caret and fight the IME.
+   */
+  const applyText = useCallback(
+    (element: HTMLTextAreaElement, id: Id, next: Selection, coalesceKey?: string) => {
+      writeField(element, next.text, next.start, next.end);
+      edit((current) => patchNode(current, id, { text: next.text }), { coalesceKey });
+    },
+    [edit]
+  );
+
+  /* ---------------------------------------------------------------- */
+  /* completion                                                        */
+  /* ---------------------------------------------------------------- */
+
+  /**
+   * `[[` offers documents *and* rows, because "link to the thing I mean" is
+   * one intent — but they are written differently, so each offer carries the
+   * literal text it will insert.
+   */
+  const candidates = useCallback((trigger: Trigger): Choice[] => {
+    const workspace = workspaceRef.current;
+    const pool: Choice[] = [];
+
+    if (trigger.kind === "tag") {
+      for (const entry of allTags(workspace)) pool.push({ label: entry.tag, insert: entry.tag });
+    } else {
+      for (const entry of docList(workspace)) {
+        if (entry.kind === "doc") pool.push({ label: entry.title, insert: `[[${entry.title}]]`, hint: "문서" });
+      }
+      for (const entry of docList(workspace)) {
+        if (entry.kind === "folder") continue;
+        for (const node of Object.values(entry.nodes)) {
+          if (node.id === entry.rootId || node.text.trim() === "") continue;
+          pool.push({ label: node.text, insert: `((${node.id}))`, hint: entry.title });
+        }
+      }
+    }
+
+    const term = trigger.kind === "tag" ? `#${trigger.query}` : trigger.query;
+    return pool
+      .map((choice) => ({ choice, match: fuzzy(choice.label, term) }))
+      .filter((entry) => entry.match !== null)
+      .sort((a, b) => b.match!.score - a.match!.score)
+      .slice(0, COMPLETION_LIMIT)
+      .map((entry) => entry.choice);
+  }, []);
+
+  /**
+   * Recomputed from the live field rather than from the store: the store lags
+   * a keystroke behind and does not know where the caret is.
+   */
+  const refreshCompletion = useCallback(
+    (rowId: Id) => {
+      const element = document.activeElement;
+      if (!(element instanceof HTMLTextAreaElement) || element.selectionStart !== element.selectionEnd) {
+        setCompletion(null);
+        return;
+      }
+      const trigger = completionAt(element.value, element.selectionStart);
+      const items = trigger ? candidates(trigger) : [];
+      setCompletion(trigger && items.length > 0 ? { rowId, trigger, items, index: 0 } : null);
+    },
+    [candidates]
+  );
+
+  /**
+   * Pasting an image uploads it and leaves a reference behind.
+   *
+   * Only a backend with somewhere to put bytes can do this, and saying so is
+   * better than silently dropping the paste — the picture is in the clipboard
+   * either way, and the reader needs to know it did not land.
+   */
+  const attach = useCallback(
+    async (file: File, rowId: Id) => {
+      const files = store.sync.files;
+      if (!files) {
+        alert("첨부는 GitHub 저장소를 백엔드로 쓸 때만 됩니다. 동기화 설정에서 연결하세요.");
+        return;
+      }
+      if (file.size > MAX_ATTACHMENT_BYTES) {
+        alert(`첨부는 ${Math.round(MAX_ATTACHMENT_BYTES / 1024)}KB까지입니다.`);
+        return;
+      }
+      const bytes = new Uint8Array(await file.arrayBuffer()) as Uint8Array<ArrayBuffer>;
+      const name = await nameFor(bytes, file.type);
+      try {
+        await files.put(name, bytes);
+      } catch {
+        alert("첨부를 올리지 못했습니다.");
+        return;
+      }
+      rememberUpload(name, file);
+      const label = file.name.replace(/\.[^.]+$/, "") || "image";
+      edit((current) => {
+        const node = current.nodes[rowId];
+        return node ? patchNode(current, rowId, { text: `${node.text}![${label}](file:${name})` }) : current;
+      });
+    },
+    [edit, store.sync.files]
+  );
+
+  const acceptCompletion = useCallback(
+    (element: HTMLTextAreaElement, rowId: Id, choice: Choice) => {
+      const open = completionRef.current;
+      if (!open) return;
+      applyText(element, rowId, applyCompletion(element.value, element.selectionStart, open.trigger, choice.insert));
+      setCompletion(null);
+    },
+    [applyText]
+  );
 
   /* ---------------------------------------------------------------- */
   /* selection                                                         */
@@ -144,25 +315,124 @@ export function useOutline(
       const noRange = element.selectionStart === element.selectionEnd;
       const zoomId = zoomRef.current;
       const stop = () => event.preventDefault();
+      const format = (next: Selection) => {
+        stop();
+        applyText(element, row.id, next);
+      };
 
-      if (mod && event.shiftKey && event.code === "Period") {
+      // The completion list owns the arrows and Enter while it is open, the
+      // way it does in an editor. Everything below is unreachable until it
+      // closes, which is why this runs first.
+      const open = completionRef.current;
+      if (open && open.rowId === row.id) {
+        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+          stop();
+          const step = event.key === "ArrowDown" ? 1 : -1;
+          setCompletion({ ...open, index: (open.index + step + open.items.length) % open.items.length });
+          return;
+        }
+        if (event.key === "Enter" || event.key === "Tab") {
+          stop();
+          acceptCompletion(element, row.id, open.items[open.index]);
+          return;
+        }
+        if (event.key === "Escape") {
+          stop();
+          setCompletion(null);
+          return;
+        }
+      }
+
+      // One Backspace puts back a prefix the editor swallowed. Without it the
+      // only way out of an unwanted heading is to notice which key did it.
+      const swallowed = autoUndo.current;
+      if (event.key === "Backspace" && noRange && caret === 0 && swallowed?.rowId === row.id) {
+        stop();
+        autoUndo.current = null;
+        const restored = swallowed.prefix + element.value;
+        writeField(element, restored, swallowed.prefix.length);
+        edit((current) => {
+          const reverted = patchNode(current, row.id, { text: restored, ...swallowed.node });
+          return swallowed.parentId && swallowed.parent
+            ? patchNode(reverted, swallowed.parentId, swallowed.parent)
+            : reverted;
+        });
+        return;
+      }
+      if (event.key !== "Backspace") autoUndo.current = null;
+
+      const bound = (action: Action) => matches(event, keys.current[action]);
+
+      for (const [action, wrap] of WRAP_ACTIONS) {
+        if (!bound(action)) continue;
+        format(toggleWrap(element.value, element.selectionStart, element.selectionEnd, wrap));
+        return;
+      }
+      if (bound("link")) {
+        format(toggleLink(element.value, element.selectionStart, element.selectionEnd));
+        return;
+      }
+      if (bound("duplicate")) {
+        stop();
+        edit((current) => duplicate(current, row.id));
+        return;
+      }
+      if (bound("delete")) {
+        stop();
+        edit((current) => bulkRemove(current, zoomId, [row.id]));
+        return;
+      }
+      if (bound("indent") || bound("outdent")) {
+        stop();
+        edit((current) => (bound("outdent") ? outdent(current, row.id, zoomId) : indent(current, row.id)));
+        return;
+      }
+
+      // Markdown as you type. Fires on the space that completes the prefix,
+      // and the space itself is never inserted — it was punctuation, not text.
+      if (event.key === " " && noRange) {
+        const applied = autoFormat(element.value, caret);
+        if (applied) {
+          stop();
+          const node = docRef.current.nodes[row.id];
+          const parentId = applied.parent ? node?.parent ?? undefined : undefined;
+          autoUndo.current = {
+            rowId: row.id,
+            prefix: applied.prefix,
+            // Whatever the rule is about to overwrite, not a fixed field: a
+            // prefix can set a heading, a quote, or a flag on the parent.
+            node: applied.node ? pick(node, applied.node) : undefined,
+            parentId,
+            parent: parentId ? pick(docRef.current.nodes[parentId], applied.parent!) : undefined
+          };
+          writeField(element, applied.text, 0);
+          edit((current) => {
+            const patched = patchNode(current, row.id, { text: applied.text, ...applied.node });
+            return parentId ? patchNode(patched, parentId, applied.parent!) : patched;
+          });
+          setCompletion(null);
+          return;
+        }
+      }
+
+      if (bound("zoomIn")) {
         stop();
         zoom(row.id);
         return;
       }
-      if (mod && event.shiftKey && event.code === "Comma") {
+      if (bound("zoomOut")) {
         stop();
         zoomOut();
         return;
       }
-      if (mod && event.code === "Period") {
+      if (bound("collapse")) {
         stop();
         edit((current) => patchNode(current, row.id, { collapsed: !row.node.collapsed }), { transient: true });
         return;
       }
-      if (mod && (event.key === "ArrowUp" || event.key === "ArrowDown") && event.shiftKey) {
+      if (bound("moveUp") || bound("moveDown")) {
         stop();
-        edit((current) => moveVertically(current, row.id, event.key === "ArrowUp" ? -1 : 1));
+        edit((current) => moveVertically(current, row.id, bound("moveUp") ? -1 : 1));
         return;
       }
       if (event.key === "Enter" && event.shiftKey) {
@@ -170,7 +440,7 @@ export function useOutline(
         focusNote(row.id);
         return;
       }
-      if (event.key === "Enter" && mod) {
+      if (bound("done")) {
         stop();
         edit((current) => patchNode(current, row.id, { done: !row.node.done }));
         return;
@@ -318,6 +588,14 @@ export function useOutline(
   const focusRef = useRef(focus);
   focusRef.current = focus;
 
+  /** The same two edits a swipe asks for, on a row named by the gesture. */
+  const swipe = useCallback(
+    (id: Id, direction: 1 | -1) => {
+      edit((current) => (direction === 1 ? indent(current, id) : outdent(current, id, zoomRef.current)));
+    },
+    [edit]
+  );
+
   const nudge = useMemo<Nudge>(() => {
     const target = () => focusRef.current?.id ?? null;
     return {
@@ -344,6 +622,7 @@ export function useOutline(
     () => ({
       setText(id, text) {
         edit((current) => patchNode(current, id, { text }), { coalesceKey: `text:${id}` });
+        refreshCompletion(id);
       },
       setNote(id, note) {
         edit((current) => patchNode(current, id, { note }), { coalesceKey: `note:${id}` });
@@ -351,10 +630,30 @@ export function useOutline(
       onTextKeyDown,
       onNoteKeyDown,
       onPaste(event, row) {
+        const file = [...event.clipboardData.files].find((each) => each.type.startsWith("image/"));
+        if (file) {
+          event.preventDefault();
+          void attach(file, row.id);
+          return;
+        }
         const text = event.clipboardData.getData("text/plain");
+        const element = event.currentTarget;
+        // A url dropped onto selected text links it instead of replacing it.
+        if (isUrl(text) && element.selectionStart !== element.selectionEnd) {
+          event.preventDefault();
+          applyText(element, row.id, linkTo(element.value, element.selectionStart, element.selectionEnd, text.trim()));
+          return;
+        }
         if (!text.includes("\n")) return;
         event.preventDefault();
         edit((current) => insertOutlineText(current, row.id, text));
+      },
+      pickCompletion(id, choice) {
+        const element = document.activeElement;
+        if (element instanceof HTMLTextAreaElement) acceptCompletion(element, id, choice);
+      },
+      hoverCompletion(index) {
+        setCompletion((open) => (open ? { ...open, index } : open));
       },
       toggleCollapse(id) {
         edit((current) => patchNode(current, id, { collapsed: !current.nodes[id]?.collapsed }), { transient: true });
@@ -365,8 +664,10 @@ export function useOutline(
       zoom,
       focusText(id, caret) {
         setNoteFocus(null);
+        setCompletion(null);
         requestFocus(id, caret);
       },
+      focusNote,
       pointerSelect(event: MouseEvent, row) {
         if (event.shiftKey) {
           event.preventDefault();
@@ -379,8 +680,44 @@ export function useOutline(
       clearSelection() {
         setSelection([]);
       },
+      openMenu(event, row) {
+        event.preventDefault();
+        event.stopPropagation();
+        requestFocus(row.id);
+        setMenu({ row, x: event.clientX, y: event.clientY });
+      },
+      setColor(id, color: Color) {
+        edit((current) => patchNode(current, id, { color }));
+      },
+      toggleQuote(id) {
+        edit((current) => patchNode(current, id, { quote: !current.nodes[id]?.quote }));
+      },
+      // The flag belongs to the list, so these two act on the row's parent.
+      toggleChecklist(id) {
+        const parentId = docRef.current.nodes[id]?.parent;
+        if (parentId) edit((current) => patchNode(current, parentId, { checklist: !current.nodes[parentId]?.checklist }));
+      },
+      toggleNumbered(id) {
+        const parentId = docRef.current.nodes[id]?.parent;
+        if (parentId) edit((current) => patchNode(current, parentId, { numbered: !current.nodes[parentId]?.numbered }));
+      },
+      toggleRowBookmark(id) {
+        edit((current) => patchNode(current, id, { bookmarked: !current.nodes[id]?.bookmarked }));
+      },
+      copyItemLink(id) {
+        void navigator.clipboard?.writeText(`((${id}))`);
+      },
+      duplicateRow(id) {
+        edit((current) => duplicate(current, id));
+      },
+      removeRow(id) {
+        edit((current) => bulkRemove(current, zoomRef.current, [id]));
+      },
       openTag: onTagClick,
       openDocByTitle: onDocLinkClick,
+      openItem: onItemLinkClick,
+      resolveItem: (id) => labelOf(workspaceRef.current, id),
+      resolveFile: (name) => attachmentUrl(store.sync.files, name),
       dragStart(event: DragEvent, id) {
         dragId.current = id;
         event.dataTransfer.effectAllowed = "move";
@@ -415,11 +752,28 @@ export function useOutline(
         );
       }
     }),
-    [edit, onTextKeyDown, onNoteKeyDown, zoom, requestFocus, enterSelection, onTagClick, onDocLinkClick]
+    [
+      edit,
+      onTextKeyDown,
+      onNoteKeyDown,
+      zoom,
+      requestFocus,
+      enterSelection,
+      onTagClick,
+      onDocLinkClick,
+      onItemLinkClick,
+      focusNote,
+      applyText,
+      refreshCompletion,
+      acceptCompletion,
+      attach,
+      store.sync.files
+    ]
   );
 
   /* ---------------------------------------------------------------- */
 
+  const closeMenu = useCallback(() => setMenu(null), []);
   const selected = useMemo(() => new Set(selection), [selection]);
   const pin = selection.length > 0 ? null : focus;
   const activeId = pin?.id ?? null;
@@ -431,9 +785,13 @@ export function useOutline(
     rows,
     window,
     activeId,
+    swipe,
     selected,
     focus,
     noteFocus,
+    completion,
+    menu,
+    closeMenu,
     dropSpot,
     api,
     containerProps: {
@@ -457,6 +815,13 @@ export function useOutline(
       edit((current) => appendChild(current, zoomRef.current));
     }
   };
+}
+
+/** The values a patch is about to overwrite, so one Backspace can put them back. */
+function pick(node: Node | undefined, patch: Partial<Node>): Partial<Node> {
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(patch)) out[key] = node?.[key as keyof Node];
+  return out as Partial<Node>;
 }
 
 /** Inclusive visible-row range between two ids, in document order. */

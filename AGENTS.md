@@ -83,7 +83,7 @@ Git 협업 상세의 SSOT는 [CONTRIBUTING.md](./CONTRIBUTING.md)이고 아래 G
 | `npm run typecheck` | `tsc --noEmit` | 모든 코드 변경 |
 | `npm test` | 순수 로직 유닛 (Vitest) | 트리·병합·정렬 키·검증·변환 등 순수 로직을 만졌을 때 |
 | `npx vitest run <경로>` | 특정 테스트만 | 변경 범위와 직접 관련된 테스트를 우선 |
-| `npm run build` | `tsc -b` + Vite 빌드 | 번들·CSP·에셋 경로에 닿는 변경 |
+| `npm run build` | `tsc -b` + Vite 빌드 | 번들·CSP·에셋 경로에 닿는 변경. **테스트 파일의 타입 오류는 typecheck가 놓치고 build가 잡는다** — 커밋 전 한 번 |
 | `npm run test:e2e` | 실제 브라우저 시나리오 (Playwright) | UI 동작·동기화·CSP·터치를 만졌을 때 |
 
 e2e는 웹 서버를 **둘** 띄운다 — dev(5173)와 `vite preview`(4173). `csp.spec.ts`와
@@ -105,8 +105,9 @@ e2e는 웹 서버를 **둘** 띄운다 — dev(5173)와 `vite preview`(4173). `c
 
 ## 코드 배치 규칙
 
-- 도메인별 폴더(`outline/`, `sync/`, `storage/`, `search/`, `transfer/`, `shared/`, `app/`).
-  각 도메인 안에서 로직은 `.ts` 순수 함수와 훅으로, 렌더링은 `components/`로 나뉜다.
+- 도메인별 폴더(`outline/`, `palette/`, `sync/`, `storage/`, `search/`, `transfer/`,
+  `shared/`, `app/`). 각 도메인 안에서 로직은 `.ts` 순수 함수와 훅으로, 렌더링은
+  `components/`로 나뉜다.
 - **컴포넌트는 렌더링만 한다.** 동작은 훅(`useOutline.ts` 등)과 순수 함수에 둔다 — 예컨대
   `Outline.tsx`는 50줄이다.
 - `api/`는 Vercel serverless function 자리이고, client secret을 브라우저에 보내지 않기 위한

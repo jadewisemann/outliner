@@ -9,6 +9,9 @@ export type Id = string;
  */
 export type Stamp = { at: number; by: string };
 
+/** 0 is "no label"; the rest are the six label colours. */
+export type Color = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+
 export type Node = {
   id: Id;
   text: string;
@@ -17,6 +20,15 @@ export type Node = {
   collapsed: boolean;
   done: boolean;
   heading: 0 | 1 | 2 | 3;
+  /** Renders the row as a quotation. Unlike the two below, this one is the row's own. */
+  quote: boolean;
+  /** Shows a checkbox on this node's *children*. A list is a checklist, not a row. */
+  checklist: boolean;
+  /** Numbers this node's *children*, for the same reason. */
+  numbered: boolean;
+  color: Color;
+  /** Pinned to the sidebar, reachable from the palette. */
+  bookmarked: boolean;
 
   parent: Id | null;
   /** Fractional index among siblings — the merge-safe form of "position". */
@@ -28,6 +40,12 @@ export type Node = {
    */
   children: Id[];
 
+  /**
+   * When this node first existed. Unlike the other two this only ever moves
+   * backwards in a merge — a node cannot have been created twice, so the
+   * earlier of two claims is the true one.
+   */
+  created: Stamp;
   /** Last change to the text, note, or flags. */
   edited: Stamp;
   /** Last change to `parent` or `sort`. */
@@ -41,9 +59,32 @@ export type Doc = {
   nodes: Record<Id, Node>;
   /** Deleted node ids, kept so a delete is not undone by an older device. */
   graves: Record<Id, Stamp>;
-  /** Position among documents in the sidebar. */
+  /** Position among siblings in the sidebar. */
   sort: string;
+  /**
+   * Containing folder, or null at the top level.
+   *
+   * A folder is just a document with `kind: "folder"`, and a saved search is
+   * one with `kind: "search"` — same record, same file, same merge rules. The
+   * sidebar tree, folders and saved searches together cost no new machinery
+   * and nothing new in the sync payload.
+   */
+  parent: Id | null;
+  kind: "doc" | "folder" | "search";
+  /** The query, for a saved search. Empty for anything else. */
+  query: string;
+  bookmarked: boolean;
+  /**
+   * When this document was put in the trash, or null.
+   *
+   * A soft delete is what makes restoring possible at all: gravestones carry
+   * an id and a time, never content, so a hard delete is not recoverable by
+   * construction. The file stays on the remote until the trash is emptied.
+   */
+  deleted: Stamp | null;
+  /** Covers `title`, `kind`, `query`, `bookmarked` and `deleted`. */
   titleEdited: Stamp;
+  /** Covers `sort` and `parent`. */
   moved: Stamp;
 };
 
@@ -51,10 +92,15 @@ export type Doc = {
 export type DocView = {
   zoomId: Id;
   focusId: Id | null;
+  hideCompleted: boolean;
+  hideNotes: boolean;
+  /** Live filter query. Rows that do not match, and have no matching
+   *  descendant, are hidden — the outline stays editable in place. */
+  filter: string;
 };
 
 export type Workspace = {
-  version: 4;
+  version: 6;
   docs: Record<Id, Doc>;
   graves: Record<Id, Stamp>;
   activeDocId: Id;
@@ -71,6 +117,9 @@ export type Row = {
   /** Index among the parent's children, used for numbered lists and sibling math. */
   index: number;
   parentId: Id;
+  /** Read off the parent, since a checkbox and a number are a list's decision. */
+  checklist: boolean;
+  numbered: boolean;
 };
 
 export const newId = (): Id =>
@@ -91,9 +140,15 @@ export function makeNode(patch: Partial<Node> = {}): Node {
     collapsed: patch.collapsed ?? false,
     done: patch.done ?? false,
     heading: patch.heading ?? 0,
+    quote: patch.quote ?? false,
+    checklist: patch.checklist ?? false,
+    numbered: patch.numbered ?? false,
+    color: patch.color ?? 0,
+    bookmarked: patch.bookmarked ?? false,
     parent: patch.parent ?? null,
     sort: patch.sort ?? keyBetween(null, null),
     children: patch.children ?? [],
+    created: patch.created ?? now,
     edited: patch.edited ?? now,
     moved: patch.moved ?? now
   };
@@ -111,29 +166,108 @@ export function makeDoc(title = "Untitled", patch: Partial<Doc> = {}): Doc {
     nodes: { [root.id]: root, [first.id]: first },
     graves: {},
     sort: patch.sort ?? keyBetween(null, null),
+    parent: patch.parent ?? null,
+    kind: patch.kind ?? "doc",
+    query: patch.query ?? "",
+    bookmarked: patch.bookmarked ?? false,
+    deleted: patch.deleted ?? null,
     titleEdited: now,
     moved: now
+  };
+}
+
+/** A folder holds no outline of its own, but is otherwise an ordinary document. */
+export function makeFolder(title = "New folder", patch: Partial<Doc> = {}): Doc {
+  return { ...makeDoc(title, patch), kind: "folder" };
+}
+
+/** A saved search: a document whose content is the query. */
+export function makeSearch(title: string, query: string, patch: Partial<Doc> = {}): Doc {
+  return { ...makeDoc(title, patch), kind: "search", query };
+}
+
+export function makeView(doc: Doc, patch: Partial<DocView> = {}): DocView {
+  return {
+    zoomId: doc.rootId,
+    focusId: doc.nodes[doc.rootId]?.children[0] ?? null,
+    hideCompleted: false,
+    hideNotes: false,
+    filter: "",
+    ...patch
   };
 }
 
 export function makeWorkspace(): Workspace {
   const doc = makeDoc("Inbox");
   return {
-    version: 4,
+    version: 6,
     docs: { [doc.id]: doc },
     graves: {},
     activeDocId: doc.id,
-    views: { [doc.id]: { zoomId: doc.rootId, focusId: doc.nodes[doc.rootId].children[0] } }
+    views: { [doc.id]: makeView(doc) }
   };
 }
 
 /**
- * Documents in sidebar order. Two devices can mint the same `sort` for a
- * document created at the same position, so the id breaks the tie — otherwise
- * the sidebar would be ordered differently on each machine.
+ * Every document in one flat, stable order. Two devices can mint the same
+ * `sort` for a document created at the same position, so the id breaks the
+ * tie — otherwise the order would differ on each machine.
  */
 export function docList(workspace: Workspace): Doc[] {
-  return Object.values(workspace.docs).sort((a, b) =>
-    a.sort !== b.sort ? (a.sort < b.sort ? -1 : 1) : a.id < b.id ? -1 : a.id > b.id ? 1 : 0
-  );
+  return Object.values(workspace.docs).sort(byPosition);
+}
+
+function byPosition(a: Doc, b: Doc): number {
+  if (a.sort !== b.sort) return a.sort < b.sort ? -1 : 1;
+  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
+}
+
+/** The live documents and folders directly inside `parent`, in order. */
+export function docChildren(workspace: Workspace, parent: Id | null): Doc[] {
+  return Object.values(workspace.docs)
+    .filter((doc) => doc.deleted === null && folderOf(workspace, doc) === parent)
+    .sort(byPosition);
+}
+
+/** What is in the trash, most recently thrown away first. */
+export function trashed(workspace: Workspace): Doc[] {
+  return Object.values(workspace.docs)
+    .filter((doc) => doc.deleted !== null)
+    .sort((a, b) => b.deleted!.at - a.deleted!.at);
+}
+
+/** Documents that can hold an outline — not folders, saved searches or trash. */
+export function realDocs(workspace: Workspace): Doc[] {
+  return docList(workspace).filter((doc) => doc.kind === "doc" && doc.deleted === null);
+}
+
+/**
+ * A document's containing folder, or null. A `parent` that points at a missing
+ * document, at a non-folder, or into a cycle reads as "top level" — the
+ * sidebar has to render something, and a lost document must not be invisible.
+ */
+function folderOf(workspace: Workspace, doc: Doc): Id | null {
+  const seen = new Set<Id>([doc.id]);
+  let cursor = doc.parent;
+  while (cursor) {
+    const owner = workspace.docs[cursor];
+    if (!owner || owner.kind !== "folder") return null;
+    if (seen.has(cursor)) return null;
+    seen.add(cursor);
+    cursor = owner.parent;
+  }
+  return doc.parent && workspace.docs[doc.parent]?.kind === "folder" ? doc.parent : null;
+}
+
+/** The sidebar, flattened depth-first: what you see, top to bottom. */
+export function docTree(workspace: Workspace, openFolders: (id: Id) => boolean = () => true): { doc: Doc; depth: number }[] {
+  const out: { doc: Doc; depth: number }[] = [];
+  const walk = (parent: Id | null, depth: number) => {
+    for (const doc of docChildren(workspace, parent)) {
+      out.push({ doc, depth });
+      if (doc.kind === "folder" && openFolders(doc.id)) walk(doc.id, depth + 1);
+    }
+  };
+  walk(null, 0);
+  return out;
 }
