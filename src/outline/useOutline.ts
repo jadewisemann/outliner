@@ -12,31 +12,14 @@ import type { Store } from "../store";
 import { matches, type Action, type Keymap } from "../shared/keymap";
 import { labelOf } from "../search/links";
 import { MAX_ATTACHMENT_BYTES, attachmentUrl, nameFor, rememberUpload } from "../sync/api/attachments";
-import { allTags } from "../search/search";
-import { docList, type Color, type Id, type Node, type Row as RowModel } from "../types";
+import { type Color, type Id, type Node, type Row as RowModel } from "../types";
 import type { DropPosition, RowApi } from "./components/Row";
 import type { MenuSpot } from "./components/RowMenu";
 import { writeField } from "./components/Editable";
-import {
-  applyCompletion,
-  autoFormat,
-  completionAt,
-  fuzzy,
-  isUrl,
-  linkTo,
-  toggleLink,
-  toggleWrap,
-  type Selection,
-  type Trigger,
-  type WrapKind
-} from "./markdown";
+import { autoFormat, isUrl, linkTo, toggleLink, toggleWrap, type Selection, type WrapKind } from "./markdown";
 import {
   appendChild,
-  bulkIndent,
-  bulkMove,
-  bulkOutdent,
   bulkRemove,
-  bulkSetCollapsed,
   duplicate,
   indent,
   insertOutlineText,
@@ -47,18 +30,17 @@ import {
   patchNode,
   rowAfter,
   rowBefore,
-  splitAt,
-  toOutlineText,
-  topLevel
+  splitAt
 } from "./tree";
+import { useCompletion, type Completion } from "./useCompletion";
+import { useLive } from "./useLive";
 import { useRowDrag } from "./useRowDrag";
+import { useRowMenu } from "./useRowMenu";
+import { useRowSelection } from "./useRowSelection";
 import { useVirtualRows } from "./useVirtualRows";
 
-/** One offer from `[[` or `#`: what it reads as, and what it writes. */
-export type Choice = { label: string; insert: string; hint?: string };
-
-/** What `[[` or `#` is offering right now, and where it will be inserted. */
-export type Completion = { rowId: Id; trigger: Trigger; items: Choice[]; index: number };
+// Row.tsx and the palette reach these through here, from before they moved.
+export type { Choice, Completion } from "./useCompletion";
 
 /** Enough to put back a markdown prefix the editor swallowed one keystroke ago. */
 type AutoUndo = { rowId: Id; prefix: string; node?: Partial<Node>; parentId?: Id; parent?: Partial<Node> };
@@ -70,7 +52,6 @@ const WRAP_ACTIONS: [Action, WrapKind][] = [
   ["strike", "strike"],
   ["highlight", "highlight"]
 ];
-const COMPLETION_LIMIT = 8;
 
 /** The edits a phone cannot reach, since it has no Tab key and no ⌘⇧↑↓. */
 export type Nudge = {
@@ -120,29 +101,16 @@ export function useOutline(
 ): OutlineView {
   const { doc, view, rows, focus, edit, setView, requestFocus } = store;
 
-  const [selection, setSelection] = useState<Id[]>([]);
   const [noteFocus, setNoteFocus] = useState<{ id: Id; seq: number } | null>(null);
-  const [completion, setCompletion] = useState<Completion | null>(null);
-  const [menu, setMenu] = useState<MenuSpot | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const anchor = useRef<Id | null>(null);
   const noteSeq = useRef(0);
   const autoUndo = useRef<AutoUndo | null>(null);
 
-  const rowsRef = useRef(rows);
-  rowsRef.current = rows;
-  const drag = useRowDrag(rowsRef, edit);
-  const selectionRef = useRef(selection);
-  selectionRef.current = selection;
-  const zoomRef = useRef(view.zoomId);
-  zoomRef.current = view.zoomId;
-  const docRef = useRef(doc);
-  docRef.current = doc;
-  const workspaceRef = useRef(store.workspace);
-  workspaceRef.current = store.workspace;
-  const completionRef = useRef(completion);
-  completionRef.current = completion;
+  const live = useLive({ rows, doc, workspace: store.workspace, zoomId: view.zoomId, focus });
+  const drag = useRowDrag(live, edit);
+  const rowMenu = useRowMenu(requestFocus);
+  const rowSelection = useRowSelection(live, edit, requestFocus, containerRef);
   const keys = useRef(keymap);
   keys.current = keymap;
 
@@ -163,60 +131,7 @@ export function useOutline(
     [edit]
   );
 
-  /* ---------------------------------------------------------------- */
-  /* completion                                                        */
-  /* ---------------------------------------------------------------- */
-
-  /**
-   * `[[` offers documents *and* rows, because "link to the thing I mean" is
-   * one intent — but they are written differently, so each offer carries the
-   * literal text it will insert.
-   */
-  const candidates = useCallback((trigger: Trigger): Choice[] => {
-    const workspace = workspaceRef.current;
-    const pool: Choice[] = [];
-
-    if (trigger.kind === "tag") {
-      for (const entry of allTags(workspace)) pool.push({ label: entry.tag, insert: entry.tag });
-    } else {
-      for (const entry of docList(workspace)) {
-        if (entry.kind === "doc") pool.push({ label: entry.title, insert: `[[${entry.title}]]`, hint: "문서" });
-      }
-      for (const entry of docList(workspace)) {
-        if (entry.kind === "folder") continue;
-        for (const node of Object.values(entry.nodes)) {
-          if (node.id === entry.rootId || node.text.trim() === "") continue;
-          pool.push({ label: node.text, insert: `((${node.id}))`, hint: entry.title });
-        }
-      }
-    }
-
-    const term = trigger.kind === "tag" ? `#${trigger.query}` : trigger.query;
-    return pool
-      .map((choice) => ({ choice, match: fuzzy(choice.label, term) }))
-      .filter((entry) => entry.match !== null)
-      .sort((a, b) => b.match!.score - a.match!.score)
-      .slice(0, COMPLETION_LIMIT)
-      .map((entry) => entry.choice);
-  }, []);
-
-  /**
-   * Recomputed from the live field rather than from the store: the store lags
-   * a keystroke behind and does not know where the caret is.
-   */
-  const refreshCompletion = useCallback(
-    (rowId: Id) => {
-      const element = document.activeElement;
-      if (!(element instanceof HTMLTextAreaElement) || element.selectionStart !== element.selectionEnd) {
-        setCompletion(null);
-        return;
-      }
-      const trigger = completionAt(element.value, element.selectionStart);
-      const items = trigger ? candidates(trigger) : [];
-      setCompletion(trigger && items.length > 0 ? { rowId, trigger, items, index: 0 } : null);
-    },
-    [candidates]
-  );
+  const completions = useCompletion(live, applyText);
 
   /**
    * Pasting an image uploads it and leaves a reference behind.
@@ -254,25 +169,6 @@ export function useOutline(
     [edit, store.sync.files]
   );
 
-  const acceptCompletion = useCallback(
-    (element: HTMLTextAreaElement, rowId: Id, choice: Choice) => {
-      const open = completionRef.current;
-      if (!open) return;
-      applyText(element, rowId, applyCompletion(element.value, element.selectionStart, open.trigger, choice.insert));
-      setCompletion(null);
-    },
-    [applyText]
-  );
-
-  /* ---------------------------------------------------------------- */
-  /* selection                                                         */
-  /* ---------------------------------------------------------------- */
-
-  const enterSelection = useCallback((ids: Id[]) => {
-    setSelection(ids);
-    if (ids.length > 0) containerRef.current?.focus({ preventScroll: true });
-  }, []);
-
   const focusNote = useCallback((id: Id) => {
     noteSeq.current += 1;
     setNoteFocus({ id, seq: noteSeq.current });
@@ -284,18 +180,18 @@ export function useOutline(
 
   const zoom = useCallback(
     (id: Id) => {
-      setSelection([]);
+      rowSelection.clear();
       setView({ zoomId: id });
       // An empty target gets its editable row from the store's own guard.
-      const first = docRef.current.nodes[id]?.children[0];
+      const first = live.current.doc.nodes[id]?.children[0];
       if (first) requestFocus(first);
     },
-    [setView, requestFocus]
+    [rowSelection.clear, setView, requestFocus]
   );
 
   const zoomOut = useCallback(() => {
-    const current = zoomRef.current;
-    const now = docRef.current;
+    const current = live.current.zoomId;
+    const now = live.current.doc;
     if (current === now.rootId) return;
     setView({ zoomId: parentOf(now, current) ?? now.rootId });
     requestFocus(current);
@@ -310,7 +206,7 @@ export function useOutline(
       const mod = event.metaKey || event.ctrlKey;
       const caret = element.selectionStart;
       const noRange = element.selectionStart === element.selectionEnd;
-      const zoomId = zoomRef.current;
+      const zoomId = live.current.zoomId;
       const stop = () => event.preventDefault();
       const format = (next: Selection) => {
         stop();
@@ -320,25 +216,7 @@ export function useOutline(
       // The completion list owns the arrows and Enter while it is open, the
       // way it does in an editor. Everything below is unreachable until it
       // closes, which is why this runs first.
-      const open = completionRef.current;
-      if (open && open.rowId === row.id) {
-        if (event.key === "ArrowDown" || event.key === "ArrowUp") {
-          stop();
-          const step = event.key === "ArrowDown" ? 1 : -1;
-          setCompletion({ ...open, index: (open.index + step + open.items.length) % open.items.length });
-          return;
-        }
-        if (event.key === "Enter" || event.key === "Tab") {
-          stop();
-          acceptCompletion(element, row.id, open.items[open.index]);
-          return;
-        }
-        if (event.key === "Escape") {
-          stop();
-          setCompletion(null);
-          return;
-        }
-      }
+      if (completions.onKeyDown(event, element, row)) return;
 
       // One Backspace puts back a prefix the editor swallowed. Without it the
       // only way out of an unwanted heading is to notice which key did it.
@@ -391,7 +269,7 @@ export function useOutline(
         const applied = autoFormat(element.value, caret);
         if (applied) {
           stop();
-          const node = docRef.current.nodes[row.id];
+          const node = live.current.doc.nodes[row.id];
           const parentId = applied.parent ? node?.parent ?? undefined : undefined;
           autoUndo.current = {
             rowId: row.id,
@@ -400,14 +278,14 @@ export function useOutline(
             // prefix can set a heading, a quote, or a flag on the parent.
             node: applied.node ? pick(node, applied.node) : undefined,
             parentId,
-            parent: parentId ? pick(docRef.current.nodes[parentId], applied.parent!) : undefined
+            parent: parentId ? pick(live.current.doc.nodes[parentId], applied.parent!) : undefined
           };
           writeField(element, applied.text, 0);
           edit((current) => {
             const patched = patchNode(current, row.id, { text: applied.text, ...applied.node });
             return parentId ? patchNode(patched, parentId, applied.parent!) : patched;
           });
-          setCompletion(null);
+          completions.clear();
           return;
         }
       }
@@ -458,21 +336,21 @@ export function useOutline(
         return;
       }
       if (event.key === "Delete" && noRange && caret === element.value.length) {
-        const next = rowAfter(rowsRef.current, row.id);
+        const next = rowAfter(live.current.rows, row.id);
         if (!next) return;
         stop();
         edit((current) => mergeIntoPrevious(current, zoomId, next.id));
         return;
       }
       if (event.key === "ArrowUp" || (event.key === "ArrowLeft" && noRange && caret === 0)) {
-        const previous = rowBefore(rowsRef.current, row.id);
+        const previous = rowBefore(live.current.rows, row.id);
         if (!previous) return;
         stop();
         requestFocus(previous.id, event.key === "ArrowUp" ? Math.min(caret, previous.node.text.length) : "end");
         return;
       }
       if (event.key === "ArrowDown" || (event.key === "ArrowRight" && noRange && caret === element.value.length)) {
-        const next = rowAfter(rowsRef.current, row.id);
+        const next = rowAfter(live.current.rows, row.id);
         if (!next) return;
         stop();
         requestFocus(next.id, event.key === "ArrowDown" ? Math.min(caret, next.node.text.length) : 0);
@@ -481,11 +359,10 @@ export function useOutline(
       if (event.key === "Escape") {
         stop();
         element.blur();
-        anchor.current = row.id;
-        enterSelection([row.id]);
+        rowSelection.select(row.id);
       }
     },
-    [edit, requestFocus, focusNote, enterSelection, zoom, zoomOut]
+    [edit, requestFocus, focusNote, rowSelection.select, zoom, zoomOut, completions.onKeyDown, completions.clear]
   );
 
   const onNoteKeyDown = useCallback(
@@ -504,97 +381,21 @@ export function useOutline(
   );
 
   /* ---------------------------------------------------------------- */
-  /* keyboard while rows are selected                                  */
-  /* ---------------------------------------------------------------- */
-
-  const onContainerKeyDown = useCallback(
-    (event: KeyboardEvent<HTMLDivElement>) => {
-      const chosen = selectionRef.current;
-      if (chosen.length === 0 || (event.target as HTMLElement).tagName === "TEXTAREA") return;
-      const mod = event.metaKey || event.ctrlKey;
-      const visible = rowsRef.current;
-      const zoomId = zoomRef.current;
-      const stop = () => event.preventDefault();
-
-      if (event.key === "Escape" || event.key === "Enter") {
-        stop();
-        setSelection([]);
-        requestFocus(chosen[chosen.length - 1]);
-        return;
-      }
-      if (mod && event.shiftKey && (event.key === "ArrowUp" || event.key === "ArrowDown")) {
-        stop();
-        edit((current) => bulkMove(current, zoomId, chosen, event.key === "ArrowUp" ? -1 : 1));
-        return;
-      }
-      if (event.key === "ArrowUp" || event.key === "ArrowDown") {
-        stop();
-        const up = event.key === "ArrowUp";
-        const edge = (up ? rowBefore : rowAfter)(visible, chosen[up ? 0 : chosen.length - 1]);
-        if (!edge) return;
-        if (event.shiftKey) {
-          enterSelection(rangeBetween(visible, anchor.current ?? chosen[0], edge.id));
-        } else {
-          anchor.current = edge.id;
-          enterSelection([edge.id]);
-        }
-        return;
-      }
-      if (event.key === "Tab") {
-        stop();
-        edit((current) => (event.shiftKey ? bulkOutdent(current, zoomId, chosen) : bulkIndent(current, zoomId, chosen)));
-        return;
-      }
-      if (event.key === "Backspace" || event.key === "Delete") {
-        stop();
-        setSelection([]);
-        edit((current) => bulkRemove(current, zoomId, chosen));
-        return;
-      }
-      if (mod && (event.key === "c" || event.key === "x")) {
-        stop();
-        const now = docRef.current;
-        void navigator.clipboard?.writeText(toOutlineText(now, topLevel(now, zoomId, chosen)));
-        if (event.key === "x") {
-          setSelection([]);
-          edit((current) => bulkRemove(current, zoomId, chosen));
-        }
-        return;
-      }
-      if (mod && event.key === "a") {
-        stop();
-        enterSelection(visible.map((row) => row.id));
-        return;
-      }
-      if (event.key === " ") {
-        stop();
-        const now = docRef.current;
-        const collapsing = chosen.some((id) => now.nodes[id]?.children.length && !now.nodes[id].collapsed);
-        edit((current) => bulkSetCollapsed(current, chosen, collapsing), { transient: true });
-      }
-    },
-    [edit, enterSelection, requestFocus]
-  );
-
-  /* ---------------------------------------------------------------- */
   /* the same edits, without a keyboard                                */
   /* ---------------------------------------------------------------- */
-
-  // Whichever row is being edited, read at press time — the bar is rendered
-  // once and must not close over a row that has since changed.
-  const focusRef = useRef(focus);
-  focusRef.current = focus;
 
   /** The same two edits a swipe asks for, on a row named by the gesture. */
   const swipe = useCallback(
     (id: Id, direction: 1 | -1) => {
-      edit((current) => (direction === 1 ? indent(current, id) : outdent(current, id, zoomRef.current)));
+      edit((current) => (direction === 1 ? indent(current, id) : outdent(current, id, live.current.zoomId)));
     },
     [edit]
   );
 
+  // Whichever row is being edited, read at press time — the bar is rendered
+  // once and must not close over a row that has since changed.
   const nudge = useMemo<Nudge>(() => {
-    const target = () => focusRef.current?.id ?? null;
+    const target = () => live.current.focus?.id ?? null;
     return {
       indent() {
         const id = target();
@@ -602,7 +403,7 @@ export function useOutline(
       },
       outdent() {
         const id = target();
-        if (id) edit((current) => outdent(current, id, zoomRef.current));
+        if (id) edit((current) => outdent(current, id, live.current.zoomId));
       },
       move(direction) {
         const id = target();
@@ -619,7 +420,7 @@ export function useOutline(
     () => ({
       setText(id, text) {
         edit((current) => patchNode(current, id, { text }), { coalesceKey: `text:${id}` });
-        refreshCompletion(id);
+        completions.refresh(id);
       },
       setNote(id, note) {
         edit((current) => patchNode(current, id, { note }), { coalesceKey: `note:${id}` });
@@ -645,13 +446,6 @@ export function useOutline(
         event.preventDefault();
         edit((current) => insertOutlineText(current, row.id, text));
       },
-      pickCompletion(id, choice) {
-        const element = document.activeElement;
-        if (element instanceof HTMLTextAreaElement) acceptCompletion(element, id, choice);
-      },
-      hoverCompletion(index) {
-        setCompletion((open) => (open ? { ...open, index } : open));
-      },
       toggleCollapse(id) {
         edit((current) => patchNode(current, id, { collapsed: !current.nodes[id]?.collapsed }), { transient: true });
       },
@@ -661,28 +455,10 @@ export function useOutline(
       zoom,
       focusText(id, caret) {
         setNoteFocus(null);
-        setCompletion(null);
+        completions.clear();
         requestFocus(id, caret);
       },
       focusNote,
-      pointerSelect(event: MouseEvent, row) {
-        if (event.shiftKey) {
-          event.preventDefault();
-          enterSelection(rangeBetween(rowsRef.current, anchor.current ?? row.id, row.id));
-          return;
-        }
-        if (selectionRef.current.length > 0) setSelection([]);
-        anchor.current = row.id;
-      },
-      clearSelection() {
-        setSelection([]);
-      },
-      openMenu(event, row) {
-        event.preventDefault();
-        event.stopPropagation();
-        requestFocus(row.id);
-        setMenu({ row, x: event.clientX, y: event.clientY });
-      },
       setColor(id, color: Color) {
         edit((current) => patchNode(current, id, { color }));
       },
@@ -691,11 +467,11 @@ export function useOutline(
       },
       // The flag belongs to the list, so these two act on the row's parent.
       toggleChecklist(id) {
-        const parentId = docRef.current.nodes[id]?.parent;
+        const parentId = live.current.doc.nodes[id]?.parent;
         if (parentId) edit((current) => patchNode(current, parentId, { checklist: !current.nodes[parentId]?.checklist }));
       },
       toggleNumbered(id) {
-        const parentId = docRef.current.nodes[id]?.parent;
+        const parentId = live.current.doc.nodes[id]?.parent;
         if (parentId) edit((current) => patchNode(current, parentId, { numbered: !current.nodes[parentId]?.numbered }));
       },
       toggleRowBookmark(id) {
@@ -708,13 +484,16 @@ export function useOutline(
         edit((current) => duplicate(current, id));
       },
       removeRow(id) {
-        edit((current) => bulkRemove(current, zoomRef.current, [id]));
+        edit((current) => bulkRemove(current, live.current.zoomId, [id]));
       },
       openTag: onTagClick,
       openDocByTitle: onDocLinkClick,
       openItem: onItemLinkClick,
-      resolveItem: (id) => labelOf(workspaceRef.current, id),
+      resolveItem: (id) => labelOf(live.current.workspace, id),
       resolveFile: (name) => attachmentUrl(store.sync.files, name),
+      ...completions.api,
+      ...rowSelection.api,
+      ...rowMenu.api,
       ...drag.api
     }),
     [
@@ -723,25 +502,25 @@ export function useOutline(
       onNoteKeyDown,
       zoom,
       requestFocus,
-      enterSelection,
       onTagClick,
       onDocLinkClick,
       onItemLinkClick,
       focusNote,
       applyText,
-      refreshCompletion,
-      acceptCompletion,
       attach,
       store.sync.files,
+      completions.refresh,
+      completions.clear,
+      completions.api,
+      rowSelection.api,
+      rowMenu.api,
       drag.api
     ]
   );
 
   /* ---------------------------------------------------------------- */
 
-  const closeMenu = useCallback(() => setMenu(null), []);
-  const selected = useMemo(() => new Set(selection), [selection]);
-  const pin = selection.length > 0 ? null : focus;
+  const pin = rowSelection.selection.length > 0 ? null : focus;
   const activeId = pin?.id ?? null;
   const window = useVirtualRows(rows, scrollRef, containerRef, pin);
 
@@ -752,29 +531,29 @@ export function useOutline(
     window,
     activeId,
     swipe,
-    selected,
+    selected: rowSelection.selected,
     focus,
     noteFocus,
-    completion,
-    menu,
-    closeMenu,
+    completion: completions.completion,
+    menu: rowMenu.menu,
+    closeMenu: rowMenu.closeMenu,
     dropSpot: drag.dropSpot,
     api,
     containerProps: {
       onFocus(event) {
         // Focusing the container with nothing selected puts the caret back
         // where the reader left off.
-        if (event.target !== event.currentTarget || selectionRef.current.length > 0) return;
-        const landing = rowsRef.current.find((row) => row.id === view.focusId) ?? rowsRef.current[0];
+        if (event.target !== event.currentTarget || rowSelection.selection.length > 0) return;
+        const landing = live.current.rows.find((row) => row.id === view.focusId) ?? live.current.rows[0];
         if (landing) requestFocus(landing.id);
       },
-      onKeyDown: onContainerKeyDown,
+      onKeyDown: rowSelection.onKeyDown,
       onDragEnd: drag.onDragEnd
     },
     onTailMouseDown(event) {
       event.preventDefault();
-      setSelection([]);
-      edit((current) => appendChild(current, zoomRef.current));
+      rowSelection.clear();
+      edit((current) => appendChild(current, live.current.zoomId));
     }
   };
 }
@@ -784,13 +563,4 @@ function pick(node: Node | undefined, patch: Partial<Node>): Partial<Node> {
   const out: Record<string, unknown> = {};
   for (const key of Object.keys(patch)) out[key] = node?.[key as keyof Node];
   return out as Partial<Node>;
-}
-
-/** Inclusive visible-row range between two ids, in document order. */
-function rangeBetween(rows: RowModel[], from: Id, to: Id): Id[] {
-  const start = rows.findIndex((row) => row.id === from);
-  const end = rows.findIndex((row) => row.id === to);
-  if (start === -1 || end === -1) return [to];
-  const [low, high] = start <= end ? [start, end] : [end, start];
-  return rows.slice(low, high + 1).map((row) => row.id);
 }

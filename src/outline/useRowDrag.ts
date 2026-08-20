@@ -1,18 +1,19 @@
-import { useMemo, useRef, useState, type DragEvent, type RefObject } from "react";
+import { useMemo, useRef, useState, type DragEvent } from "react";
 import type { Store } from "../store";
 import type { Id, Row as RowModel } from "../types";
 import type { DropPosition, RowApi } from "./components/Row";
 import { reparent } from "./tree";
+import type { LiveRef } from "./useLive";
 
 /**
  * Drag & drop of a row by its bullet: the drag source, the spot the pointer
  * is over, and the drop itself. Owns its two refs and the `dropSpot` state;
- * everything else it reads through `rows`, so the api fragment stays one
+ * everything else it reads through `live`, so the api fragment stays one
  * object for the lifetime of the component — a new one per keystroke would
  * defeat the memo on every row.
  */
 export function useRowDrag(
-  rows: RefObject<RowModel[]>,
+  live: LiveRef,
   edit: Store["edit"]
 ): {
   dropSpot: { id: Id; position: DropPosition } | null;
@@ -50,7 +51,7 @@ export function useRowDrag(
         dropRef.current = null;
         setDropSpot(null);
         if (!source || !spot || source === spot.id) return;
-        const target = rows.current?.find((row) => row.id === spot.id);
+        const target = live.current.rows.find((row) => row.id === spot.id);
         if (!target) return;
         edit((current) =>
           spot.position === "child"
@@ -59,7 +60,7 @@ export function useRowDrag(
         );
       }
     }),
-    [rows, edit]
+    [live, edit]
   );
 
   return {

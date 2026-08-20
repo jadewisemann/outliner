@@ -2,9 +2,13 @@
 
 > (원래 루트 `REFACTOR.md`. 진행 상황 체크리스트는 [PLANS.md](../../PLANS.md)가 정본이고, 이 문서는 상세 계획이다. `claude/handover-refactoring-y4kt42` 브랜치가 P0~P2 이전 코드 기준의 참고 구현.)
 >
-> **실행 현황 (2026-08-20):** R1·R3·R4 완료, R2는 1단계(`useRowDrag`)까지. R3는 아래 제안의
+> **실행 현황 (2026-08-20):** R1·R2·R3·R4 완료. R3는 아래 제안의
 > `remote/` 디렉터리 레이아웃 그대로 들어갔고(`codec.ts`에 base64·직렬화, `settings.ts`에
 > 탭 간 핑 포함), R4는 카운터·backoff·탭 감시까지 `sync/useSync.ts`로 갔다.
+> R2는 아래 자르는 선 그대로 5단계 전부 실행 — `useOutline.ts` 834 → 566줄.
+> 350줄 목표만 실측으로 갱신했다(계획이 남기라고 한 것들만으로 350을 넘는다 —
+> IMPLEMENTATION_NOTES.md 2026-08-20). `Choice`/`Completion` 타입은 `useCompletion.ts`가
+> 정의하고 `useOutline.ts`가 재수출해 기존 import 경로를 보존한다.
 
 > 기능을 더하지 않는 작업만 모았다. **동작이 하나라도 바뀌면 그건 이 문서의 실패다.**
 > 아키텍처·설계 근거는 [DESIGN.md](../../DESIGN.md), 기능 로드맵은 [parity.md](../parity.md)가 정본이다.
