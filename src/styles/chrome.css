@@ -1,0 +1,295 @@
+/*
+ * App chrome: layout shell, topbar, sidebar.
+ * Load order is part of the cascade — tokens → chrome → outline → panels,
+ * the order the old single global.css had.
+ */
+/* ------------------------------------------------------------------ */
+/* layout                                                              */
+/* ------------------------------------------------------------------ */
+
+.app {
+  display: grid;
+  grid-template-columns: 1fr;
+  height: 100%;
+}
+
+.app-with-sidebar {
+  grid-template-columns: 232px 1fr;
+}
+
+.main {
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--surface);
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  min-height: 46px;
+  background: color-mix(in srgb, var(--surface) 86%, transparent);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--line);
+}
+
+.ghost {
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  line-height: 1;
+}
+
+.ghost:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.breadcrumb {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  gap: 2px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.breadcrumb button {
+  padding: 2px 4px;
+  border-radius: 4px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.breadcrumb button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.breadcrumb-sep {
+  opacity: 0.5;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.menu {
+  position: relative;
+}
+
+.menu summary {
+  list-style: none;
+  padding: 4px 8px;
+  border-radius: 6px;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.menu-body {
+  position: absolute;
+  right: 0;
+  top: 30px;
+  width: 190px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+}
+
+.menu-body button {
+  padding: 7px 10px;
+  border-radius: 6px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.menu-body button:hover {
+  background: var(--hover);
+}
+
+.menu-body hr {
+  margin: 5px 8px;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+/* The page's own name, at the top of the text column rather than as a 13px
+   crumb in the chrome — and on the same left edge as the rows it heads. */
+.doc-title {
+  max-width: var(--measure, 780px);
+  margin: 0 auto;
+  padding: 40px 20px 0;
+}
+
+.doc-title h1 {
+  margin: 0;
+  padding-left: var(--gutter);
+  font-size: calc(var(--body-size, 15px) * 1.6);
+  font-weight: 660;
+  line-height: 1.25;
+  letter-spacing: -0.015em;
+}
+
+.doc-title-zoomed h1 {
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------------ */
+/* sidebar                                                             */
+/* ------------------------------------------------------------------ */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px 10px;
+  overflow-y: auto;
+  border-right: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 8px;
+}
+
+/* No uppercase and no tracking: `text-transform` is a no-op on Hangul and
+   0.08em on 문서 / 태그 reads as a spacing bug rather than as a label. */
+.sidebar-title {
+  font-size: 12px;
+  font-weight: 640;
+  color: var(--muted);
+}
+
+.doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.doc-item {
+  display: flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+}
+
+.doc-item:hover {
+  background: var(--hover);
+}
+
+.doc-item-active {
+  background: var(--selection);
+}
+
+.doc-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 14px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fixed width, so titles line up whether or not the row is a folder. */
+.doc-icon {
+  flex: none;
+  width: 10px;
+  font-size: 10px;
+  color: var(--mark);
+}
+
+.doc-remove,
+.doc-pin {
+  opacity: 0;
+  padding: 2px 5px;
+}
+
+.doc-item:hover .doc-remove,
+.doc-item:hover .doc-pin,
+.doc-pin-on {
+  opacity: 1;
+}
+
+.doc-pin-on {
+  color: var(--accent);
+}
+
+/* Dropping *onto* a folder files into it; dropping on a document reorders,
+   so the two need to look different before the mouse is released. */
+.doc-item-into {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.doc-item-before {
+  box-shadow: inset 0 2px 0 -1px var(--accent);
+}
+
+.sidebar-empty {
+  margin: 6px 8px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.doc-rename {
+  width: 100%;
+  padding: 5px 8px;
+  font: inherit;
+  font-size: 14px;
+  color: inherit;
+  background: var(--surface);
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+}
+
+.tag-cloud-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 8px;
+  padding-left: 4px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 2px 7px;
+  font-size: 12px;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: 999px;
+}
+
+.tag-chip em {
+  font-style: normal;
+  font-size: 10px;
+  opacity: 0.6;
+}
+

@@ -18,7 +18,10 @@ DESIGN.md(및 하위 문서)에 반영한다.
    거터 정렬, 토큰 분리, 마커 통합)은 끝났다.
 3. 레퍼런스 셀프 호스트 서버 (정적 파일 + `GET`/`PUT` + `If-Match`, 파일 하나면 된다)
 4. 아주 큰 워크스페이스를 위한 delta 동기화
-5. R5(`Doc` 판별 유니온 — **물면 그때**) · R6(CSS 분할 — 급하지 않음)
+5. R5(`Doc` 판별 유니온 — **물면 그때**)
+
+(R6 CSS 분할은 2026-08-20 완료 — tokens/chrome/outline/panels 네 파일, 규칙 순서 불변.
+[refactor-plan.md](./docs/design/refactor-plan.md) 「R6」.)
 
 (백엔드 능력 비대칭의 결정은 2026-08-20 해소 — 선을 긋는 쪽으로,
 [ADR-0005](./docs/adr/0005-backend-capability-line.md).)

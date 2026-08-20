@@ -233,11 +233,18 @@ export function useSync(options: {
 
 ---
 
-## R6. `global.css` 분할 — 급하지 않음
+## R6. `global.css` 분할 — 완료 (2026-08-20)
 
 1,750줄 한 파일. 토큰을 역할별로 쪼갠 뒤로는 훑을 만해서 급하지 않다. 하게 되면 도메인 경계를
 그대로 따를 것: `tokens.css` / `chrome.css`(topbar·sidebar) / `outline.css` / `panels.css`.
 `index.html`의 CSP는 `style-src 'self'`라 파일 수와 무관하다.
+
+> **실행:** 위 네 파일로 나눴다(그 사이 2,051줄로 자라 있었다). 단, **규칙 순서는 한 줄도
+> 바꾸지 않았다** — cascade에서 나중 규칙이 동률을 이기므로 순서 재배치는 동작 변경이다.
+> 그래서 경계는 원본의 섹션 경계 그대로이고, 원본에서 패널들 뒤에 쓰인 행 스타일(행간 링크,
+> 인용/코드, 아이템 메뉴, focus/motion 꼬리)은 도메인상 outline이어도 `panels.css`에
+> 원래 위치대로 남는다. import 순서가 곧 cascade 순서라는 것은 `main.tsx`와 각 파일
+> 헤더에 명시했다.
 
 ---
 

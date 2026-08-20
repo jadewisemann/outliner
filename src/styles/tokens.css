@@ -1,0 +1,107 @@
+/*
+ * One token per job.
+ *
+ * `--faint` used to be every hairline, every hover wash, every filled chip and
+ * every guide line at once — and a border and a filled surface cannot be the
+ * same value in two themes. In dark they came out at 1.35:1 against the
+ * background, so the sidebar boundary simply vanished while it was clearly
+ * there in light. The themes were structurally different products.
+ *
+ * `--bg` is the recessed chrome and `--surface` is the page, the way every
+ * desktop app the eye is trained on does it. The old file had them the other
+ * way round, which is most of why the light theme read as an unfinished web
+ * page rather than as a document.
+ */
+:root {
+  --bg: #f0f0ec;
+  --surface: #ffffff;
+  --text: #24241f;
+  /* 4.67:1 on --surface. Was #8a8a84 at 3.16:1, which failed AA at 13px —
+     and 13px muted text is the breadcrumb, every note, every panel footer. */
+  --muted: #6e6e68;
+  /* Bullets, arrows, guides. Deliberately lighter than --muted: a marker that
+     weighs as much as secondary text competes with the words. */
+  --mark: #bcbcb4;
+  --line: #e4e4de;
+  --fill: #f3f3ef;
+  --hover: rgba(0, 0, 0, 0.045);
+  --accent: #3d7f6e;
+  /* Accent text sits on --accent-soft, where plain --accent is 3.80:1. */
+  --accent-ink: #2f6a5b;
+  --accent-soft: #e2efe9;
+  /* Selection is neutral on purpose: a selected row and a tag were the same
+     tint before, so "this is selected" and "this is a tag" read alike. */
+  --selection: #e9e9e3;
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.05), 0 6px 16px rgba(0, 0, 0, 0.07);
+  --shadow-modal: 0 2px 6px rgba(0, 0, 0, 0.06), 0 24px 60px rgba(0, 0, 0, 0.16);
+  --shadow: var(--shadow-pop);
+
+  --row-indent: calc(var(--body-size, 15px) * 1.6);
+  /* arrow + gap + marker + gap. The single origin every gutter offset uses. */
+  --marker: 24px;
+  --gutter: calc(16px + 2px + var(--marker) + 2px);
+  /* Horizontal centre of the marker, measured from the row's indent origin. */
+  --guide-x: 30px;
+  --r-sm: 6px;
+  --r-md: 10px;
+  --r-lg: 14px;
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic",
+    "Noto Sans KR", sans-serif;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Cascadia Mono", "D2Coding", monospace;
+  --focus: 0 0 0 2px var(--surface), 0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent);
+  color-scheme: light;
+}
+
+:root[data-theme="dark"] {
+  --bg: #131517;
+  --surface: #1b1e20;
+  --text: #e7e7e3;
+  --muted: #969b99;
+  --mark: #4f5755;
+  --line: #33383b;
+  --fill: #23272a;
+  --hover: rgba(255, 255, 255, 0.055);
+  --accent: #6fbfa7;
+  --accent-ink: #86d0b8;
+  --accent-soft: #22322e;
+  --selection: #262a2d;
+  --shadow-pop: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 16px rgba(0, 0, 0, 0.4);
+  --shadow-modal: 0 2px 6px rgba(0, 0, 0, 0.5), 0 24px 60px rgba(0, 0, 0, 0.55);
+  color-scheme: dark;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: var(--body-size, 15px);
+  line-height: var(--body-leading, 1.55);
+  -webkit-font-smoothing: antialiased;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+.booting {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  color: var(--muted);
+}
+

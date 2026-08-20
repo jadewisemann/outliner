@@ -1,0 +1,514 @@
+/*
+ * The outline itself: rows, markers, gutter, completion list, drop indicators.
+ */
+/* ------------------------------------------------------------------ */
+/* outline                                                             */
+/* ------------------------------------------------------------------ */
+
+.outline {
+  max-width: var(--measure, 780px);
+  margin: 0 auto;
+  /* The tail below already supplies the room to click into; a second screenful
+     of padding only pushed the backlinks off the bottom of the world. */
+  padding: 6px 20px 0;
+  outline: none;
+}
+
+/*
+ * The container is focusable so selection mode has somewhere to send the
+ * keyboard, but a ring around it is a ring around the whole document — and
+ * since the tail below is a third of the viewport, that ring was the largest
+ * object on screen. The focused *row* says the same thing in the right place.
+ */
+.outline:focus-visible {
+  outline: none;
+}
+
+.outline:focus-visible .row-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.outline-tail {
+  height: 22vh;
+  cursor: text;
+}
+
+/*
+ * Sits on top of the software keyboard; `bottom` is set inline from
+ * `visualViewport`, since `fixed` alone pins it under the keyboard.
+ */
+.touch-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  /* A shadow this faint is invisible in dark; the hairline is not. */
+  border-top: 1px solid var(--line);
+}
+
+.touch-bar button {
+  flex: 1;
+  /* A comfortable touch target, and the same height as the keys below it. */
+  min-height: 40px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: none;
+  color: var(--muted);
+  font-size: 18px;
+  line-height: 1;
+  /* No double-tap zoom, no lingering blue wash, no selecting the glyph. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.touch-bar button:active {
+  background: var(--selection);
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  padding-left: calc(var(--depth) * var(--row-indent));
+  border-radius: var(--r-sm);
+
+  /*
+   * Height of this row's first line box. Every marker in the gutter centres
+   * itself in it instead of sitting at a fixed pixel offset — otherwise a
+   * bullet drifts 6px above the middle of an h1, and every marker moves as
+   * the size slider does.
+   */
+  --lead: calc(var(--body-size, 15px) * var(--body-leading, 1.55) + 4px);
+
+  /* One guide line per ancestor level, aligned with that ancestor's bullet. */
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--line) 65%, transparent) 0 1px,
+    transparent 1px var(--row-indent)
+  );
+  background-size: calc(var(--depth) * var(--row-indent)) 100%;
+  background-position: var(--guide-x) 0;
+  background-repeat: no-repeat;
+}
+
+.row-selected {
+  background-color: var(--selection);
+}
+
+.row-arrow,
+.row-marker {
+  height: var(--lead);
+  display: flex;
+  align-items: center;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.row-arrow {
+  justify-content: center;
+}
+
+/*
+ * The one marker slot. Fixed width and right-aligned, so `H1`, `12.`, a
+ * checkbox and a dot all end at the same x and the text after them starts on
+ * the same left edge on every row.
+ */
+.row-marker {
+  flex: none;
+  width: var(--marker);
+  justify-content: flex-end;
+  position: relative;
+  cursor: grab;
+}
+
+.row-arrow {
+  width: 16px;
+  font-size: 10px;
+  color: var(--mark);
+  opacity: 0;
+  transition: transform 0.12s ease, opacity 0.1s ease;
+  transform: rotate(90deg);
+}
+
+.row:hover .row-arrow {
+  opacity: 1;
+}
+
+/* There is no hover on a phone, so the disclosure would never exist there. */
+@media (hover: none) {
+  .row-arrow {
+    opacity: 0.55;
+  }
+}
+
+.row-arrow-collapsed {
+  transform: rotate(0deg);
+  opacity: 1 !important;
+}
+
+.row-arrow-empty {
+  visibility: hidden;
+}
+
+.row-bullet::after {
+  content: "";
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  background: var(--mark);
+}
+
+/* The dot is inset from the cell's right edge; the collapsed halo has to be
+   centred on the dot, not on the cell, or it reads as a crescent. */
+.row-marker {
+  padding-right: 4.5px;
+}
+
+/* A labelled marker carries its own glyphs; the dot would be a second one. */
+.row-bullet-labelled::after {
+  display: none;
+}
+
+.row-label {
+  font-family: var(--mono);
+  font-size: 0.68em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--mark);
+}
+
+.row-label-index {
+  font-family: inherit;
+  font-size: 0.85em;
+  font-weight: inherit;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.row-bullet-collapsed::before {
+  content: "";
+  position: absolute;
+  right: 0.5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  border-radius: 50%;
+  background: var(--fill);
+}
+
+.row-body {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 1px;
+}
+
+.row-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+/*
+ * Only lists that asked for checkboxes get them; a ticked row keeps its own.
+ *
+ * Still a real `<input type=checkbox>`, so the keyboard and the accessibility
+ * tree are untouched — only the paint is ours. The browser default rendered as
+ * a grey square in dark mode, which is not a state anyone recognises as "done".
+ */
+.row-check {
+  flex: none;
+  width: 15px;
+  min-height: 15px;
+  appearance: none;
+  -webkit-appearance: none;
+  border: 1.5px solid var(--mark);
+  border-radius: 4.5px;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+}
+
+.row-check:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.row-check:checked::after {
+  content: "";
+  display: block;
+  width: 4px;
+  height: 8px;
+  margin: -1px 0 0 4px;
+  border: solid var(--surface);
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(43deg);
+}
+
+.row-check {
+  margin-right: 1px;
+}
+
+/* Colour labels tint the row's text, not its background: a page of six
+   highlighter colours is unreadable, a page of six inks is a legend. */
+.row-c1 .row-text { color: #c1543c; }
+.row-c2 .row-text { color: #c08a2e; }
+.row-c3 .row-text { color: #4f8f3f; }
+.row-c4 .row-text { color: #2f7fa8; }
+.row-c5 .row-text { color: #7a5bb5; }
+.row-c6 .row-text { color: var(--muted); }
+
+:root[data-theme="dark"] .row-c1 .row-text { color: #e8836a; }
+:root[data-theme="dark"] .row-c2 .row-text { color: #dcb05a; }
+:root[data-theme="dark"] .row-c3 .row-text { color: #83c46f; }
+:root[data-theme="dark"] .row-c4 .row-text { color: #6cb6d9; }
+:root[data-theme="dark"] .row-c5 .row-text { color: #a891e0; }
+:root[data-theme="dark"] .row-c6 .row-text { color: var(--muted); }
+
+.row-bookmarked > .row-bullet::after {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* The rendered half shrink-wraps so a trailing badge sits beside its row
+   instead of being pushed to the far edge of the measure; the textarea keeps
+   flex: 1 so there is something to type into. */
+.row-rendered {
+  flex: 0 1 auto;
+}
+
+/* Anchored under the row being typed in, so the caret and the list are in the
+   same place the eye already is. */
+.row-complete {
+  position: absolute;
+  z-index: 5;
+  margin: 2px 0 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 180px;
+  max-width: 320px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+}
+
+.row-complete button {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  text-align: left;
+  border-radius: 5px;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-complete-active {
+  background: var(--selection);
+}
+
+/*
+ * The editor and its rendered twin must share metrics so swapping is invisible.
+ *
+ * `line-height` reads the variable rather than a constant: hard-coding 1.55
+ * here beat inheritance, so the 줄 간격 slider moved the chrome and left the
+ * document exactly where it was.
+ *
+ * `overflow-wrap: anywhere` used to break Hangul between any two syllables —
+ * Korean has no interword spaces, so the browser split 사용자인터뷰 wherever it
+ * liked. `keep-all` breaks at eojeol boundaries; `break-word` still rescues a
+ * long URL.
+ */
+.row-text {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 2px 2px 0;
+  font: inherit;
+  line-height: var(--body-leading, 1.55);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
+.row-input {
+  display: block;
+  width: 100%;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+}
+
+.row-body {
+  cursor: text;
+}
+
+.row-done .row-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/*
+ * Relative, so the size slider moves them too — at 24px body the old fixed
+ * 21px h1 was *smaller* than body text. Display type also wants tighter
+ * leading than prose: 1.55 on a heading is why they read as rows rather than
+ * as anchors.
+ */
+.row-h1 .row-text {
+  font-size: 1.5em;
+  font-weight: 660;
+  line-height: 1.28;
+  letter-spacing: -0.015em;
+}
+
+.row-h2 .row-text {
+  font-size: 1.25em;
+  font-weight: 640;
+  line-height: 1.32;
+  letter-spacing: -0.01em;
+}
+
+.row-h3 .row-text {
+  font-size: 1.0625em;
+  font-weight: 640;
+  line-height: 1.4;
+}
+
+.row-h1 { --lead: calc(var(--body-size, 15px) * 1.5 * 1.28 + 4px); }
+.row-h2 { --lead: calc(var(--body-size, 15px) * 1.25 * 1.32 + 4px); }
+.row-h3 { --lead: calc(var(--body-size, 15px) * 1.0625 * 1.4 + 4px); }
+
+/*
+ * Air above a section, so a heading and its first child are not the same
+ * distance apart as two unrelated sections. Padding rather than margin:
+ * margins collapse and are excluded from `offsetHeight`, which is what the
+ * virtualiser measures.
+ */
+.row-h1 { padding-top: 20px; }
+.row-h2 { padding-top: 15px; }
+.row-h3 { padding-top: 11px; }
+
+.row-h1:first-child,
+.row-h2:first-child,
+.row-h3:first-child {
+  padding-top: 0;
+}
+
+.row-count {
+  align-self: center;
+  margin-left: 6px;
+  padding: 0 6px;
+  font-size: 0.75em;
+  color: var(--muted);
+  background: var(--fill);
+  border-radius: 999px;
+}
+
+.row-note {
+  display: block;
+  width: 100%;
+  margin-top: 1px;
+  padding: 0;
+  font: inherit;
+  font-size: 0.87em;
+  color: var(--muted);
+  background: none;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
+/*
+ * Rendered chips must cost no layout width.
+ *
+ * The textarea shows `#tag` as plain 1em text with no padding. When the chip
+ * added 6px of padding, a row near the wrap boundary reflowed to a different
+ * number of lines the moment you clicked into it — text jumping on focus is
+ * the one thing this whole two-halves design exists to avoid. A spread
+ * box-shadow paints the same inset without occupying space.
+ */
+.row-text code,
+.row-note-rendered code {
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--fill);
+  box-shadow: 0 0 0 3px var(--fill);
+  border-radius: 4px;
+}
+
+.row-text mark {
+  background: #fbe7a1;
+  color: inherit;
+  border-radius: 3px;
+}
+
+:root[data-theme="dark"] .row-text mark {
+  background: #6a5a24;
+}
+
+.row-text a {
+  color: var(--accent-ink);
+}
+
+/* Same zero-width trick as inline code, and for the same reason: a tag is far
+   more common in a row than a code span is. */
+.inline-tag,
+.inline-doclink {
+  padding: 0;
+  border-radius: 4px;
+  font-size: inherit;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2.5px var(--accent-soft);
+}
+
+.inline-doclink {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* drop indicators */
+.row-drop-before::after,
+.row-drop-after::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--depth) * var(--row-indent) + var(--gutter));
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.row-drop-before::after {
+  top: -1px;
+}
+
+.row-drop-after::after {
+  bottom: -1px;
+}
+
+.row-drop-child {
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: 5px;
+}
+
