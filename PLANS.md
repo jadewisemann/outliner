@@ -16,8 +16,9 @@ DESIGN.md(및 하위 문서)에 반영한다.
   - [x] R4 — `store.ts`에서 동기화 루프를 `sync/useSync.ts`로 (615 → 454줄)
   - [ ] R2 — `useOutline.ts`를 관심사별 훅으로 (단계별로, 매 단계 전체 테스트)
     - [x] 1단계 `useRowDrag` (834 → 796줄)
-    - [ ] `useLive`(공유 ref 묶음) → `useRowMenu` → `useCompletion` → `useRowSelection`,
-      남는 것 350줄 아래 목표
+    - [x] 2단계 `useLive` — 공유 ref 다섯 개(rows/doc/workspace/zoomId/focus)를 번들 하나로,
+      `useRowDrag`도 이걸 받는다 (796 → 787줄)
+    - [ ] `useRowMenu` → `useCompletion` → `useRowSelection`, 남는 것 350줄 아래 목표
 - **완료 기준:** 유닛·e2e 개수 불변 전부 green, `Outline.tsx`/`Row.tsx` 무변경(R2),
   `grep -rn 'from "../app/' src/outline …`이 비어 있음(R1 — 달성).
 
