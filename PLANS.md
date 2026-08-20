@@ -10,9 +10,10 @@ DESIGN.md(및 하위 문서)에 반영한다.
 
 ## 대기열 — 계획으로 승격 전
 
-1. **실제 배포** — 저장소 Settings → Pages에서 source를 GitHub Actions로 (계정 소유자만.
-   main의 Pages 워크플로 deploy 잡이 이것 때문에 빨갛다). Vercel + OAuth 로그인은 OAuth App
-   생성(callback = 배포 origin) + `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`.
+1. **GitHub 로그인 켜기 (선택)** — Pages 배포는 2026-08-20 완료: 소유자가 Settings →
+   Pages source를 GitHub Actions로 바꿔 deploy 잡까지 green, 이후 main 병합마다 자동
+   배포. 남은 것은 로그인 버튼뿐 — Vercel + OAuth App 생성(callback = 배포 origin) +
+   `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` (README 「Vercel」). 없어도 PAT 경로는 동작.
 2. **디자인 리뷰 잔여** — 본문 여백·측정값 미세조정, 터치바 아이콘화. 큰 것(지면과 도형,
    거터 정렬, 토큰 분리, 마커 통합)은 끝났다.
 3. 레퍼런스 셀프 호스트 서버 (정적 파일 + `GET`/`PUT` + `If-Match`, 파일 하나면 된다)
