@@ -88,7 +88,8 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
             <p className="sync-note">
               JSON 문서 하나를 <code>GET</code> / <code>PUT</code> 하는 주소면 무엇이든 됩니다. Firebase Realtime
               Database 경로를 그대로 붙여넣어도 되고, 직접 만든 엔드포인트여도 됩니다. 병합은 기기 쪽에서
-              일어나므로 서버는 저장만 하면 됩니다.
+              일어나므로 서버는 저장만 하면 됩니다. 문서 히스토리와 이미지 첨부는 GitHub 저장소 백엔드만의
+              기능입니다 — 동기화와 병합은 어느 쪽이든 같습니다.
             </p>
             <label className="field">
               <span>동기화 주소</span>
