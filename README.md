@@ -3,7 +3,7 @@
 Dynalist을 대신하는 로컬 우선(local-first) 아웃라이너. 브라우저에서 열고, 키보드만으로 쓰고,
 데이터는 내 기기에 남고, 내 기기끼리는 알아서 합쳐진다.
 
-> 이 문서는 **실행법·기능·배포**만 담는다. 설계·불변식의 정본은 [DESIGN.md](./DESIGN.md),
+> 이 README는 **실행법·기능·배포**만 담는다. 설계·불변식의 정본은 [DESIGN.md](./DESIGN.md),
 > 에이전트 작업 방식은 [AGENTS.md](./AGENTS.md), Git 규칙은 [CONTRIBUTING.md](./CONTRIBUTING.md).
 
 ```bash

@@ -34,8 +34,8 @@
 
 ## 결과
 
-- `.dev.md`는 실행법·기능·배포 문서로 역할이 좁아지고, 설계 서술은 DESIGN.md와
+- `.dev.md`는 실행법·기능·배포만 남겨 `README.md`로 개명됐고, 설계 서술은 DESIGN.md와
   `docs/design/*`로 이관됐다.
-- `HANDOVER.md`는 갱신을 멈춘 아카이브로 격하됐다 — 결정은 ADR로, 함정·실측값은
-  `docs/design/code-rationale.md`로, 남은 작업은 `PLANS.md`로 이관.
+- `HANDOVER.md`는 삭제됐다 — 결정은 ADR로, 함정·실측값은 `docs/design/code-rationale.md`로,
+  남은 작업은 `PLANS.md`로 이관했고, 세션 서사는 git 히스토리에 남아 있다.
 - `CLAUDE.md`는 `AGENTS.md`로 가는 포인터만 남는다.

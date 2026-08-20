@@ -9,7 +9,7 @@ Git 협업 상세의 SSOT는 [CONTRIBUTING.md](./CONTRIBUTING.md)이고 아래 G
 - Dynalist를 대신하는 로컬 우선(local-first) 아웃라이너. 단일 패키지 — 작업 디렉터리는 루트 하나다.
 - 스택: Vite + React 18 + TypeScript. **런타임 의존성은 react/react-dom 뿐**이고 이것은 의도된
   제약이다 (DESIGN.md 원칙 12).
-- 실행법·기능 목록·배포는 [.dev.md](./.dev.md), 설계·불변식은 [DESIGN.md](./DESIGN.md).
+- 실행법·기능 목록·배포는 [README.md](./README.md), 설계·불변식은 [DESIGN.md](./DESIGN.md).
 
 ## 절대 규칙
 
@@ -32,7 +32,7 @@ Git 협업 상세의 SSOT는 [CONTRIBUTING.md](./CONTRIBUTING.md)이고 아래 G
 | 작업 중 발견 (휘발성 working memory) | [`IMPLEMENTATION_NOTES.md`](./IMPLEMENTATION_NOTES.md) |
 | 함정·실측값·실패한 대안 | [`docs/design/code-rationale.md`](./docs/design/code-rationale.md) |
 | Git 협업 규칙 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) |
-| 실행법·기능 목록·배포 | [`.dev.md`](./.dev.md) |
+| 실행법·기능 목록·배포 | [`README.md`](./README.md) |
 | 기계가 소비하는 계약 (모델 타입, CSP 값, 매니페스트 …) | **코드** — DESIGN.md의 「코드가 정본인 것들」 목록 |
 
 ## 문서-코드 충돌 판정 규칙
