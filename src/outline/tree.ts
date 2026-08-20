@@ -34,9 +34,23 @@ export function subtree(doc: Doc, id: Id): Id[] {
   return out;
 }
 
-/** Flattened rows under `zoomId`, skipping children of collapsed nodes. */
-export function visibleRows(doc: Doc, zoomId: Id): Row[] {
+export type RowFilter = {
+  /** Rows that fail this, and have no matching descendant, are hidden. */
+  match?: (node: Node) => boolean;
+  hideCompleted?: boolean;
+};
+
+/**
+ * Flattened rows under `zoomId`, skipping children of collapsed nodes.
+ *
+ * With a `match` the outline becomes a filtered view of itself: matching rows
+ * and the ancestors that place them, still editable where they sit. Collapse
+ * is ignored while filtering — a result hidden inside a folded parent is a
+ * result the reader was told about and cannot see.
+ */
+export function visibleRows(doc: Doc, zoomId: Id, filter: RowFilter = {}): Row[] {
   const rows: Row[] = [];
+  const keep = filter.match ? keepSet(doc, zoomId, filter.match) : null;
   // This runs during render, so a cycle in corrupt data must degrade to a
   // truncated outline rather than an infinite loop and a blank screen.
   const seen = new Set<Id>();
@@ -44,15 +58,37 @@ export function visibleRows(doc: Doc, zoomId: Id): Row[] {
     const parent = doc.nodes[parentId];
     if (!parent || seen.has(parentId)) return;
     seen.add(parentId);
+    const { checklist, numbered } = parent;
     parent.children.forEach((id, index) => {
       const node = doc.nodes[id];
       if (!node || seen.has(id)) return;
-      rows.push({ id, node, depth, index, parentId });
-      if (!node.collapsed) walk(id, depth + 1);
+      // Hiding what is done hides its subtree too: a finished item's children
+      // are part of the finished item.
+      if (filter.hideCompleted && node.done) return;
+      if (keep && !keep.has(id)) return;
+      // A row inherits its checkbox and its number from the list it is in, but
+      // a row that is already ticked keeps its box whatever the list says —
+      // otherwise turning a checklist off would silently hide the ticks.
+      rows.push({ id, node, depth, index, parentId, checklist: checklist || node.done, numbered });
+      if (!node.collapsed || keep) walk(id, depth + 1);
     });
   };
   walk(zoomId, 0);
   return rows;
+}
+
+/** Matching nodes, plus every ancestor that places them under the zoom root. */
+function keepSet(doc: Doc, zoomId: Id, match: (node: Node) => boolean): Set<Id> {
+  const keep = new Set<Id>();
+  for (const id of subtree(doc, zoomId)) {
+    const node = doc.nodes[id];
+    if (id === zoomId || !node || !match(node)) continue;
+    keep.add(id);
+    for (const ancestor of ancestors(doc, id)) {
+      if (ancestor !== zoomId) keep.add(ancestor);
+    }
+  }
+  return keep;
 }
 
 export function rowBefore(rows: Row[], id: Id): Row | null {
@@ -385,6 +421,82 @@ export function moveVertically(doc: Doc, id: Id, direction: -1 | 1): Edit {
   const nodes = draft(doc);
   moveVerticallyInto(nodes, id, direction);
   return { doc: withNodes(doc, nodes), focusId: id };
+}
+
+/**
+ * Copies a row and everything under it, directly below the original.
+ *
+ * The copies are new nodes with new ids and fresh stamps — a duplicate is a
+ * thing that has just come into existence, not a second claim on the original.
+ * A bookmark is not copied for the same reason: it points at one row.
+ */
+export function duplicate(doc: Doc, id: Id): Edit {
+  const node = doc.nodes[id];
+  const parentId = node?.parent;
+  if (!node || !parentId) return { doc };
+
+  const nodes = draft(doc);
+  const copy = (sourceId: Id, ownerId: Id, index: number): Id => {
+    const source = doc.nodes[sourceId];
+    const fresh = makeNode({
+      text: source.text,
+      note: source.note,
+      collapsed: source.collapsed,
+      done: source.done,
+      heading: source.heading,
+      checklist: source.checklist,
+      numbered: source.numbered,
+      color: source.color
+    });
+    insert(nodes, ownerId, fresh, index);
+    source.children.forEach((child, at) => copy(child, fresh.id, at));
+    return fresh.id;
+  };
+
+  const at = doc.nodes[parentId].children.indexOf(id) + 1;
+  return { doc: withNodes(doc, nodes), focusId: copy(id, parentId, at), caret: node.text.length };
+}
+
+/* ------------------------------------------------------------------ */
+/* across documents                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Lifts a row and its descendants out of a document, leaving gravestones.
+ *
+ * The nodes come back untouched so the caller can graft them elsewhere with
+ * their ids intact — which is the whole point, since `((id))` links to any of
+ * them have to keep working after the move.
+ */
+export function cutSubtree(doc: Doc, id: Id): { doc: Doc; taken: Node[] } | null {
+  if (!doc.nodes[id] || id === doc.rootId) return null;
+  const taken = subtree(doc, id).map((each) => doc.nodes[each]);
+
+  const nodes = draft(doc);
+  const graves = { ...doc.graves };
+  removeInto(nodes, graves, id);
+  return { doc: { ...doc, nodes, graves }, taken };
+}
+
+/**
+ * Puts a lifted subtree at the end of `parentId`, keeping every id.
+ *
+ * Anything the destination had buried under those ids is forgiven: the rows
+ * are demonstrably alive, and leaving the gravestone would make them vanish
+ * again on the next merge.
+ */
+export function graftSubtree(doc: Doc, parentId: Id, taken: Node[]): Edit {
+  const root = taken[0];
+  if (!root || !doc.nodes[parentId]) return { doc };
+
+  const now = stamp();
+  const nodes = draft(doc);
+  for (const node of taken) nodes[node.id] = { ...node, edited: now, moved: now };
+  place(nodes, parentId, root.id, doc.nodes[parentId].children.length);
+
+  const graves = { ...doc.graves };
+  for (const node of taken) delete graves[node.id];
+  return { doc: { ...doc, nodes, graves }, focusId: root.id };
 }
 
 /** Moves `id` (with subtree) to position `index` under `newParentId`. Used by drag & drop. */

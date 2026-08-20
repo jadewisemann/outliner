@@ -99,8 +99,13 @@ function mergeDoc(mine: Doc, theirs: Doc): Doc {
     id: mine.id,
     rootId: mine.rootId,
     title: title.title,
+    kind: title.kind,
+    query: title.query,
+    bookmarked: title.bookmarked,
+    deleted: title.deleted,
     titleEdited: title.titleEdited,
     sort: position.sort,
+    parent: position.parent,
     moved: position.moved,
     nodes,
     graves
@@ -111,14 +116,19 @@ function mergeDoc(mine: Doc, theirs: Doc): Doc {
 function mergeNode(a: Node, b: Node): Node {
   const content = wins(b.edited, a.edited) ? b : a;
   const position = wins(b.moved, a.moved) ? b : a;
+  // A node was created once. Whichever side remembers that happening earlier
+  // is the one telling the truth, so this is a minimum rather than a race.
+  const created = a.created.at <= b.created.at ? a.created : b.created;
+
   // Keeping the original object when one side wins outright is what lets an
   // unchanged document come back from a merge as the very same object.
-  if (content === position) return content;
+  if (content === position && created === content.created) return content;
   return {
     ...content,
     parent: position.parent,
     sort: position.sort,
     moved: position.moved,
+    created,
     children: content.children
   };
 }
@@ -172,9 +182,21 @@ function isUntouched(payload: SyncPayload): boolean {
   const [doc] = docs;
   return (
     doc.title === "Inbox" &&
+    doc.kind === "doc" &&
+    doc.deleted === null &&
     Object.keys(doc.graves).length === 0 &&
     Object.values(doc.nodes).every(
-      (node) => node.text === "" && node.note === "" && !node.done && !node.collapsed && node.heading === 0
+      (node) =>
+        node.text === "" &&
+        node.note === "" &&
+        !node.done &&
+        !node.collapsed &&
+        node.heading === 0 &&
+        node.color === 0 &&
+        !node.quote &&
+        !node.checklist &&
+        !node.numbered &&
+        !node.bookmarked
     )
   );
 }
@@ -185,6 +207,11 @@ function same(mine: Doc, merged: Doc): boolean {
   if (
     mine.title !== merged.title ||
     mine.sort !== merged.sort ||
+    mine.parent !== merged.parent ||
+    mine.kind !== merged.kind ||
+    mine.query !== merged.query ||
+    mine.bookmarked !== merged.bookmarked ||
+    mine.deleted !== merged.deleted ||
     mine.titleEdited !== merged.titleEdited ||
     mine.moved !== merged.moved ||
     Object.keys(mine.nodes).length !== Object.keys(merged.nodes).length ||
@@ -234,6 +261,8 @@ function observeStamps(payload: SyncPayload): void {
       observe(node.edited.at);
       observe(node.moved.at);
     }
+    // `created` is deliberately not observed: it is the oldest stamp in the
+    // payload, so it can only drag the logical clock backwards.
   }
 }
 
@@ -252,11 +281,22 @@ export function pruneGraves(payload: SyncPayload, now: number): SyncPayload {
   };
 
   const docs: Record<Id, Doc> = {};
+  const graves = { ...payload.graves };
   for (const [id, doc] of Object.entries(payload.docs)) {
-    const graves = keep(doc.graves);
-    docs[id] = graves === doc.graves ? doc : { ...doc, graves };
+    // A document that has sat in the trash longer than the window becomes a
+    // real delete, on the same schedule and by the same rule everywhere — so
+    // no two devices disagree about whether it is still restorable.
+    if (doc.deleted && now - doc.deleted.at >= GRAVE_TTL_MS) {
+      // Stamped now, not when it was binned: a gravestone dated a month ago
+      // would be forgotten by the very next line, and a device that still has
+      // the file would then put the document back.
+      graves[id] = { at: now, by: doc.deleted.by };
+      continue;
+    }
+    const kept = keep(doc.graves);
+    docs[id] = kept === doc.graves ? doc : { ...doc, graves: kept };
   }
-  return { docs, graves: keep(payload.graves) };
+  return { docs, graves: keep(graves) };
 }
 
 /** True when the merge adopted anything the local side did not already have. */

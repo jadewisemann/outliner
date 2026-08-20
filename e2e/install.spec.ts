@@ -34,3 +34,43 @@ test("the built app can be installed to a home screen", async ({ page, request }
 
   expect(violations).toEqual([]);
 });
+
+test("the built app opens again with the network gone", async ({ page, context }) => {
+  await page.goto(BUILT);
+  await page.locator(".row").first().click();
+  await page.keyboard.type("written while online");
+
+  // The worker only helps once it controls the page.
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 10_000 });
+  // Let the shell and its assets reach the cache.
+  await page.reload();
+  await page.waitForFunction(() => navigator.serviceWorker.controller !== null, null, { timeout: 10_000 });
+
+  await context.setOffline(true);
+  await page.reload();
+
+  // Opening at all is the point; the notes were never on the server.
+  await expect(page.getByText("written while online")).toBeVisible();
+  await context.setOffline(false);
+});
+
+test("declares a share target, so a phone can send a page straight into the outline", async ({ page }) => {
+  await page.goto(BUILT);
+  const cdp = await page.context().newCDPSession(page);
+  const manifest = JSON.parse((await cdp.send("Page.getAppManifest")).data!);
+
+  expect(manifest.share_target?.action).toBe("./");
+  // GET, because there is no server to POST to — a share arrives as an
+  // ordinary launch with query parameters.
+  expect(manifest.share_target?.method).toBe("GET");
+});
+
+test("captures a shared page as a row, once", async ({ page }) => {
+  await page.goto(`${BUILT}?title=A+post&url=https%3A%2F%2Fx.dev%2Fa`);
+  await expect(page.getByText("A post — https://x.dev/a")).toBeVisible();
+
+  // The share is out of the address bar, so a reload does not add it again.
+  expect(new URL(page.url()).search).toBe("");
+  await page.reload();
+  await expect(page.getByText("A post — https://x.dev/a")).toHaveCount(1);
+});

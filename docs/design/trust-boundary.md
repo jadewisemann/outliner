@@ -18,8 +18,10 @@
 `default-src 'none'` + `script-src 'self'` — 이 출처에서 온 것 말고는 아무것도 실행되지
 않는다. 구멍은 `style-src-attr 'unsafe-inline'` 하나인데 앱이 스스로 판 것이고(행 들여쓰기와
 가상화 패딩이 style 속성), `connect-src`는 주소를 사용자가 정하는 구조라 좁힐 방법이 정직하게
-없다. `frame-ancestors`는 메타 태그에서 무시되니 헤더를 보낼 수 있는 호스트라면 거기서 넣어야
-한다.
+없다. `worker-src 'self'`(service worker), `img-src 'self' blob:`(첨부 object URL),
+`font-src 'self'`(KaTeX 글꼴)는 각 기능이 요구한 최소만 연 것이다 — 정확한 값의 정본은
+`index.html`. `frame-ancestors`는 메타 태그에서 무시되니 헤더를 보낼 수 있는 호스트라면
+거기서 넣어야 한다.
 
 정책은 빌드 결과에서만 발효된다(dev 서버는 자기 클라이언트를 인라인으로 넣는다). 그래서
 `vite preview`를 상대로 도는 `e2e/csp.spec.ts`가 "정책이 앱을 깨지 않는다 + 주입된 인라인
@@ -35,6 +37,13 @@ E2EE 암호도 같은 경계에 산다 — 토큰 옆 `localStorage`. 막아주�
 OAuth의 서버 조각은 function 하나(`api/github-oauth.ts`)만 — client secret이 브라우저에 못
 가는 유일한 이유로 존재한다 (원칙 1). 환경 변수가 없으면 404를 돌려주고 로그인 버튼이
 숨는다 — PAT 경로는 항상 동작한다.
+
+## service worker는 셸만 만진다
+
+`public/sw.js`는 **이 출처의 GET만** 캐시한다. 동기화 요청은 네트워크에 닿거나 정직하게
+실패해야 한다 — 캐시된 옛 응답이 "원격의 현재 상태"로 읽혀 병합되면 안 된다. 네비게이션은
+네트워크 우선(새 배포가 다음 실행에 잡힌다), 해시 이름 자산은 캐시 우선. 등록은 빌드에서만
+한다. 폰 공유 시트 캡처(Web Share Target)는 서버가 없으므로 GET 방식이다.
 
 ## 실패 처리
 

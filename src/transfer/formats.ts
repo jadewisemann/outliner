@@ -51,11 +51,19 @@ function opmlNode(doc: Doc, id: Id, depth: number): string {
   const node = doc.nodes[id];
   if (!node) return "";
   const pad = "  ".repeat(depth);
+  // The id travels so that a round trip through a file keeps internal links
+  // and bookmarks pointing at the same rows.
   const attrs = [
     `text="${escapeXml(node.text)}"`,
+    `_id="${escapeXml(node.id)}"`,
     node.note ? `_note="${escapeXml(node.note)}"` : "",
     node.done ? `_complete="true"` : "",
-    node.collapsed ? `_collapsed="true"` : ""
+    node.collapsed ? `_collapsed="true"` : "",
+    node.checklist ? `_checkbox="true"` : "",
+    node.numbered ? `_numbered="true"` : "",
+    node.quote ? `_quote="true"` : "",
+    node.heading > 0 ? `_heading="${node.heading}"` : "",
+    node.color > 0 ? `_colorLabel="${node.color}"` : ""
   ]
     .filter(Boolean)
     .join(" ");
@@ -99,6 +107,11 @@ export function importDoc(title: string, content: string, format: Format): Doc {
     nodes,
     graves: {},
     sort: keyBetween(null, null),
+    parent: null,
+    kind: "doc",
+    query: "",
+    bookmarked: false,
+    deleted: null,
     titleEdited: now,
     moved: now
   });
@@ -117,18 +130,62 @@ function parseIndented(content: string, root: Node, nodes: Record<Id, Node>) {
 }
 
 
+/**
+ * OPML from another outliner, read as generously as the format allows.
+ *
+ * Every exporter spells these differently — Workflowy writes `_note` and
+ * `_complete`, Dynalist writes `note` and `complete`, and neither is wrong —
+ * so each field is looked up under all the spellings seen in the wild. An
+ * attribute nobody recognises is dropped rather than guessed at.
+ */
+const OPML_FIELDS = {
+  note: ["_note", "note"],
+  done: ["_complete", "complete", "checked"],
+  collapsed: ["_collapsed", "collapsed"],
+  checklist: ["_checkbox", "checkbox"],
+  numbered: ["_numbered", "numbered"],
+  quote: ["_quote", "quote"],
+  color: ["_colorLabel", "colorLabel", "color"],
+  heading: ["_heading", "heading"],
+  id: ["id", "_id"]
+};
+
+function attr(element: Element, names: string[]): string | null {
+  for (const name of names) {
+    const found = element.getAttribute(name);
+    if (found !== null) return found;
+  }
+  return null;
+}
+
+const isTrue = (value: string | null) => value === "true" || value === "1" || value === "yes";
+
 function parseOpml(content: string, root: Node, nodes: Record<Id, Node>) {
   const doc = new DOMParser().parseFromString(content, "text/xml");
   const body = doc.querySelector("body");
   if (!body) return;
+
   const walk = (element: Element, owner: Node) => {
     for (const child of Array.from(element.children)) {
       if (child.tagName.toLowerCase() !== "outline") continue;
+      const heading = Number(attr(child, OPML_FIELDS.heading));
+      const color = Number(attr(child, OPML_FIELDS.color));
+      // Keeping the exporter's id is what lets internal links survive the
+      // move. A repeat is dropped rather than allowed to overwrite a row.
+      const given = attr(child, OPML_FIELDS.id);
+      const id = given && given !== "" && !nodes[given] ? given : undefined;
+
       const node = makeNode({
+        id,
         text: child.getAttribute("text") ?? "",
-        note: child.getAttribute("_note") ?? "",
-        done: child.getAttribute("_complete") === "true",
-        collapsed: child.getAttribute("_collapsed") === "true"
+        note: attr(child, OPML_FIELDS.note) ?? "",
+        done: isTrue(attr(child, OPML_FIELDS.done)),
+        collapsed: isTrue(attr(child, OPML_FIELDS.collapsed)),
+        checklist: isTrue(attr(child, OPML_FIELDS.checklist)),
+        numbered: isTrue(attr(child, OPML_FIELDS.numbered)),
+        quote: isTrue(attr(child, OPML_FIELDS.quote)),
+        heading: heading >= 1 && heading <= 3 ? (heading as Node["heading"]) : 0,
+        color: color >= 1 && color <= 6 ? (color as Node["color"]) : 0
       });
       nodes[node.id] = node;
       owner.children.push(node.id);
@@ -137,6 +194,7 @@ function parseOpml(content: string, root: Node, nodes: Record<Id, Node>) {
   };
   walk(body, root);
 }
+
 
 /* ------------------------------------------------------------------ */
 /* backup                                                              */
@@ -165,5 +223,5 @@ export function parseBackup(content: string): Workspace | null {
 
 function isKnownVersion(raw: unknown): boolean {
   const version = (raw as { version?: unknown } | null)?.version;
-  return version === 3 || version === 4;
+  return version === 3 || version === 4 || version === 5 || version === 6;
 }

@@ -3,20 +3,38 @@
 계획마다 **목표 / 원칙 / 단계별 체크리스트 / 완료 기준**을 적는다. 끝난 계획은 지우고 결과를
 DESIGN.md(및 하위 문서)에 반영한다.
 
-## 진행 중
+## 진행 중 — 모듈 리팩터
 
-(없음)
+- **목표:** 기능을 더하지 않고 구조만 고친다. 동작이 하나라도 바뀌면 실패다.
+- **정본:** [docs/design/refactor-plan.md](./docs/design/refactor-plan.md) — 건드리면 안 되는
+  것과 단계별 검증 기준이 거기 있다. `claude/handover-refactoring-y4kt42` 브랜치가 P0~P2
+  이전 코드 위에서 같은 취지의 분할을 실행한 **참고 구현**이다 (그대로 병합은 불가 — 기능
+  이전 코드 기준이라 내용이 낡았다).
+- **체크리스트:**
+  - [ ] R1 — `app/keymap.ts` → `shared/keymap.ts` (의존성 간선 제거)
+  - [ ] R3 — `sync/api/remote.ts` 분할 (contract / rest / github / codec / settings)
+  - [ ] R4 — `store.ts`에서 동기화 루프를 `sync/useSync.ts`로
+  - [ ] R2 — `useOutline.ts` 834줄을 관심사별 훅으로 (단계별로, 매 단계 전체 테스트)
+- **완료 기준:** 유닛·e2e 개수 불변 전부 green, `Outline.tsx`/`Row.tsx` 무변경(R2),
+  `grep -rn 'from "../app/' src/outline …`이 비어 있음(R1).
 
 ## 대기열 — 계획으로 승격 전
 
-1. **실제 배포** — Pages는 저장소 Settings → Pages에서 source를 GitHub Actions로 바꾸면
-   `.github/workflows/pages.yml`이 돈다. Vercel + OAuth 로그인은 OAuth App 생성(callback =
-   배포 origin) + `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET` 환경 변수. **계정 소유자만 할 수
-   있어서 여기서 멈춰 있다.**
-2. **service worker** — 매니페스트만으로는 오프라인으로 "열리지" 않는다. 노트는 이미 기기에
-   있고 셸 캐시만 없는 상태 — 홈 화면 아이콘을 눌렀는데 신호가 없으면 빈 화면이 뜬다.
-3. **모바일 스와이프 제스처** — 터치 바로 들여쓰기는 되지만, 익숙해지면 스와이프가 빠르다.
+1. **실제 배포** — 저장소 Settings → Pages에서 source를 GitHub Actions로 (계정 소유자만.
+   main의 Pages 워크플로 deploy 잡이 이것 때문에 빨갛다). Vercel + OAuth 로그인은 OAuth App
+   생성(callback = 배포 origin) + `GITHUB_CLIENT_ID`/`GITHUB_CLIENT_SECRET`.
+2. **백엔드 능력 비대칭의 결정** — 히스토리·첨부는 GitHub 백엔드에만 있다. 선을 긋거나(권장:
+   "저장소 백엔드만의 기능"으로 문서·UI에 명시), REST에도 능력을 주거나, 능력 없는 UI를
+   일급으로. [refactor-plan.md](./docs/design/refactor-plan.md) 「남겨둔 리스크」.
+3. **디자인 리뷰 잔여** — 본문 여백·측정값 미세조정, 터치바 아이콘화. 큰 것(지면과 도형,
+   거터 정렬, 토큰 분리, 마커 통합)은 끝났다.
 4. 레퍼런스 셀프 호스트 서버 (정적 파일 + `GET`/`PUT` + `If-Match`, 파일 하나면 된다)
-5. 날짜 항목과 일정 표기
-6. 아주 큰 워크스페이스를 위한 delta 동기화
-7. Tauri — 필요해질 때
+5. 아주 큰 워크스페이스를 위한 delta 동기화
+6. R5(`Doc` 판별 유니온 — **물면 그때**) · R6(CSS 분할 — 급하지 않음)
+
+## 범위에서 뺀 것 (다시 논의하려면 근거부터)
+
+- **날짜·일정 계열** — 사용자 결정. [docs/parity.md](./docs/parity.md) §5.
+- **Tauri 데스크톱** — PWA가 설치·오프라인·공유 캡처까지 하는 지금, 남는 것은 작업 표시줄
+  아이콘 정도인데 대가가 Rust 툴체인과 플랫폼별 빌드다. [docs/parity.md](./docs/parity.md) §6.
+- **WYSIWYG(편집 중 서식 표시)** — contenteditable이 필요해서 한글 IME를 반납하게 된다.

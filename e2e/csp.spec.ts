@@ -36,7 +36,7 @@ test("the built app does its work under its own policy", async ({ page }) => {
   await page.keyboard.press("Tab");
   await page.locator('[title="새 문서"]').click();
   await page.keyboard.type("second");
-  await page.keyboard.press("Control+k");
+  await page.keyboard.press("Control+Shift+f");
   await page.locator(".search-input").fill("정책");
   await expect(page.locator(".search-hit").first()).toBeVisible();
   await page.keyboard.press("Escape");

@@ -84,7 +84,23 @@ export function SearchPanel({ store, initialQuery, onClose }: Props) {
             ))
           )}
         </div>
-      <footer className="search-foot">{hits.length}건 · ↑↓ 이동 · Enter 열기 · Esc 닫기</footer>
+      <footer className="search-foot">
+        {hits.length}건 · ↑↓ 이동 · Enter 열기 · Esc 닫기
+        {query.trim() !== "" ? (
+          <button
+            type="button"
+            className="search-save"
+            onClick={() => {
+              const name = prompt("저장할 이름", query.trim());
+              if (!name) return;
+              store.docs.createSearch(name, query.trim());
+              onClose();
+            }}
+          >
+            이 검색 저장
+          </button>
+        ) : null}
+      </footer>
     </Panel>
   );
 }
