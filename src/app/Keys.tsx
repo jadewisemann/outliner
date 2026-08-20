@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Panel } from "../shared/components/Panel";
-import { ACTION_LABELS, DEFAULT_KEYMAP, conflicts, describe, specOf, type Action, type Keymap } from "./keymap";
+import { ACTION_LABELS, DEFAULT_KEYMAP, conflicts, describe, specOf, type Action, type Keymap } from "../shared/keymap";
 
 const GROUPS: [string, Action[]][] = [
   ["찾기와 실행", ["palette", "commands", "search", "filter", "sidebar", "help", "undo", "redo"]],

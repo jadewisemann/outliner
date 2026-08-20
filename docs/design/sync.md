@@ -1,8 +1,9 @@
 # 동기화 — 병합 규칙 · 전송 계약 · GitHub 배치 · 종단 간 암호화
 
-> SSOT 코드: `src/sync/merge.ts`(병합 규칙), `src/sync/api/remote.ts`(REST·GitHub 백엔드),
+> SSOT 코드: `src/sync/merge.ts`(병합 규칙), `src/sync/useSync.ts`(동기화 루프),
+> `src/sync/api/remote/`(전송 — contract·rest·github·codec·settings, 입구는 index.ts),
 > `src/sync/api/cipher.ts`(E2EE), `src/sync/api/githubAuth.ts`(OAuth 플로),
-> `src/shared/order.ts`(정렬 키), `src/shared/clock.ts`(논리 시계), `src/store.ts`(동기화 루프)
+> `src/shared/order.ts`(정렬 키), `src/shared/clock.ts`(논리 시계)
 
 ## 병합 모델 (DESIGN.md 원칙 3·4)
 

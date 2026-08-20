@@ -1,7 +1,7 @@
 # 편집기 — 행 모델 · 서식 · 트리 연산 · 가상화 · 터치 바 · undo
 
 > SSOT 코드: `src/outline/`(tree.ts, markdown.ts, highlight.tsx, useOutline.ts,
-> useVirtualRows.ts, useTouchBar.ts, inline.tsx, components/), `src/app/keymap.ts`,
+> useVirtualRows.ts, useTouchBar.ts, inline.tsx, components/), `src/shared/keymap.ts`,
 > `src/search/query.ts`, `src/history.ts`
 
 ## 한 줄 = 하나의 `<textarea>`
@@ -43,7 +43,7 @@ Backspace다. `[[`와 `#`는 자동완성 팝업을 연다.
 
 ## 단축키는 테이블 하나, 편집은 아니다
 
-`app/keymap.ts`가 재바인딩 가능한 키 전부를 들고 있고 `useOutline`과 `App`이 같은 테이블을
+`shared/keymap.ts`가 재바인딩 가능한 키 전부를 들고 있고 `useOutline`과 `App`이 같은 테이블을
 읽는다. 선은 **단축키와 편집 그 자체** 사이에 그었다 — Enter가 행을 쪼개고 Backspace가 합치고
 화살표가 캐럿을 옮기는 건 취향이 아니라 이 에디터의 정의이고, 바인딩 대상이 아니다.
 

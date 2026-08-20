@@ -1,6 +1,10 @@
 # 리팩터 인수인계
 
 > (원래 루트 `REFACTOR.md`. 진행 상황 체크리스트는 [PLANS.md](../../PLANS.md)가 정본이고, 이 문서는 상세 계획이다. `claude/handover-refactoring-y4kt42` 브랜치가 P0~P2 이전 코드 기준의 참고 구현.)
+>
+> **실행 현황 (2026-08-20):** R1·R3·R4 완료, R2는 1단계(`useRowDrag`)까지. R3는 아래 제안의
+> `remote/` 디렉터리 레이아웃 그대로 들어갔고(`codec.ts`에 base64·직렬화, `settings.ts`에
+> 탭 간 핑 포함), R4는 카운터·backoff·탭 감시까지 `sync/useSync.ts`로 갔다.
 
 > 기능을 더하지 않는 작업만 모았다. **동작이 하나라도 바뀌면 그건 이 문서의 실패다.**
 > 아키텍처·설계 근거는 [DESIGN.md](../../DESIGN.md), 기능 로드맵은 [parity.md](../parity.md)가 정본이다.
