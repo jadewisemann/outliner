@@ -143,6 +143,7 @@ src/
 | [docs/parity.md](./docs/parity.md) | 기능 방향의 근거 — Dynalist 격차 분석, P0~P2 이력, 스키마 변경 총계 |
 | [docs/design/refactor-plan.md](./docs/design/refactor-plan.md) | 진행 중 모듈 리팩터(R1~R6)의 상세 계획 — PLANS.md가 가리킨다 |
 | [docs/adr/](./docs/adr/) | 구조적 결정의 이유 — "왜 이렇게 안 했는가" |
+| [docs/korean-output.md](./docs/korean-output.md) | 한국어를 출력할 때. **작업 종류와 무관하게 항상 적용되므로, 이 표의 「필요한 것만 연다」 규칙의 예외다** |
 
 ## 코드가 정본인 것들 (예외 목록)
 

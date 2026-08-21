@@ -18,6 +18,10 @@ Git 협업 상세의 SSOT는 [CONTRIBUTING.md](./CONTRIBUTING.md)이고 아래 G
 - 문서와 코드가 충돌하면 **조용히 코드를 따르지 않는다** — 아래 판정 규칙대로 판정한다.
 - 바깥에서 오는 데이터(동기화 응답, 가져오기 파일, 저장소에 남아 있던 값)는 반드시
   `src/storage/validate.ts`를 통과시킨다.
+- **한국어를 출력할 때는 [docs/korean-output.md](./docs/korean-output.md)를 준수한다.** 작업
+  종류와 무관하게 항상 적용되므로, 「필요한 것만 연다」는 하위 문서 규칙의 예외다. 그 문서는
+  요약하지 않고 전문을 읽는다(이유가 문서 안에 서술되어 있다). 코드 주석·커밋 메시지·로그
+  문자열처럼 코드에 속하는 텍스트는 이 지침의 적용 대상이 아니고 기존 관례를 따른다.
 - 동작 차이(버그 포함)를 발견하면 조용히 "개선"하지 않는다 — `IMPLEMENTATION_NOTES.md`에
   기록하고 재현/수정 여부를 명시적으로 결정한다.
 
@@ -32,6 +36,7 @@ Git 협업 상세의 SSOT는 [CONTRIBUTING.md](./CONTRIBUTING.md)이고 아래 G
 | 작업 중 발견 (휘발성 working memory) | [`IMPLEMENTATION_NOTES.md`](./IMPLEMENTATION_NOTES.md) |
 | 함정·실측값·실패한 대안 | [`docs/design/code-rationale.md`](./docs/design/code-rationale.md) |
 | Git 협업 규칙 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) |
+| 한국어 출력 방식 | [`docs/korean-output.md`](./docs/korean-output.md) — **항상 적용된다** |
 | 실행법·기능 목록·배포 | [`README.md`](./README.md) |
 | 기계가 소비하는 계약 (모델 타입, CSP 값, 매니페스트 …) | **코드** — DESIGN.md의 「코드가 정본인 것들」 목록 |
 
