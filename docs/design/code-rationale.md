@@ -53,11 +53,16 @@
 - e2e는 웹 서버를 **둘** 띄운다 (dev 5173, `vite preview` 4173). `csp.spec.ts`와
   `install.spec.ts`는 빌드 결과(4173)를 상대로 돈다 — dev 서버에서는 CSP도 매니페스트도
   발효되지 않는다.
-- (환경) Playwright 브라우저가 따로 없으면 `PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome`. 번들된
-  Playwright가 기대하는 브라우저 빌드가 이미지에 있는 것과 **어긋나는 것이 정상**이고, 그때는
-  전 스펙이 launch에서 실패한다 — 실패 메시지가 찾는 경로를 그대로 읽지 말고 이미지에 실제로
-  있는 `chrome`을 이 변수로 넘길 것. GitHub 백엔드 e2e는 케이던스 때문에
-  `test.setTimeout(120_000)` 수준이 필요하다.
+- **(환경) Playwright의 브라우저 핀과 이미지의 브라우저가 어긋나는 것은 정상이다.** 패키지를
+  올리면 핀이 움직이고 이미지는 자기 일정으로 움직인다(실측: `@playwright/test` 1.60.0은
+  `chromium-1223/chrome-linux64/chrome`를 찾는데 이미지에는 `chromium-1194/chrome-linux/chrome`뿐 —
+  빌드 번호도 디렉터리 규칙도 다르다). 어긋나면 **몇 개가 실패하는 게 아니라 71개 전부 launch에서
+  죽는다** — e2e 신호가 0이 되는 실패이고, 에러가 "없는 경로"를 말해줄 뿐 있는 브라우저는
+  말해주지 않아서 제일 덜 유용한 실패다. 그래서 `playwright.config.ts`가 직접 찾는다:
+  `PLAYWRIGHT_CHROMIUM_PATH` → Playwright 자기 빌드가 있으면 물러남 → `PLAYWRIGHT_BROWSERS_PATH`
+  아래 실제로 있는 최신 chromium. 한두 버전 차이는 이 스펙들(평범한 DOM·키보드·CDP)에 무해하다.
+  **`playwright install`로 풀지 말 것** — 이 이미지는 `PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1`이다.
+  GitHub 백엔드 e2e는 케이던스 때문에 `test.setTimeout(120_000)` 수준이 필요하다.
 - **`npm run typecheck`(`tsc --noEmit`)가 놓치는 걸 `npm run build`(`tsc -b`)가 잡는다.**
   테스트 파일의 타입 오류가 그렇다 — 커밋 전에 build를 한 번 돌릴 것.
 - `view.focusId`는 **캐럿이 실제로 간 곳**이다(`requestFocus`가 기록한다). 팔레트의 행 명령과

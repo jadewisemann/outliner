@@ -34,10 +34,11 @@
 - **e2e 스펙에서 사이드바를 열려고 `.topbar .ghost`를 누르면 닫힌다.** 데스크톱 뷰포트
   (>900px)에서는 사이드바가 이미 열려 있다(`useState(() => window.innerWidth > 900)`).
   기존 스펙들이 `.doc-item-active`를 바로 잡는 이유다.
-- **이 이미지의 Playwright 브라우저 빌드가 패키지가 기대하는 것과 다르다.** 번들된 Playwright는
-  `chromium_headless_shell-1223`을 찾는데 이미지에는 1194뿐이라 **전 스펙이 launch에서 실패**한다.
-  `PLAYWRIGHT_CHROMIUM_PATH=/opt/pw-browsers/chromium-1194/chrome-linux/chrome`로 70 → 71개
-  전부 green. AGENTS.md가 말하는 그 변수이고, 이 환경에서는 예외가 아니라 상수다.
+- **Playwright의 브라우저 핀과 이미지의 브라우저가 어긋나 71개 전부 launch에서 죽었다.**
+  처음엔 `PLAYWRIGHT_CHROMIUM_PATH`로 우회했는데, 그건 다음 세션이 같은 30분을 다시 태우는
+  우회였다 — **환경변수를 기억해야 하는 검증은 검증이 아니다.** `playwright.config.ts`가 직접
+  찾게 고쳤다(명시 경로 → 자기 빌드 있으면 물러남 → 있는 것 중 최신). 세 갈래 다 확인했고
+  환경변수 없이 71/71 green. 승격: code-rationale.md 환경 항목, AGENTS.md 검증 절.
 
 **다음 세션이 이어받을 것 (1·3단계 — 사용자 파일 대기)**
 

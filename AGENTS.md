@@ -87,9 +87,14 @@ Git 협업 상세의 SSOT는 [CONTRIBUTING.md](./CONTRIBUTING.md)이고 아래 G
 | `npm run test:e2e` | 실제 브라우저 시나리오 (Playwright) | UI 동작·동기화·CSP·터치를 만졌을 때 |
 
 e2e는 웹 서버를 **둘** 띄운다 — dev(5173)와 `vite preview`(4173). `csp.spec.ts`와
-`install.spec.ts`는 빌드 결과(4173)를 상대로 돈다. 환경에 Playwright 브라우저가 따로 없으면
-`PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome npm run test:e2e`. GitHub 백엔드 스펙은 동기화
-케이던스 때문에 오래 걸린다(`test.setTimeout(120_000)` 수준).
+`install.spec.ts`는 빌드 결과(4173)를 상대로 돈다. GitHub 백엔드 스펙은 동기화 케이던스 때문에
+오래 걸린다(`test.setTimeout(120_000)` 수준).
+
+**브라우저는 `playwright.config.ts`가 스스로 찾는다.** Playwright가 핀으로 박은 빌드가 없으면
+`PLAYWRIGHT_BROWSERS_PATH` 아래에 실제로 있는 chromium을 쓴다 — 컨테이너가 미리 넣어둔
+브라우저와 패키지의 핀은 각자 따로 움직이고, 어긋나면 **몇 개가 실패하는 게 아니라 전 스펙이
+launch에서 죽어 e2e 신호가 0이 된다.** 그래서 못 맞추는 브라우저(시스템 Chrome 등)를 가리킬 때만
+`PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome`가 필요하다.
 
 ## 테스트 최소화 원칙
 
