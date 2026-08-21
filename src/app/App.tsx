@@ -153,6 +153,17 @@ export function App() {
         else storeRef.current.undo();
         return;
       }
+      // Folding the whole zoom is a view action, not a row action, so it lives
+      // here next to the other window-wide keys rather than in the row handler.
+      if (bound("collapseAll") || bound("expandAll")) {
+        event.preventDefault();
+        const collapsed = bound("collapseAll");
+        storeRef.current.edit(
+          (doc) => setCollapsedDeep(doc, storeRef.current.view.zoomId, collapsed),
+          { transient: true }
+        );
+        return;
+      }
       if (bound("sidebar")) {
         event.preventDefault();
         setSidebarOpen((open) => !open);
@@ -319,7 +330,7 @@ export function App() {
       {overlay?.kind === "search" ? (
         <SearchPanel store={store} initialQuery={overlay.query} onClose={() => setOverlay(null)} />
       ) : null}
-      {overlay?.kind === "shortcuts" ? <Shortcuts onClose={() => setOverlay(null)} /> : null}
+      {overlay?.kind === "shortcuts" ? <Shortcuts keymap={keymap} onClose={() => setOverlay(null)} /> : null}
       {overlay?.kind === "history" ? <HistoryPanel store={store} onClose={() => setOverlay(null)} /> : null}
       {overlay?.kind === "settings" ? (
         <Settings appearance={appearance} onChange={setAppearance} onClose={() => setOverlay(null)} />

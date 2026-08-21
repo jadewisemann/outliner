@@ -41,6 +41,10 @@ test("the built app does its work under its own policy", async ({ page }) => {
   await expect(page.locator(".search-hit").first()).toBeVisible();
   await page.keyboard.press("Escape");
 
+  // Persistence is debounced, so the reload has to come after it — the
+  // beforeunload flush races the navigation and loses often enough to be seen
+  // (roughly one run in six). The same wait is in outline.spec.ts's reload.
+  await page.waitForTimeout(600);
   await page.reload();
   await expect(page.getByText("second")).toBeVisible();
   expect(await violations()).toEqual([]);

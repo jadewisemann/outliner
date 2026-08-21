@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent, type RefObject } from "react";
+import { COLOR_ACTIONS, matches, type Action, type Keymap } from "../shared/keymap";
 import type { Store } from "../store";
 import type { Id, Row as RowModel } from "../types";
 import type { RowApi } from "./components/Row";
@@ -6,6 +7,7 @@ import {
   bulkIndent,
   bulkMove,
   bulkOutdent,
+  bulkPatch,
   bulkRemove,
   bulkSetCollapsed,
   rowAfter,
@@ -25,7 +27,8 @@ export function useRowSelection(
   live: LiveRef,
   edit: Store["edit"],
   requestFocus: Store["requestFocus"],
-  containerRef: RefObject<HTMLDivElement>
+  containerRef: RefObject<HTMLDivElement>,
+  keys: RefObject<Keymap>
 ): {
   selection: Id[];
   selected: Set<Id>;
@@ -66,6 +69,27 @@ export function useRowSelection(
       const visible = live.current.rows;
       const zoomId = live.current.zoomId;
       const stop = () => event.preventDefault();
+
+      // Colouring and completing a whole selection at once, which is what the
+      // colour-label keys are for in Dynalist. These read the keymap, so they
+      // go first: the plain-key branches below would otherwise claim a chord
+      // a user had rebound onto them.
+      const bound = (action: Action) => matches(event, keys.current?.[action] ?? "");
+      for (const [action, color] of COLOR_ACTIONS) {
+        if (!bound(action)) continue;
+        stop();
+        edit((current) => bulkPatch(current, chosen, { color }));
+        return;
+      }
+      if (bound("done")) {
+        stop();
+        const now = live.current.doc;
+        // A mixed selection completes rather than half-clears, the way a mixed
+        // selection collapses below.
+        const marking = chosen.some((id) => now.nodes[id] && !now.nodes[id].done);
+        edit((current) => bulkPatch(current, chosen, { done: marking }));
+        return;
+      }
 
       if (event.key === "Escape" || event.key === "Enter") {
         stop();
@@ -124,7 +148,7 @@ export function useRowSelection(
         edit((current) => bulkSetCollapsed(current, chosen, collapsing), { transient: true });
       }
     },
-    [live, edit, enterSelection, requestFocus]
+    [live, edit, enterSelection, requestFocus, keys]
   );
 
   const api = useMemo(

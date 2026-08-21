@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   appendChild,
   bulkIndent,
+  bulkPatch,
   bulkOutdent,
   bulkRemove,
   indent,
@@ -220,6 +221,23 @@ a
   a1`);
     const ids = [find(nested, "a"), find(nested, "a1")];
     expect(shape(bulkIndent(nested, nested.rootId, ids).doc)).toBe("head\n  a\n    a1");
+  });
+
+  it("gives a whole selection one display flag, leaving the shape alone", () => {
+    const ids = [find(doc, "a"), find(doc, "c")];
+    const next = bulkPatch(doc, ids, { color: 3 }).doc;
+    expect(shape(next)).toBe(shape(doc));
+    expect(ids.map((id) => next.nodes[id].color)).toEqual([3, 3]);
+    expect(next.nodes[find(doc, "b")].color).toBe(0);
+  });
+
+  it("returns the very same document when nothing would change", () => {
+    // DESIGN.md 원칙 4: no-op detection and the render skip both hang on
+    // object identity, so a same-value write must not build a new map.
+    const ids = [find(doc, "a"), find(doc, "b")];
+    const coloured = bulkPatch(doc, ids, { color: 2 }).doc;
+    expect(bulkPatch(coloured, ids, { color: 2 }).doc).toBe(coloured);
+    expect(bulkPatch(doc, [], { color: 2 }).doc).toBe(doc);
   });
 
   it("removes every selected row and focuses the survivor above", () => {

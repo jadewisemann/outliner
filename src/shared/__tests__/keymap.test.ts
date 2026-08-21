@@ -1,5 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULT_KEYMAP, conflicts, describe as show, matches, specOf } from "../keymap";
+import {
+  DEFAULT_KEYMAP,
+  DYNALIST_KEYMAP,
+  PRESETS,
+  UNBOUND,
+  conflicts,
+  describe as show,
+  loadKeymap,
+  matches,
+  presetOf,
+  saveKeymap,
+  specOf,
+  type Action,
+  type Keymap,
+  type PresetName
+} from "../keymap";
 
 const event = (patch: Partial<KeyboardEvent>) =>
   ({ key: "", code: "", metaKey: false, ctrlKey: false, shiftKey: false, altKey: false, ...patch }) as KeyboardEvent;
@@ -20,6 +35,19 @@ describe("matches", () => {
     // ⌘⇧. reports its key as ">" on a US layout.
     expect(matches(event({ key: ">", code: "Period", metaKey: true, shiftKey: true }), "Mod+Shift+.")).toBe(true);
     expect(matches(event({ key: ".", code: "Period", metaKey: true }), "Mod+.")).toBe(true);
+  });
+
+  it("goes by physical key for digits too, which the colour labels need", () => {
+    // ⌘⇧1 reports its key as "!" on a US layout, and as anyone's guess elsewhere.
+    expect(matches(event({ key: "!", code: "Digit1", metaKey: true, shiftKey: true }), "Mod+Shift+1")).toBe(true);
+    expect(matches(event({ key: "~", code: "Backquote", metaKey: true, shiftKey: true }), "Mod+Shift+`")).toBe(true);
+    expect(matches(event({ key: "`", code: "Backquote", metaKey: true }), "Mod+`")).toBe(true);
+  });
+
+  it("never fires for an action left unbound", () => {
+    // Otherwise a preset that empties a slot would still swallow a keystroke.
+    expect(matches(event({ key: "]", code: "BracketRight", metaKey: true }), UNBOUND)).toBe(false);
+    expect(matches(event({ key: "" }), UNBOUND)).toBe(false);
   });
 
   it("knows the named keys", () => {
@@ -43,6 +71,7 @@ describe("specOf", () => {
 describe("the default table", () => {
   it("binds every action exactly once", () => {
     const specs = Object.values(DEFAULT_KEYMAP);
+    expect(specs).not.toContain(UNBOUND);
     expect(new Set(specs).size).toBe(specs.length);
   });
 
@@ -54,5 +83,55 @@ describe("the default table", () => {
 
   it("is written for a reader, not for the parser", () => {
     expect(show("Mod+Shift+K")).toMatch(/⇧K$/);
+  });
+});
+
+
+describe("the presets", () => {
+  const names = Object.keys(PRESETS) as PresetName[];
+  const actions = Object.keys(DEFAULT_KEYMAP) as Action[];
+
+  it.each(names)("%s binds every action", (name) => {
+    for (const action of actions) expect(typeof PRESETS[name][action]).toBe("string");
+  });
+
+  it.each(names)("%s gives no two actions the same chord", (name) => {
+    // Two actions on one chord means the second never fires, and the branch
+    // order that decides which is silent is not something a user can see.
+    const bound = actions.map((action) => PRESETS[name][action]).filter((spec) => spec !== UNBOUND);
+    expect(new Set(bound).size).toBe(bound.length);
+  });
+
+  it("puts Dynalist's zoom on ⌘] and ⌘[, and clears indent to make room", () => {
+    // The collision this whole table exists for: Dynalist spends the brackets
+    // on zoom, so indenting cannot also claim them. Tab still indents.
+    expect(DYNALIST_KEYMAP.zoomIn).toBe("Mod+]");
+    expect(DYNALIST_KEYMAP.zoomOut).toBe("Mod+[");
+    expect(DYNALIST_KEYMAP.indent).toBe(UNBOUND);
+    expect(DYNALIST_KEYMAP.outdent).toBe(UNBOUND);
+  });
+
+  it("names the table a keymap came from, and stops naming one once edited", () => {
+    expect(presetOf(DEFAULT_KEYMAP)).toBe("editor");
+    expect(presetOf(DYNALIST_KEYMAP)).toBe("dynalist");
+    expect(presetOf({ ...DYNALIST_KEYMAP, bold: "Mod+Alt+B" })).toBeNull();
+  });
+});
+
+describe("stored keymaps", () => {
+  it("keeps an unbound action unbound across a reload", () => {
+    // "" used to read as "nothing stored" and quietly came back bound, which
+    // would undo half of the Dynalist preset on the next visit.
+    saveKeymap({ ...DYNALIST_KEYMAP });
+    expect(loadKeymap().indent).toBe(UNBOUND);
+    expect(presetOf(loadKeymap())).toBe("dynalist");
+  });
+
+  it("falls back to the default for an action saved before it existed", () => {
+    const old: Partial<Keymap> = { bold: "Mod+Alt+B" };
+    localStorage.setItem("outliner:keys", JSON.stringify(old));
+    const loaded = loadKeymap();
+    expect(loaded.bold).toBe("Mod+Alt+B");
+    expect(loaded.color1).toBe(DEFAULT_KEYMAP.color1);
   });
 });
