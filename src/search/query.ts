@@ -29,7 +29,7 @@ const DURATION_MS: Record<string, number> = {
 
 /**
  * Every term must hold (AND). A term is a word, a `"quoted phrase"`, a
- * `#tag`, or an `operator:value`; a leading `-` negates any of them.
+ * `#tag` or `@tag`, or an `operator:value`; a leading `-` negates any of them.
  *
  * Returns null for a query that asks for nothing, so callers can tell "no
  * filter" from "a filter that matches nothing".
@@ -52,7 +52,8 @@ function toTerm(token: string, now: number): Term {
 }
 
 function toTest(body: string, now: number): Predicate {
-  if (body.startsWith("#")) {
+  // Both sigils, matching what `extractTags` reads out of a row.
+  if (body.startsWith("#") || body.startsWith("@")) {
     const wanted = body.toLowerCase();
     // `#work` also finds `#work/urgent`: a tag hierarchy is only useful if the
     // parent finds its children.

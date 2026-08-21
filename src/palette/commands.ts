@@ -15,6 +15,8 @@ export type AppActions = {
   openPalette(query: string): void;
   exportAs(format: "markdown" | "opml" | "text" | "backup"): void;
   importFile(): void;
+  /** A whole directory, folders and all — a separate picker, not a flag on one. */
+  importFolder(): void;
   toggleTheme(): void;
   toggleSidebar(): void;
   openSync(): void;
@@ -52,6 +54,12 @@ export function buildCommands(store: Store, actions: AppActions): Command[] {
     /* structure */
     { id: "doc.new", label: "새 문서", run: () => store.docs.create() },
     { id: "doc.folder", label: "새 폴더", run: () => store.docs.createFolder() },
+    {
+      id: "doc.inbox",
+      label: doc.inbox ? "이 문서를 인박스에서 해제" : "이 문서를 인박스로",
+      hint: "공유 캡처가 도착하는 곳",
+      run: () => store.docs.setInbox(doc.inbox ? null : doc.id)
+    },
     {
       id: "doc.bookmark",
       label: doc.bookmarked ? "이 문서 즐겨찾기 해제" : "이 문서 즐겨찾기",
@@ -123,6 +131,7 @@ export function buildCommands(store: Store, actions: AppActions): Command[] {
     { id: "file.txt", label: "텍스트 내보내기", run: () => actions.exportAs("text") },
     { id: "file.backup", label: "전체 백업 (JSON)", run: () => actions.exportAs("backup") },
     { id: "file.import", label: "파일 가져오기", run: actions.importFile },
+    { id: "file.importFolder", label: "폴더 가져오기 — 폴더 구조까지", run: actions.importFolder },
     { id: "app.sync", label: "동기화 설정", run: actions.openSync },
     { id: "app.history", label: "문서 히스토리", hint: doc.title, run: actions.openHistory },
     { id: "app.shortcuts", label: "단축키", hint: "⌘/", run: actions.openShortcuts },

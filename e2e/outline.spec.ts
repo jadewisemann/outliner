@@ -81,6 +81,21 @@ test("renders inline markup and finds rows by tag", async ({ page }) => {
   await expect(page.locator("textarea.row-input")).toHaveValue("**bold** item #urgent");
 });
 
+test("reads @ as a tag as well, and leaves an address alone", async ({ page }) => {
+  await page.keyboard.type("ping @waiting");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("mail jade@example.com");
+  // Leave the row so both lines are rendered rather than shown as source.
+  await page.keyboard.press("Escape");
+
+  // Painted as a tag on one line, plain text on the other.
+  await expect(page.locator(".inline-tag")).toHaveText("@waiting");
+
+  await page.keyboard.press("Control+Shift+f");
+  await page.locator(".search-input").fill("@waiting");
+  await expect(page.locator(".search-hit")).toHaveCount(1);
+});
+
 test("selects rows with Escape and moves them together", async ({ page }) => {
   await page.keyboard.type("head");
   await page.keyboard.press("Enter");

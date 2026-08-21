@@ -138,12 +138,24 @@ export function autoFormat(text: string, caret: number): AutoFormat | null {
 /* completion                                                          */
 /* ------------------------------------------------------------------ */
 
-export type Trigger = { kind: "doc" | "tag"; query: string; from: number };
+/** The two ways a tag is written; a completion has to know which one to insert. */
+export type Sigil = "#" | "@";
+
+export type Trigger =
+  | { kind: "doc"; query: string; from: number }
+  | { kind: "tag"; sigil: Sigil; query: string; from: number };
 
 /**
  * What is being completed just left of the caret, if anything: `[[` opens the
- * document picker, `#` the tag picker. A space ends either one — a tag cannot
- * contain one, and a title with a space is still reachable by its first word.
+ * document picker, `#` or `@` the tag picker. A space ends either one — a tag
+ * cannot contain one, and a title with a space is still reachable by its first
+ * word.
+ *
+ * The sigil has to be at the start of a word, which is what keeps `@` from
+ * opening the picker in the middle of an email address. That is a stricter
+ * test than the one that paints a tag (whitespace or `(` in front, not merely
+ * "not a word character"), and deliberately so: offering a list is a guess
+ * about intent, while painting is a reading of text already written.
  */
 export function completionAt(text: string, caret: number): Trigger | null {
   const before = text.slice(0, caret);
@@ -154,12 +166,14 @@ export function completionAt(text: string, caret: number): Trigger | null {
     if (!query.includes("]") && !query.includes("\n")) return { kind: "doc", query, from: brackets };
   }
 
-  const hash = before.lastIndexOf("#");
-  if (hash !== -1) {
-    const query = before.slice(hash + 1);
-    const preceding = hash === 0 ? "" : before[hash - 1];
+  // Whichever sigil is nearer the caret owns it; the other one is further back
+  // in text already typed past.
+  const at = Math.max(before.lastIndexOf("#"), before.lastIndexOf("@"));
+  if (at !== -1) {
+    const query = before.slice(at + 1);
+    const preceding = at === 0 ? "" : before[at - 1];
     if (/^[\p{L}\p{N}_/-]*$/u.test(query) && (preceding === "" || /[\s(]/.test(preceding))) {
-      return { kind: "tag", query, from: hash };
+      return { kind: "tag", sigil: before[at] as Sigil, query, from: at };
     }
   }
   return null;

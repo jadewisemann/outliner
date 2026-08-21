@@ -3,13 +3,23 @@ import { createHistory } from "./history";
 import { rememberDoc } from "./palette/palette";
 import { useSync } from "./sync/useSync";
 import { keyBetween } from "./shared/order";
-import { loadWorkspace, saveWorkspace } from "./storage/persist";
+import { loadWorkspace, requestPersistence, saveWorkspace, type StorageGrade } from "./storage/persist";
 import { announceToOtherTabs } from "./sync/api/remote";
-import { ancestors, cutSubtree, ensureEditable, graftSubtree, visibleRows, type Edit } from "./outline/tree";
+import {
+  ancestors,
+  appendChild,
+  cutSubtree,
+  ensureEditable,
+  graftSubtree,
+  patchNode,
+  visibleRows,
+  type Edit
+} from "./outline/tree";
 import { parseQuery } from "./search/query";
 import {
   docChildren,
   docList,
+  inboxDoc,
   makeDoc,
   makeFolder,
   makeSearch,
@@ -40,6 +50,7 @@ export function useStore() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [focus, setFocus] = useState<FocusRequest | null>(null);
   const [saveFailed, setSaveFailed] = useState(false);
+  const [storageGrade, setStorageGrade] = useState<StorageGrade>("unknown");
 
   // Mirrors `workspace` so several edits dispatched in one tick compose
   // instead of overwriting each other.
@@ -59,6 +70,12 @@ export function useStore() {
       cancelled = true;
     };
   }, []);
+
+  // Asked on every start rather than once: the browser's answer changes as the
+  // user commits to the app (installs it, bookmarks it, keeps coming back), so
+  // a no from the first visit is not the standing answer.
+  const askForDurableStorage = useCallback(() => void requestPersistence().then(setStorageGrade), []);
+  useEffect(askForDurableStorage, [askForDurableStorage]);
 
   // Debounced persistence, which doubles as the signal to other tabs. One
   // timer, driven by actual changes rather than a polling flag.
@@ -211,6 +228,64 @@ export function useStore() {
         const folder = makeFolder(title, { sort: keyBetween(current ? lastSort(current) : null, null), parent });
         editWorkspace((now) => ({ ...now, docs: { ...now.docs, [folder.id]: folder } }));
         return folder;
+      },
+      /**
+       * Marks where a quick capture lands, or clears the mark.
+       *
+       * Only one document is the inbox, so setting it unmarks the others in the
+       * same edit — otherwise two marks would sit here waiting for `inboxDoc`
+       * to break a tie that this device could have avoided making. Folders and
+       * saved searches cannot hold an outline, so they cannot hold a capture.
+       */
+      setInbox(id: Id | null) {
+        editWorkspace((current) => {
+          if (id !== null && current.docs[id]?.kind !== "doc") return current;
+          const now = stamp();
+          const docs = { ...current.docs };
+          let changed = false;
+          for (const doc of Object.values(current.docs)) {
+            const wanted = doc.id === id;
+            if (doc.inbox === wanted) continue;
+            docs[doc.id] = { ...doc, inbox: wanted, titleEdited: now };
+            changed = true;
+          }
+          return changed ? { ...current, docs } : current;
+        });
+      },
+      /**
+       * Files shared text as a row in the inbox, and opens it there.
+       *
+       * Opening it is the point as much as the filing is: a capture the user
+       * cannot see landing is a capture they have to go looking for.
+       *
+       * One edit, creating the document when nothing is marked — a workspace
+       * carried over from before this field existed has no mark, and making the
+       * inbox visibly, once, beats appending to whatever happened to be on
+       * screen. `appendChild` writes into the empty first row of a document it
+       * just made rather than adding a second one.
+       */
+      capture(text: string) {
+        const current = live.current;
+        if (!current) return;
+        const target =
+          inboxDoc(current) ?? makeDoc("인박스", { sort: keyBetween(lastSort(current), null), inbox: true });
+
+        editWorkspace((now) => {
+          const doc = now.docs[target.id] ?? target;
+          const added = appendChild(doc, doc.rootId);
+          if (!added.focusId) return now;
+          const next = patchNode(added.doc, added.focusId, { text });
+          return {
+            ...now,
+            docs: { ...now.docs, [next.id]: next },
+            activeDocId: next.id,
+            views: now.views[next.id] ? now.views : { ...now.views, [next.id]: makeView(next) }
+          };
+        });
+
+        const landed = live.current?.docs[target.id];
+        const row = landed?.nodes[landed.rootId].children.at(-1);
+        if (row) requestFocus(row);
       },
       toggleBookmark(id: Id) {
         editWorkspace((current) =>
@@ -449,6 +524,11 @@ export function useStore() {
       /** Likewise for somewhere to put attachment bytes. */
       files: sync.files
     },
-    saveFailed
+    saveFailed,
+    /**
+     * What the browser promises about local storage, and the way to ask again
+     * — Firefox answers with a prompt, which needs a button behind it.
+     */
+    storage: { grade: storageGrade, request: askForDurableStorage }
   };
 }

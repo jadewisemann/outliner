@@ -30,7 +30,7 @@ describe("migrate", () => {
     const workspace = migrate(structuredClone(V3));
     const doc = workspace.docs.doc;
 
-    expect(workspace.version).toBe(6);
+    expect(workspace.version).toBe(7);
     expect(doc.title).toBe("Notes");
     expect(visibleRows(doc, doc.rootId).map((row) => `${"  ".repeat(row.depth)}${row.node.text}`)).toEqual([
       "alpha",
@@ -66,13 +66,24 @@ describe("migrate", () => {
     const lifted = readWorkspace(migrate(structuredClone(v4)));
     const doc = Object.values(lifted!.docs)[0];
 
-    expect(lifted!.version).toBe(6);
+    expect(lifted!.version).toBe(7);
     expect(doc.kind).toBe("doc");
     expect(doc.parent).toBeNull();
     expect(Object.values(doc.nodes).every((node) => node.color === 0 && !node.checklist)).toBe(true);
     // Nothing else knows when these rows appeared, so their last edit is the
     // closest honest answer — not the moment of the upgrade.
     expect(Object.values(doc.nodes).every((node) => node.created.at === node.edited.at)).toBe(true);
+  });
+
+  it("leaves a lifted workspace with no inbox marked", () => {
+    // The old workspace never said where a capture should go, and picking a
+    // document for the user would be a guess. The first capture settles it.
+    const v6 = structuredClone({ ...makeWorkspace(), version: 6 });
+    for (const doc of Object.values(v6.docs) as { inbox: boolean }[]) doc.inbox = false;
+
+    const lifted = readWorkspace(migrate(v6));
+    expect(lifted!.version).toBe(7);
+    expect(Object.values(lifted!.docs).some((doc) => doc.inbox)).toBe(false);
   });
 
   it("falls back to a fresh workspace only for input it cannot read", () => {

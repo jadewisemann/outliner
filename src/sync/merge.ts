@@ -102,6 +102,7 @@ function mergeDoc(mine: Doc, theirs: Doc): Doc {
     kind: title.kind,
     query: title.query,
     bookmarked: title.bookmarked,
+    inbox: title.inbox,
     deleted: title.deleted,
     titleEdited: title.titleEdited,
     sort: position.sort,
@@ -211,6 +212,7 @@ function same(mine: Doc, merged: Doc): boolean {
     mine.kind !== merged.kind ||
     mine.query !== merged.query ||
     mine.bookmarked !== merged.bookmarked ||
+    mine.inbox !== merged.inbox ||
     mine.deleted !== merged.deleted ||
     mine.titleEdited !== merged.titleEdited ||
     mine.moved !== merged.moved ||

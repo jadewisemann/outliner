@@ -168,8 +168,13 @@ export function Sidebar({ store, onTagClick, onSearch }: Props) {
                       }
                       onDoubleClick={() => setRenaming(id)}
                     >
-                      <span className="doc-icon">
-                        {folder ? (open.has(id) ? "▾" : "▸") : doc.kind === "search" ? "⌕" : "·"}
+                      {/*
+                        The inbox gets its own mark, because "where does a
+                        share land" is a question the sidebar can answer at a
+                        glance and the palette cannot.
+                      */}
+                      <span className="doc-icon" title={doc.inbox ? "인박스 — 공유 캡처가 여기로" : undefined}>
+                        {folder ? (open.has(id) ? "▾" : "▸") : doc.kind === "search" ? "⌕" : doc.inbox ? "↓" : "·"}
                       </span>
                       {doc.title}
                     </button>

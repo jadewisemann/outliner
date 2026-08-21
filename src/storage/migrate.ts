@@ -13,14 +13,21 @@ import { makeWorkspace, stamp, type Doc, type Id, type Node, type Workspace } fr
  * and every one of them has a default that `validate.ts` already supplies, so
  * the upgrade is a version bump. Storage always passes through validation on
  * the way in, which is what makes that safe.
+ *
+ * Version 7 adds `Doc.inbox` the same way. Nothing is marked after an upgrade,
+ * which is the honest answer: the old workspace never said where a capture
+ * should go, and guessing from a title would be picking a document for the
+ * user. The first capture settles it instead.
  */
 export function migrate(raw: unknown): Workspace {
   if (!isRecord(raw)) return makeWorkspace();
-  if (raw.version === 6) return raw as unknown as Workspace;
-  // 4 → 5 → 6 are additive only, and `validate.ts` already supplies a default
-  // for every field they added, so each step is a version bump. Storage always
-  // passes through validation on the way in, which is what makes that safe.
-  if (raw.version === 4 || raw.version === 5) return { ...(raw as unknown as Workspace), version: 6 };
+  if (raw.version === 7) return raw as unknown as Workspace;
+  // 4 → 5 → 6 → 7 are additive only, and `validate.ts` already supplies a
+  // default for every field they added, so each step is a version bump. Storage
+  // always passes through validation on the way in, which is what makes that safe.
+  if (raw.version === 4 || raw.version === 5 || raw.version === 6) {
+    return { ...(raw as unknown as Workspace), version: 7 };
+  }
   if (raw.version === 3) return fromV3(raw);
   return makeWorkspace();
 }
@@ -41,7 +48,7 @@ function fromV3(raw: Record<string, unknown>): Workspace {
   if (Object.keys(docs).length === 0) return makeWorkspace();
   const activeDocId = docs[raw.activeDocId as Id] ? (raw.activeDocId as Id) : Object.keys(docs)[0];
   return {
-    version: 6,
+    version: 7,
     docs,
     graves: {},
     activeDocId,
@@ -84,6 +91,7 @@ function lift(old: LegacyDoc, sort: string, now: ReturnType<typeof stamp>): Doc 
     kind: "doc",
     query: "",
     bookmarked: false,
+    inbox: false,
     deleted: null,
     titleEdited: now,
     moved: now

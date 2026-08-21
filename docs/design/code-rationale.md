@@ -53,8 +53,11 @@
 - e2e는 웹 서버를 **둘** 띄운다 (dev 5173, `vite preview` 4173). `csp.spec.ts`와
   `install.spec.ts`는 빌드 결과(4173)를 상대로 돈다 — dev 서버에서는 CSP도 매니페스트도
   발효되지 않는다.
-- (환경) Playwright 브라우저가 따로 없으면 `PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome`.
-  GitHub 백엔드 e2e는 케이던스 때문에 `test.setTimeout(120_000)` 수준이 필요하다.
+- (환경) Playwright 브라우저가 따로 없으면 `PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome`. 번들된
+  Playwright가 기대하는 브라우저 빌드가 이미지에 있는 것과 **어긋나는 것이 정상**이고, 그때는
+  전 스펙이 launch에서 실패한다 — 실패 메시지가 찾는 경로를 그대로 읽지 말고 이미지에 실제로
+  있는 `chrome`을 이 변수로 넘길 것. GitHub 백엔드 e2e는 케이던스 때문에
+  `test.setTimeout(120_000)` 수준이 필요하다.
 - **`npm run typecheck`(`tsc --noEmit`)가 놓치는 걸 `npm run build`(`tsc -b`)가 잡는다.**
   테스트 파일의 타입 오류가 그렇다 — 커밋 전에 build를 한 번 돌릴 것.
 - `view.focusId`는 **캐럿이 실제로 간 곳**이다(`requestFocus`가 기록한다). 팔레트의 행 명령과
@@ -64,6 +67,28 @@
 - `inline.tsx`에서 컴포넌트를 `Math`로 이름 짓지 말 것 — 전역 `Math`를 가린다.
 - 문서 완전 삭제의 묘비는 **지금 시각으로** 찍는다 — `deleted` 스탬프(한 달 전일 수 있다)를
   그대로 쓰면 TTL이 이미 지나 바로 잊혀지고, 파일을 가진 기기가 문서를 되살린다.
+- `inline.tsx`의 태그 규칙은 `TAG_SOURCE` **하나**다. `PATTERN`(렌더)과 `TAG_PATTERN`(추출)이
+  각자 복사본을 들고 있던 시절이 있었고, `@`를 넣으면서 그 복제가 두 배로 위험해졌다 — 칠해지는
+  것과 검색되는 것이 갈라진다. 시길을 늘릴 때 고치는 곳은 한 군데여야 한다.
+- **`extractTags`는 토큰 우선순위를 모른다.** `renderInline`은 URL을 먼저 먹으므로
+  `https://x.com/@user`가 링크 하나지만, 추출은 같은 줄에서 `@user`를 태그로 낸다. `#anchor`도
+  예전부터 그랬다. 고치려면 추출을 `PATTERN` 전체로 돌려야 하고 그러면 `**#work**` 안의 태그가
+  검색에서 사라진다 — 그 대가를 같이 결정하지 않은 채 "정리"하지 말 것.
+- **폴더 피커는 `accept`를 무시한다.** `webkitdirectory` 입력은 찾은 파일을 전부 넘기고,
+  `detectFormat`은 모르는 확장자를 `"text"`로 떨어뜨린다 — 걸러내지 않으면 `.DS_Store`나 이미지가
+  바이너리 쓰레기 문서가 된다. 걸러내는 목록은 `IMPORT_EXTENSIONS`이고, 파일 입력의 `accept`도
+  같은 것을 쓴다.
+- **`webkitdirectory`는 React prop이 아니다.** 그리고 파일 피커를 폴더 피커로 **바꿔버리므로**
+  한 입력이 둘을 겸할 수 없다 — 그래서 숨은 입력이 둘이다. 속성은 ref 콜백에서 붙인다.
+- **`navigator.storage.persist()`는 켤 때마다 부른다.** 한 번 묻고 "아니오"를 기억하면 안 된다 —
+  Chrome은 설치·북마크·방문 빈도로 판정하므로 첫 방문의 거절이 확정 답이 아니다. `persisted()`가
+  이미 true면 `persist()`를 부르지 않는다(Firefox에서 불필요한 프롬프트가 뜬다). API가 없는
+  것과 거절당한 것은 `"unknown"`/`"best-effort"`로 **구분한다** — 모르는 것을 나쁜 소식으로
+  보고하면 경고가 거짓말이 된다.
+- **`live.current`는 `applyWorkspace`가 동기적으로 갱신한다.** 그래서 한 tick 안에서
+  `docs.createFolder`를 연달아 불러도 `keyBetween(lastSort(...))`가 서로 다른 키를 낸다 —
+  임포트가 폴더를 줄줄이 만드는 것이 이것에 기대고 있다. React state만 읽는 형태로 바꾸면
+  같은 정렬 키가 여러 개 생긴다.
 
 ## 실패한 대안
 
