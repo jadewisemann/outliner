@@ -75,6 +75,21 @@ export type Doc = {
   query: string;
   bookmarked: boolean;
   /**
+   * Where a quick capture lands.
+   *
+   * A share from a phone has to go somewhere the user can predict, and "the
+   * document that happened to be open" is not that. It is a field on the
+   * document rather than a workspace setting because it has to travel: a
+   * capture made on the phone is looked for on the desktop, and only what is
+   * inside `docs` crosses between devices (`SyncPayload`). Riding the existing
+   * `titleEdited` stamp means no new merge rule either — the same trade
+   * `bookmarked` already makes.
+   *
+   * Two devices can each mark a different document while apart, so this is not
+   * an invariant of one; `inboxDoc` decides which one wins on the way out.
+   */
+  inbox: boolean;
+  /**
    * When this document was put in the trash, or null.
    *
    * A soft delete is what makes restoring possible at all: gravestones carry
@@ -82,7 +97,7 @@ export type Doc = {
    * construction. The file stays on the remote until the trash is emptied.
    */
   deleted: Stamp | null;
-  /** Covers `title`, `kind`, `query`, `bookmarked` and `deleted`. */
+  /** Covers `title`, `kind`, `query`, `bookmarked`, `inbox` and `deleted`. */
   titleEdited: Stamp;
   /** Covers `sort` and `parent`. */
   moved: Stamp;
@@ -100,7 +115,7 @@ export type DocView = {
 };
 
 export type Workspace = {
-  version: 6;
+  version: 7;
   docs: Record<Id, Doc>;
   graves: Record<Id, Stamp>;
   activeDocId: Id;
@@ -170,6 +185,7 @@ export function makeDoc(title = "Untitled", patch: Partial<Doc> = {}): Doc {
     kind: patch.kind ?? "doc",
     query: patch.query ?? "",
     bookmarked: patch.bookmarked ?? false,
+    inbox: patch.inbox ?? false,
     deleted: patch.deleted ?? null,
     titleEdited: now,
     moved: now
@@ -198,9 +214,11 @@ export function makeView(doc: Doc, patch: Partial<DocView> = {}): DocView {
 }
 
 export function makeWorkspace(): Workspace {
-  const doc = makeDoc("Inbox");
+  // The starter document is the inbox from the start, so a first share has
+  // somewhere to land without conjuring a document nobody asked for.
+  const doc = makeDoc("Inbox", { inbox: true });
   return {
-    version: 6,
+    version: 7,
     docs: { [doc.id]: doc },
     graves: {},
     activeDocId: doc.id,
@@ -239,6 +257,36 @@ export function trashed(workspace: Workspace): Doc[] {
 /** Documents that can hold an outline — not folders, saved searches or trash. */
 export function realDocs(workspace: Workspace): Doc[] {
   return docList(workspace).filter((doc) => doc.kind === "doc" && doc.deleted === null);
+}
+
+/**
+ * Where a quick capture goes, or null when nothing is marked.
+ *
+ * More than one document can carry the mark — two devices apart can each set
+ * their own, and the merge has no reason to prefer either — so the newest mark
+ * wins, with the id breaking an exact tie so that every device picks the same
+ * one. Folders, saved searches and trashed documents are not candidates: a
+ * capture must land somewhere it can be read.
+ */
+export function inboxDoc(workspace: Workspace): Doc | null {
+  return (
+    realDocs(workspace)
+      .filter((doc) => doc.inbox)
+      .sort((a, b) => b.titleEdited.at - a.titleEdited.at || a.id.localeCompare(b.id))[0] ?? null
+  );
+}
+
+/**
+ * Whether anything has actually been written here yet.
+ *
+ * A fresh workspace is one document holding one empty row, which is not
+ * something a user can lose — so warnings about durability wait for this to be
+ * true rather than greeting a first visit.
+ */
+export function hasContent(workspace: Workspace): boolean {
+  return realDocs(workspace).some((doc) =>
+    Object.values(doc.nodes).some((node) => node.text.trim() !== "" || node.note.trim() !== "")
+  );
 }
 
 /**

@@ -5,16 +5,16 @@ import type { RowApi } from "./components/Row";
 import { applyCompletion, completionAt, fuzzy, type Selection, type Trigger } from "./markdown";
 import type { LiveRef } from "./useLive";
 
-/** One offer from `[[` or `#`: what it reads as, and what it writes. */
+/** One offer from `[[`, `#` or `@`: what it reads as, and what it writes. */
 export type Choice = { label: string; insert: string; hint?: string };
 
-/** What `[[` or `#` is offering right now, and where it will be inserted. */
+/** What `[[`, `#` or `@` is offering right now, and where it will be inserted. */
 export type Completion = { rowId: Id; trigger: Trigger; items: Choice[]; index: number };
 
 const COMPLETION_LIMIT = 8;
 
 /**
- * The `[[`/`#` completion list: what is on offer, which entry is lit, and the
+ * The `[[`/`#`/`@` completion list: what is on offer, which entry is lit, and the
  * keys that drive it while it is open. `onKeyDown` says whether it ate the
  * key, so the caller's other bindings stay unreachable until the list closes.
  */
@@ -43,7 +43,12 @@ export function useCompletion(
       const pool: Choice[] = [];
 
       if (trigger.kind === "tag") {
-        for (const entry of allTags(workspace)) pool.push({ label: entry.tag, insert: entry.tag });
+        // Only tags written with the sigil that was typed: having asked for
+        // `@`, being handed a `#` tag would insert a different tag than the
+        // one the list appeared to offer.
+        for (const entry of allTags(workspace)) {
+          if (entry.tag.startsWith(trigger.sigil)) pool.push({ label: entry.tag, insert: entry.tag });
+        }
       } else {
         for (const entry of docList(workspace)) {
           if (entry.kind === "doc") pool.push({ label: entry.title, insert: `[[${entry.title}]]`, hint: "문서" });
@@ -57,7 +62,7 @@ export function useCompletion(
         }
       }
 
-      const term = trigger.kind === "tag" ? `#${trigger.query}` : trigger.query;
+      const term = trigger.kind === "tag" ? `${trigger.sigil}${trigger.query}` : trigger.query;
       return pool
         .map((choice) => ({ choice, match: fuzzy(choice.label, term) }))
         .filter((entry) => entry.match !== null)

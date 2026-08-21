@@ -65,9 +65,14 @@ test("declares a share target, so a phone can send a page straight into the outl
   expect(manifest.share_target?.method).toBe("GET");
 });
 
-test("captures a shared page as a row, once", async ({ page }) => {
+test("captures a shared page as a row in the inbox, once", async ({ page }) => {
   await page.goto(`${BUILT}?title=A+post&url=https%3A%2F%2Fx.dev%2Fa`);
   await expect(page.getByText("A post — https://x.dev/a")).toBeVisible();
+
+  // Landing in the inbox is the point: a capture has to go somewhere the user
+  // can predict, not into whichever document happened to be open. The sidebar
+  // marks which document that is.
+  await expect(page.locator(".doc-item-active .doc-icon")).toHaveAttribute("title", /인박스/);
 
   // The share is out of the address bar, so a reload does not add it again.
   expect(new URL(page.url()).search).toBe("");

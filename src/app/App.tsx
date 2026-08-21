@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
-import { ancestors, appendChild, patchNode, reveal, setCollapsedDeep } from "../outline/tree";
+import { ancestors, reveal, setCollapsedDeep } from "../outline/tree";
 import { findNode } from "../search/links";
-import { docList } from "../types";
+import { docList, hasContent } from "../types";
 import { Outline } from "../outline/components/Outline";
 import { Palette } from "../palette/components/Palette";
 import { buildCommands } from "../palette/commands";
@@ -11,6 +11,7 @@ import { completeGithubLogin, fetchGithubLogin } from "../sync/api/githubAuth";
 import { HistoryPanel } from "../sync/components/HistoryPanel";
 import { SyncBadge, SyncSettings, type OauthPrefill } from "../sync/components/SyncSettings";
 import { useTransfer } from "../transfer/useTransfer";
+import { IMPORT_ACCEPT } from "../transfer/formats";
 import { applyAppearance, forgetShare, loadAppearance, saveAppearance, sharedText, type Appearance } from "./appearance";
 import { Backlinks } from "./Backlinks";
 import { Icon } from "./Icon";
@@ -43,6 +44,7 @@ export function App() {
   const [appearance, setAppearance] = useState<Appearance>(loadAppearance);
   const [keymap, setKeymap] = useState<Keymap>(loadKeymap);
   const fileInput = useRef<HTMLInputElement>(null);
+  const folderInput = useRef<HTMLInputElement | null>(null);
   const filterInput = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLElement>(null);
 
@@ -75,6 +77,7 @@ export function App() {
             openPalette,
             exportAs: transfer.exportAs,
             importFile: () => fileInput.current?.click(),
+            importFolder: () => folderInput.current?.click(),
             toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
             toggleSidebar: () => setSidebarOpen((open) => !open),
             openSync: () => setOverlay({ kind: "sync" }),
@@ -87,8 +90,10 @@ export function App() {
     [store, transfer.exportAs, openPalette]
   );
 
-  // Launched from a phone's share sheet: capture what was shared as a row at
-  // the end of the open document, once the workspace is actually loaded.
+  // Launched from a phone's share sheet: file what was shared into the inbox,
+  // once the workspace is actually loaded. Where it lands is the store's
+  // decision, not this effect's — a capture has to go somewhere the user can
+  // predict, and "the document that happened to be open" was not that.
   const captured = useRef(false);
   useEffect(() => {
     if (!store.ready || captured.current) return;
@@ -96,11 +101,7 @@ export function App() {
     if (!shared) return;
     captured.current = true;
     forgetShare();
-    storeRef.current.edit((doc) => appendChild(doc, doc.rootId));
-    storeRef.current.edit((doc) => {
-      const last = doc.nodes[doc.rootId].children.at(-1);
-      return last ? patchNode(doc, last, { text: shared }) : doc;
-    });
+    storeRef.current.docs.capture(shared);
   }, [store.ready]);
 
   // Returning from GitHub's consent screen: finish the exchange and land the
@@ -189,6 +190,19 @@ export function App() {
             이 기기에 저장하지 못하고 있습니다. 저장 공간이 가득 찼을 수 있습니다 — 백업을 내려받아 두세요.
           </p>
         ) : null}
+        {/*
+          Local-first means the only copy is here, and `best-effort` storage
+          means the browser may delete it — under storage pressure, or after
+          iOS Safari counts enough unopened days. Saying nothing would be
+          claiming a guarantee the browser never gave. The three conditions are
+          the loss itself: refused, no second copy, and something to lose.
+        */}
+        {store.storage.grade === "best-effort" && store.sync.status === "off" && hasContent(store.workspace) ? (
+          <p className="save-warning" role="alert">
+            이 브라우저가 저장을 보장하지 않습니다 — 저장 공간이 부족해지면 노트가 지워질 수 있습니다. 기기 간
+            동기화를 켜거나 백업을 내려받아 두세요.
+          </p>
+        ) : null}
         <header className="topbar">
           <button type="button" className="ghost" title="사이드바 (⌘\)" onClick={() => setSidebarOpen((open) => !open)}>
             <Icon name="menu" />
@@ -243,6 +257,9 @@ export function App() {
                 <hr />
                 <button type="button" onClick={() => fileInput.current?.click()}>
                   파일 가져오기
+                </button>
+                <button type="button" onClick={() => folderInput.current?.click()}>
+                  폴더 가져오기
                 </button>
                 <hr />
                 <button type="button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
@@ -308,7 +325,28 @@ export function App() {
       <input
         ref={fileInput}
         type="file"
-        accept=".md,.markdown,.txt,.opml,.xml,.json"
+        accept={IMPORT_ACCEPT}
+        multiple
+        hidden
+        onChange={(event) => {
+          const files = [...(event.target.files ?? [])];
+          if (files.length > 0) void transfer.importFiles(files);
+          event.target.value = "";
+        }}
+      />
+
+      {/*
+        A second input rather than a flag on the first: `webkitdirectory` turns
+        a file picker into a directory picker outright, so one input cannot
+        offer both. It has no React prop and no `accept` the browser honours —
+        `importFiles` does that filtering itself.
+      */}
+      <input
+        ref={(element) => {
+          folderInput.current = element;
+          element?.setAttribute("webkitdirectory", "");
+        }}
+        type="file"
         multiple
         hidden
         onChange={(event) => {

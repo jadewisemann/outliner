@@ -5,12 +5,44 @@ import { TeX } from "./components/TeX";
 import { Attachment } from "./components/Attachment";
 
 /**
- * Inline markup understood in a row: **bold**, *italic*, `code`, ~~strike~~,
- * ==highlight==, ![image](url), [label](url), bare URLs, #tag,
- * [[document link]], ((item link)) and $$math$$.
+ * A tag is a sigil plus tag characters, and the sigil may be `#` or `@` — both
+ * of them, because Dynalist writes tags both ways and a note moved here must
+ * not quietly lose half of them.
+ *
+ * What is in front of the sigil is the whole rule. `@` is also how every email
+ * address is written, and the only thing separating `#urgent`/`@urgent` from
+ * `jade@example.com` is that an address always has a local part in front of
+ * the `@` — so a sigil preceded by a word character is not a sigil. `#` keeps
+ * its own lookbehind rather than sharing one, so that `##` stays a doubled
+ * sigil and not a tag.
+ *
+ * One source, used for rendering and for extraction both, so the spelling of a
+ * tag cannot drift between what gets painted and what gets searched.
+ *
+ * What the two do not share is precedence. `renderInline` tries the other
+ * tokens first, so `https://x.com/@user` paints as one link; `extractTags`
+ * runs this rule alone, so the same line still reports `@user` as a tag. That
+ * asymmetry is older than the `@` sigil (a `#anchor` in a URL has always
+ * counted) and is left alone here rather than quietly changed.
  */
-const PATTERN =
-  /(\$\$(?!\s)[^$\n]+\$\$|\*\*(?!\s)[^*\n]+\*\*|(?<![\w*])\*(?!\s)(?:[^*\n]*[^\s*])?\*|`[^`\n]+`|~~(?!\s)[^~\n]+~~|==(?!\s)[^=\n]+==|\[\[[^\]\n]+\]\]|\(\([\w-]{1,64}\)\)|!\[[^\]\n]*\]\([^)\s]+\)|\[[^\]\n]*\]\([^)\s]+\)|https?:\/\/[^\s<>()]+|(?<![\w#])#[\p{L}\p{N}_/-]+)/gu;
+const TAG_SOURCE = "(?<![\\w#])#[\\p{L}\\p{N}_/-]+|(?<![\\w@])@[\\p{L}\\p{N}_/-]+";
+
+/**
+ * Inline markup understood in a row: **bold**, *italic*, `code`, ~~strike~~,
+ * ==highlight==, ![image](url), [label](url), bare URLs, #tag, @tag,
+ * [[document link]], ((item link)) and $$math$$.
+ *
+ * A bare URL is tried before a tag on purpose, so `https://x.com/@user` stays
+ * one link instead of a link with a tag inside it.
+ */
+const PATTERN = new RegExp(
+  "(\\$\\$(?!\\s)[^$\\n]+\\$\\$|\\*\\*(?!\\s)[^*\\n]+\\*\\*|(?<![\\w*])\\*(?!\\s)(?:[^*\\n]*[^\\s*])?\\*" +
+    "|`[^`\\n]+`|~~(?!\\s)[^~\\n]+~~|==(?!\\s)[^=\\n]+==|\\[\\[[^\\]\\n]+\\]\\]|\\(\\([\\w-]{1,64}\\)\\)" +
+    "|!\\[[^\\]\\n]*\\]\\([^)\\s]+\\)|\\[[^\\]\\n]*\\]\\([^)\\s]+\\)|https?:\\/\\/[^\\s<>()]+|" +
+    TAG_SOURCE +
+    ")",
+  "gu"
+);
 
 type InlineHandlers = {
   onTagClick?: (tag: string) => void;
@@ -103,7 +135,7 @@ function renderToken(token: string, key: number, handlers: InlineHandlers): Reac
     );
   }
 
-  if (token.startsWith("#")) {
+  if (token.startsWith("#") || token.startsWith("@")) {
     if (handlers.inert) return <span key={key} className="inline-tag">{token}</span>;
     return (
       <button
@@ -197,7 +229,7 @@ function visibleLength(token: string): number {
   return token.length;
 }
 
-const TAG_PATTERN = /(?<![\w#])#[\p{L}\p{N}_/-]+/gu;
+const TAG_PATTERN = new RegExp(TAG_SOURCE, "gu");
 
 export function extractTags(text: string): string[] {
   return [...text.matchAll(TAG_PATTERN)].map((match) => match[0]);

@@ -90,11 +90,17 @@ describe("completionAt", () => {
     expect(completionAt("see [[done]] and", 16)).toBeNull();
   });
 
-  it("opens the tag picker on a fresh #", () => {
-    expect(completionAt("todo #wo", 8)).toEqual({ kind: "tag", query: "wo", from: 5 });
-    expect(completionAt("#", 1)).toEqual({ kind: "tag", query: "", from: 0 });
+  it("opens the tag picker on a fresh # or @, carrying the sigil that was typed", () => {
+    expect(completionAt("todo #wo", 8)).toEqual({ kind: "tag", sigil: "#", query: "wo", from: 5 });
+    expect(completionAt("#", 1)).toEqual({ kind: "tag", sigil: "#", query: "", from: 0 });
+    expect(completionAt("todo @wa", 8)).toEqual({ kind: "tag", sigil: "@", query: "wa", from: 5 });
     // Mid-word is not a tag, and neither is a heading already applied.
     expect(completionAt("a#b", 3)).toBeNull();
+    // The picker must not open inside an email address — the whole reason the
+    // trigger tests what is in front of the sigil.
+    expect(completionAt("mail jade@exa", 13)).toBeNull();
+    // The sigil nearest the caret is the one being typed.
+    expect(completionAt("#work @wa", 9)).toEqual({ kind: "tag", sigil: "@", query: "wa", from: 6 });
   });
 
   it("replaces the trigger with the literal text of the choice", () => {

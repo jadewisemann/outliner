@@ -8,43 +8,54 @@
 
 ---
 
-## 2026-08-21 - Dynalist 전환 실사 (코드만 확인, 변경 없음)
+## 2026-08-21 - Dynalist 전환 잔여 2·4·5·6단계
 
-단축키 외에 전환을 막는 것을 코드로 확인한 결과다. **계획은 PLANS.md 「Dynalist 전환 잔여」,
-격차 분석 갱신은 parity.md §3의 실사 표.** 여기는 근거와 판정만 남긴다.
+실사에서 잡은 것 중 **코드로 끝낼 수 있는 것을 끝냈다.** 계획과 판정 결과는 PLANS.md
+「Dynalist 전환 잔여」, 영구 지식은 승격했다 — 저장 보장은 DESIGN.md 원칙 18과 「알려진 한계」,
+인박스는 원칙 15, 태그 시길은 editing.md, 함정은 code-rationale.md, 현황은 parity.md §3·§6·§7.
+여기 남은 것은 **아직 승격할 자리가 없는 것과 다음 세션이 이어받을 것**뿐이다.
 
-- **문서-코드 충돌 판정: parity.md의 "무손실 이주 ✅"(§6 P0 #5)는 과장이었다.** §3이 지시한
-  5단계 중 1(실물 픽스처)과 5(폴더 구조)는 안 됐고, 3(항목 id)은 절반이다. 판정: **구현이
-  덜 된 쪽** — §2는 "구현 전 분석이라 그대로 둔다"는 지시가 있으므로 §2는 손대지 않고,
-  현황의 정본인 §6을 고치고 §3에 실사 표를 붙였다. 남은 구현은 PLANS로.
-- **`transfer/__tests__/formats.test.ts:78`의 Dynalist 픽스처는 손으로 쓴 것이다.** 속성
-  철자(`note`·`complete`·`colorLabel`·`checkbox`·`numbered`)가 전부 **추정**이라, 임포트
-  충실도가 진짜 Dynalist 파일을 한 번도 만난 적 없는 가정 위에 서 있다. 이게 지금 이주
-  경로의 가장 큰 위험이고, **사용자가 내보내기 파일을 주기 전에는 2·3단계를 추정 위에 또
-  쌓게 된다** — 그래서 PLANS 1단계다.
+- **`extractTags`가 URL 안의 `@user`를 태그로 낸다.** `renderInline`은 URL을 먼저 먹으므로
+  링크 하나로 칠하는데, 추출은 태그 규칙만 돌려서 어긋난다. `#anchor`도 예전부터 그랬으므로
+  **`@`가 만든 어긋남이 아니고**, AGENTS.md의 "조용히 개선하지 않는다"에 따라 **바꾸지 않기로
+  판정**했다: 고치려면 추출을 `PATTERN` 전체로 돌려야 하고 그러면 `**#work**` 안의 태그가
+  검색에서 사라진다 — 그건 이번 범위가 아닌 별도 결정이다. 테스트로 현재 동작을 고정해 뒀다.
+- **`inbox`를 워크스페이스 필드로 두는 안을 버린 이유가 코드에 있었다.** `SyncPayload =
+  Pick<Workspace, "docs" | "graves">`라서 `activeDocId`·`views`처럼 최상위에 두면 **동기화되지
+  않는다** — "워크스페이스 필드 vs 기기 로컬"이라는 원래 판정 축이 실은 잘못 세워진 것이었다.
+  실제 축은 "`Doc`의 필드냐, 기기 로컬이냐"다. 승격: DESIGN.md 원칙 15.
+- **`makeWorkspace()`가 만드는 첫 문서 제목이 이미 "Inbox"였다.** 그래서 `inbox: true`를 붙이는
+  것만으로 새 사용자는 자동 생성을 볼 일이 없다. v6에서 올라온 워크스페이스만 첫 캡처에서
+  「인박스」 문서를 만난다 — 제목으로 추측해 표시를 붙이는 안은 버렸다(사용자 대신 문서를
+  고르는 일이고, 제목은 바뀐다).
+- **`appendChild`가 빈 첫 행을 재사용한다.** 방금 만든 문서에 캡처가 들어갈 때 둘째 행이 아니라
+  그 빈 행에 쓰인다 — 우연이 아니라 `appendChild`의 기존 규칙이고, `capture`가 한 번의
+  `editWorkspace`로 끝나는 것이 여기 걸려 있다.
+- **e2e 스펙에서 사이드바를 열려고 `.topbar .ghost`를 누르면 닫힌다.** 데스크톱 뷰포트
+  (>900px)에서는 사이드바가 이미 열려 있다(`useState(() => window.innerWidth > 900)`).
+  기존 스펙들이 `.doc-item-active`를 바로 잡는 이유다.
+- **Playwright의 브라우저 핀과 이미지의 브라우저가 어긋나 71개 전부 launch에서 죽었다.**
+  처음엔 `PLAYWRIGHT_CHROMIUM_PATH`로 우회했는데, 그건 다음 세션이 같은 30분을 다시 태우는
+  우회였다 — **환경변수를 기억해야 하는 검증은 검증이 아니다.** `playwright.config.ts`가 직접
+  찾게 고쳤다(명시 경로 → 자기 빌드 있으면 물러남 → 있는 것 중 최신). 세 갈래 다 확인했고
+  환경변수 없이 71/71 green. 승격: code-rationale.md 환경 항목, AGENTS.md 검증 절.
+
+**다음 세션이 이어받을 것 (1·3단계 — 사용자 파일 대기)**
+
+- **`transfer/__tests__/formats.test.ts`의 Dynalist 픽스처는 손으로 쓴 것이다.** 속성 철자
+  (`note`·`complete`·`colorLabel`·`checkbox`·`numbered`)가 전부 **추정**이라, 임포트 충실도가
+  진짜 Dynalist 파일을 한 번도 만난 적 없는 가정 위에 서 있다. 이게 지금 이주 경로에 남은
+  가장 큰 위험이다.
 - **id는 보존하는데 링크는 안 이어진다.** `OPML_FIELDS.id`가 있고 "링크가 살아남게 하는 것"
   이라는 주석까지 있는데, Dynalist의 절대 URL 링크를 `((id))`로 재작성하는 단계가 없다 —
-  `formats.ts`에 `dynalist` 문자열이 아예 없다. **조건만 갖추고 마지막 한 걸음이 빈** 모양이라
-  "id 보존 = 링크 이주"로 읽히기 쉽다. 실제 URL 표기는 실물로 확인해야 한다(§아래 egress).
-- **`@태그`가 태그가 아니다.** `outline/inline.tsx:200`의 `TAG_PATTERN`은 `#`만 본다.
-  Dynalist는 `#`·`@` 둘 다 태그다. 구현할 때 걸리는 것: `@`를 태그로 만들면 **평문 이메일
-  주소가 태그가 된다** — 경계 규칙이 필요하다.
-- **폴더 구조가 평평해진다.** `useTransfer.ts`의 `importFiles`가 `file.name`만 읽고 전부
-  `docs.add`로 넣는다. `webkitRelativePath`를 안 본다.
-- **`navigator.storage.persist()`를 아무 데서도 부르지 않는다** (`storage/persist.ts` 확인).
-  IndexedDB가 best-effort 등급이라 저장 압박·iOS Safari의 미사용 정리에 노트가 브라우저
-  재량으로 지워질 수 있다. **로컬 우선(원칙 1)을 표방하는 앱에서 이건 의도된 트레이드가
-  아니라 구멍**이므로 DESIGN.md 「알려진 한계」에 넣지 않고 PLANS의 작업으로 뒀다.
-  불변식으로 승격할지는 구현 시 판정.
-- **공유 캡처 도착지가 예측 불가다.** `app/App.tsx`의 공유 캡처 effect(`sharedText` →
-  `appendChild`)가 공유 텍스트를 *현재 열린 문서*의 맨 끝에 붙인다. 퀵 캡처의 요점은 "어디로 갈지 아는 것"인데 그게 없다.
-- **현재 배포(Pages)에는 `api/` function이 없어 GitHub 로그인 버튼이 숨는다** —
-  `githubAuth.ts`가 404를 받으면 `clientId`가 null이고 `SyncSettings.tsx:121`이 버튼을 안
-  그린다. 즉 지금 유일한 경로는 PAT 붙여넣기다. 데이터를 잃지는 않으므로 대기열에 남겼다.
+  `formats.ts`에 `dynalist` 문자열이 아예 없다. 실제 URL 표기는 실물로 확인해야 한다.
 - **egress 제약은 지난 세션과 같다.** `help.dynalist.io`·`talk.dynalist.io`·`blog.dynalist.io`·
   `cheatkeys.com`·`defkey.com`·`web.archive.org`가 모두 프록시에서 차단된다. WebSearch의
   요약만 쓸 수 있다 — **Dynalist의 파일 형식·링크 표기를 문서로 확인할 방법이 이 환경에는
   없다.** 실물 내보내기 파일이 유일한 1차 자료다.
+- **현재 배포(Pages)에는 `api/` function이 없어 GitHub 로그인 버튼이 숨는다** —
+  `githubAuth.ts`가 404를 받으면 `clientId`가 null이고 `SyncSettings.tsx`가 버튼을 안 그린다.
+  즉 지금 유일한 경로는 PAT 붙여넣기다. 데이터를 잃지는 않으므로 대기열에 남겼다.
 
 ## 2026-08-20 - 단축키 Dynalist 프리셋
 

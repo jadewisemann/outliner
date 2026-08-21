@@ -234,6 +234,16 @@ describe("regressions", () => {
     expect(merged.title).toBe("renamed");
     expect(merged.parent).toBe("some-folder");
   });
+
+  it("carries the inbox mark on the title stamp, so a capture destination travels", () => {
+    const [mine, theirs] = fork(seed().doc);
+    const marked: Doc = { ...theirs, inbox: true, titleEdited: { at: 200, by: "phone" } };
+    const older: Doc = { ...mine, inbox: false, titleEdited: { at: 100, by: "desk" } };
+
+    // Both directions, because the merge has to be order-independent.
+    expect(mergeWorkspace(payload(older), payload(marked)).docs[mine.id].inbox).toBe(true);
+    expect(mergeWorkspace(payload(marked), payload(older)).docs[mine.id].inbox).toBe(true);
+  });
 });
 describe("pruneGraves", () => {
   it("forgets gravestones once they are older than the window", () => {

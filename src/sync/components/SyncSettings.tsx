@@ -197,6 +197,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
         <p className="sync-status-line">
           현재 상태: <strong>{STATUS_LABEL[store.sync.status]}</strong>
         </p>
+        <StorageGradeLine store={store} />
         {store.sync.status === "locked" ? (
           <p className="sync-note">
             원격에 이 기기가 읽을 수 없는 내용이 있습니다. 암호가 맞을 때까지 아무것도 올리지 않습니다 —
@@ -238,5 +239,32 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
         </div>
       </footer>
     </Panel>
+  );
+}
+
+const GRADE_LABEL: Record<string, string> = {
+  persisted: "저장 보장됨",
+  "best-effort": "보장되지 않음",
+  unknown: "알 수 없음"
+};
+
+/**
+ * The local storage grade, next to the remote's status, because the two answer
+ * one question together: how many copies of these notes exist and who can
+ * delete them. A grade below `persisted` is not decoration — it means the
+ * browser may clear the workspace on its own, so it is stated rather than
+ * hidden, along with the way to ask again.
+ */
+function StorageGradeLine({ store }: { store: Store }) {
+  const { grade, request } = store.storage;
+  return (
+    <p className="sync-status-line">
+      이 기기의 저장: <strong>{GRADE_LABEL[grade]}</strong>
+      {grade === "persisted" ? null : (
+        <button type="button" className="search-save" onClick={request}>
+          저장 보장 요청
+        </button>
+      )}
+    </p>
   );
 }

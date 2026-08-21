@@ -47,7 +47,7 @@ export function readWorkspace(value: unknown, now = Date.now()): Workspace | nul
       };
     }
   }
-  return { version: 6, ...payload, activeDocId, views };
+  return { version: 7, ...payload, activeDocId, views };
 }
 
 /**
@@ -72,6 +72,7 @@ export function readDoc(id: Id, value: unknown, now = Date.now()): Doc | null {
     kind: value.kind === "folder" || value.kind === "search" ? value.kind : "doc",
     query: str(value.query) ?? "",
     bookmarked: value.bookmarked === true,
+    inbox: value.inbox === true,
     deleted: value.deleted === undefined || value.deleted === null ? null : readStamp(value.deleted, now),
     titleEdited: readStamp(value.titleEdited, now),
     moved: readStamp(value.moved, now)

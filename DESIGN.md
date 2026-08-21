@@ -4,7 +4,7 @@
 조용히 코드를 따르지 않고 [AGENTS.md](./AGENTS.md)의 판정 규칙대로 판정한다. 이 문서를
 정본으로 승격한 결정 자체는 [ADR-0001](./docs/adr/0001-design-doc-authority.md)에 있다.
 
-> **작성 기준: 2026-08-20, Dynalist 파리티 작업(P0·P1·P2, 스키마 v6) 병합 반영.** 이 문서는
+> **작성 기준: 2026-08-21, Dynalist 전환 잔여 작업(스키마 v7 — `Doc.inbox`) 반영.** 이 문서는
 > 코드에서 추출해 동기화한 것이며, 이 시점 이후에 생긴 어긋남만 판정 대상이다.
 
 ## 무엇인가
@@ -56,12 +56,24 @@ Dynalist를 대신하는 로컬 우선 아웃라이너. 브라우저에서 열�
     LWW를 탄다.)
 15. **폴더·저장된 검색·휴지통은 전부 문서다** — `kind: "doc" | "folder" | "search"`와
     `deleted` 스탬프로 구분되는 같은 레코드·같은 파일·같은 병합 규칙. 이들을 위해 동기화
-    페이로드나 파일 종류를 늘리는 구현은 위반이다.
+    페이로드나 파일 종류를 늘리는 구현은 위반이다. 퀵 캡처의 도착지도 같은 수법으로
+    `Doc.inbox` 필드다 — 워크스페이스 최상위 필드로 두는 구현은 위반이다: 건너가는 것은
+    `SyncPayload`(`docs` + `graves`) 안에 있는 것뿐이라, 최상위에 두면 기기마다 도착지가
+    달라진다. 여러 문서가 표시를 들고 있을 수 있으므로 **하나로 정하는 것은 읽는 쪽**
+    (`inboxDoc`)이고, 모든 기기가 같은 답을 내야 한다.
 16. **항목 링크 `((id))`는 라벨을 갖지 않는다 — 대상의 현재 텍스트로 렌더한다.** 링크에
     라벨을 저장하는 구현은 위반이다(대상과 어긋날 수 없음이 이 기능의 성질이다). 대상이
     사라지면 `(없는 항목)`으로 남긴다 — 조용히 지우지 않는다.
 17. **백엔드의 `history`/`files`는 전송 계약이 아니라 선택적 능력이다.** 계약("버전 붙은
     JSON + CAS")에 능력을 섞는 구현은 위반이다 — REST 백엔드는 능력 없이도 완전한 백엔드다.
+18. **저장의 지속성은 요청하고, 거절당하면 말한다.** IndexedDB의 기본 등급은 best-effort이고
+    그건 저장 압박·미사용 정리에 브라우저가 노트를 지울 수 있다는 뜻이다. 로컬 우선(원칙 1)을
+    표방하면서 그걸 브라우저 재량에 맡기는 것은 의도된 트레이드가 아니라 구멍이다. 그래서
+    `navigator.storage.persist()`를 **켤 때마다** 부르고(등급은 사용자가 앱에 정착하면서
+    바뀐다), 등급이 persisted가 아니면 그 사실이 보인다. 요청하지 않는 구현, 또는 거절을
+    조용히 넘기는 구현은 위반이다 — 후자는 하지 않은 보장을 한 척하는 것이다.
+    **"persisted 여야 한다"는 불변식이 아니다** — 판정하는 것은 코드가 아니라 브라우저이고,
+    코드가 지킬 수 있는 것은 묻는 것과 정직하게 말하는 것까지다.
 
 ## 아키텍처
 
@@ -100,7 +112,7 @@ src/
                 highlight.tsx(라이브러리 없는 코드 색), 가상화·스와이프,
                 useOutline(조립 + 행 키보드·메모·확대·첨부)와 관심사별 훅 —
                 useLive(공유 최신값) · useRowDrag(드래그) · useRowMenu(메뉴) ·
-                useCompletion([[/# 자동완성) · useRowSelection(행 선택)
+                useCompletion([[/#/@ 자동완성) · useRowSelection(행 선택)
     components/   Outline, Row, RowMenu, Editable, TouchBar, TeX, Attachment — 렌더링만
   palette/      palette.ts(후보 랭킹), commands.ts(앱의 모든 명령) + Palette
   sync/         merge.ts(병합 규칙), useSync.ts(pull–merge–push 루프·백오프·탭 간 핑)
@@ -108,10 +120,10 @@ src/
                   cipher.ts(E2EE), attachments.ts(내용 해시 이름과 object URL),
                   githubAuth.ts(OAuth 플로)
     components/   SyncSettings(+SyncBadge), HistoryPanel
-  storage/      persist(IndexedDB), migrate(스키마 — v6), validate(신뢰 경계)
+  storage/      persist(IndexedDB + 지속성 등급), migrate(스키마 — v7), validate(신뢰 경계)
   search/       query.ts(질의 언어), search.ts(전체 검색), links.ts(항목 링크·백링크)
                 + SearchPanel
-  transfer/     Markdown/OPML/백업 변환 + useTransfer(파일 입출력)
+  transfer/     Markdown/OPML/백업 변환, paths(피커가 준 경로) + useTransfer(파일 입출력)
   shared/       order(정렬 키), clock(논리 시계),
                 keymap.ts(재바인딩 가능한 키 전부 + editor·dynalist 두 프리셋),
                 download, Panel(모달)
@@ -131,6 +143,7 @@ src/
 | [docs/parity.md](./docs/parity.md) | 기능 방향의 근거 — Dynalist 격차 분석, P0~P2 이력, 스키마 변경 총계 |
 | [docs/design/refactor-plan.md](./docs/design/refactor-plan.md) | 진행 중 모듈 리팩터(R1~R6)의 상세 계획 — PLANS.md가 가리킨다 |
 | [docs/adr/](./docs/adr/) | 구조적 결정의 이유 — "왜 이렇게 안 했는가" |
+| [docs/korean-output.md](./docs/korean-output.md) | 한국어를 출력할 때. **작업 종류와 무관하게 항상 적용되므로, 이 표의 「필요한 것만 연다」 규칙의 예외다** |
 
 ## 코드가 정본인 것들 (예외 목록)
 
@@ -164,6 +177,9 @@ src/
 - **코드 하이라이팅은 근사다.** 언어를 모르고 문자열·주석·숫자·키워드만 구분한다.
 - **히스토리·첨부는 저장소 백엔드만의 기능이다.** 능력의 비대칭은 여기서 선을 그었다 —
   계약만으로 구현되지 않는 능력을 더 늘리지 않는다 (ADR-0005).
+- **저장 등급은 브라우저가 정한다.** 원칙 18대로 묻지만, 답은 우리 것이 아니다 — Chrome은
+  설치·북마크·방문 빈도로 조용히 판정하고 Firefox는 물어보며, 첫 방문은 대개 거절이다.
+  그래서 등급이 persisted가 아닌 것 자체는 고장이 아니고, **거절을 숨기는 것이** 고장이다.
 - **암호를 걸면 커밋 diff를 읽을 수 없다.** "읽히는 히스토리"와 암호화는 함께 가질 수 없다 —
   그래서 암호는 선택이다.
 - **암호를 잃으면 원격 사본은 끝이다.** 복구 경로가 있으면 그건 종단 간 암호화가 아니다.

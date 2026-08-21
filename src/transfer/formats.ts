@@ -80,6 +80,24 @@ function escapeXml(value: string): string {
 /* import                                                              */
 /* ------------------------------------------------------------------ */
 
+/**
+ * Extensions this module can read.
+ *
+ * A directory picker ignores the input's `accept`, so the same list has to be
+ * applied by hand to what comes back. Without it a `.DS_Store` or a stray
+ * image would become a document full of junk, because an unrecognised file
+ * falls through to plain text below rather than being refused.
+ */
+export const IMPORT_EXTENSIONS = [".md", ".markdown", ".txt", ".opml", ".xml", ".json"];
+
+/** The same list in the spelling a file input wants. */
+export const IMPORT_ACCEPT = IMPORT_EXTENSIONS.join(",");
+
+export function isImportable(filename: string): boolean {
+  const lower = filename.toLowerCase();
+  return IMPORT_EXTENSIONS.some((extension) => lower.endsWith(extension));
+}
+
 export function detectFormat(filename: string, content: string): Format {
   if (/\.opml$|\.xml$/i.test(filename) || content.trimStart().startsWith("<?xml")) return "opml";
   if (/\.md$|\.markdown$/i.test(filename)) return "markdown";
@@ -111,6 +129,7 @@ export function importDoc(title: string, content: string, format: Format): Doc {
     kind: "doc",
     query: "",
     bookmarked: false,
+    inbox: false,
     deleted: null,
     titleEdited: now,
     moved: now
@@ -223,5 +242,5 @@ export function parseBackup(content: string): Workspace | null {
 
 function isKnownVersion(raw: unknown): boolean {
   const version = (raw as { version?: unknown } | null)?.version;
-  return version === 3 || version === 4 || version === 5 || version === 6;
+  return version === 3 || version === 4 || version === 5 || version === 6 || version === 7;
 }

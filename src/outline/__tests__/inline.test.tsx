@@ -38,6 +38,19 @@ describe("extractTags", () => {
   it("ignores hashes that are not tags", () => {
     expect(extractTags("#one mid#dle #둘 issue ##no")).toEqual(["#one", "#둘"]);
   });
+
+  it("reads @ as a second sigil, but not the @ in an address", () => {
+    expect(extractTags("@waiting on #work")).toEqual(["@waiting", "#work"]);
+    // The character in front of the sigil is the whole rule: an address always
+    // has a local part, a tag never does.
+    expect(extractTags("mail jade@example.com, cc @jade")).toEqual(["@jade"]);
+    expect(extractTags("git@github.com:u/r")).toEqual([]);
+    // Extraction does not know about the surrounding tokens, so a handle in a
+    // URL still counts — the same as a `#anchor` always has. Pinned here so
+    // the asymmetry with rendering is a decision and not a surprise.
+    expect(extractTags("https://x.com/@user")).toEqual(["@user"]);
+    expect(extractTags("https://x.com/#anchor")).toEqual(["#anchor"]);
+  });
 });
 
 describe("sourceOffset", () => {

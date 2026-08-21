@@ -48,6 +48,13 @@ describe("parseQuery", () => {
     expect(accepts("work", row)).toBe(true);
   });
 
+  it("searches @tags too, and an address is not one", () => {
+    const row = target({ text: "ship it @waiting" });
+    expect(accepts("@waiting", row)).toBe(true);
+    expect(accepts("-@waiting", row)).toBe(false);
+    expect(accepts("@waiting", target({ text: "mail jade@waiting.com" }))).toBe(false);
+  });
+
   it("knows the state operators", () => {
     expect(accepts("is:completed", target({ done: true }))).toBe(true);
     expect(accepts("is:incomplete", target({ done: true }))).toBe(false);

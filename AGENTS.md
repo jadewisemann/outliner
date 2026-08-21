@@ -18,8 +18,42 @@ Git 협업 상세의 SSOT는 [CONTRIBUTING.md](./CONTRIBUTING.md)이고 아래 G
 - 문서와 코드가 충돌하면 **조용히 코드를 따르지 않는다** — 아래 판정 규칙대로 판정한다.
 - 바깥에서 오는 데이터(동기화 응답, 가져오기 파일, 저장소에 남아 있던 값)는 반드시
   `src/storage/validate.ts`를 통과시킨다.
+- **한국어를 출력할 때는 [docs/korean-output.md](./docs/korean-output.md)를 준수한다.** 작업
+  종류와 무관하게 항상 적용되므로, 「필요한 것만 연다」는 하위 문서 규칙의 예외다. 그 문서는
+  요약하지 않고 전문을 읽는다(이유가 문서 안에 서술되어 있다). 코드 주석·커밋 메시지·로그
+  문자열처럼 코드에 속하는 텍스트는 이 지침의 적용 대상이 아니고 기존 관례를 따른다.
 - 동작 차이(버그 포함)를 발견하면 조용히 "개선"하지 않는다 — `IMPLEMENTATION_NOTES.md`에
   기록하고 재현/수정 여부를 명시적으로 결정한다.
+
+## 출력 지침이 겹칠 때의 우선순위
+
+이 저장소에는 출력의 형태를 규정하는 지침이 둘 있다. 둘은 **다른 층위를 규정하기 때문에 함께
+지킬 수 있고**, 어느 하나를 버리는 방식으로 해소하지 않는다.
+
+| 지침 | 규정하는 것 | 언제 적용되나 |
+|---|---|---|
+| [docs/korean-output.md](./docs/korean-output.md) | **문장을 어떻게 구성하는가** — 조사·어미·문장 성분·어휘 선택 | 한국어를 출력할 때 항상 |
+| `i-have-adhd` 플러그인 스킬 | **무엇을 어떤 순서로 얼마나 쓰는가** — 행동 우선, 번호 매기기, 분량 | `/i-have-adhd`로 켰을 때만 |
+
+`.claude/settings.json`이 플러그인을 선언하고 있으므로 이 저장소의 모든 세션에서 스킬을 쓸 수
+있다. 다만 스킬 본문에 `disable-model-invocation: true`가 있어서 **사용자가 켜지 않으면
+활성화되지 않는다.** 상시 활성 플래그(`~/.claude/.i-have-adhd-always`)는 저장소가 아니라 기기에
+있으므로, 선언을 커밋해도 다른 사람의 출력 방식이 강제로 바뀌지는 않는다. 개인적으로 끄려면
+`.claude/settings.local.json`에 `"i-have-adhd@i-have-adhd": false`를 넣는다(설정 우선순위가
+user < project < local이다).
+
+**실제로 충돌하는 지점은 요청을 확인하는 문장 하나다.** korean-output.md의 「구 단위」 3번 조항은
+예시에서 `요청을 확인했습니다`처럼 쓰라고 권하는데, 스킬의 10번 규칙은 그런 서두 자체를
+금지한다. 판정은 다음과 같다.
+
+- 확인 문장을 **쓰는 자리에서는** korean-output.md대로 완결된 문장으로 쓴다.
+- ADHD 모드에서는 **그 자리를 두지 않는다.** 조항을 어기는 것이 아니라 해당 문장을 아예 쓰지
+  않는 것이므로, 두 지침이 동시에 만족된다.
+
+이 판정의 근거는 스킬 자신에게도 있다. 스킬의 「When to break the rules」 6번이 에이전트 harness
+안에서는 system prompt가 자기보다 우선한다고 밝히고 있고, korean-output.md는 이 저장소의 절대
+규칙이다. 나머지 조항들은 오히려 같은 방향을 가리킨다 — 비유적 어휘를 피하라는 korean-output.md
+「구 단위」 3번과, 관용구를 삭제하라는 스킬의 pre-send check 5번이 그렇다.
 
 ## Source of truth
 
@@ -32,6 +66,7 @@ Git 협업 상세의 SSOT는 [CONTRIBUTING.md](./CONTRIBUTING.md)이고 아래 G
 | 작업 중 발견 (휘발성 working memory) | [`IMPLEMENTATION_NOTES.md`](./IMPLEMENTATION_NOTES.md) |
 | 함정·실측값·실패한 대안 | [`docs/design/code-rationale.md`](./docs/design/code-rationale.md) |
 | Git 협업 규칙 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) |
+| 한국어 출력 방식 | [`docs/korean-output.md`](./docs/korean-output.md) — **항상 적용된다** |
 | 실행법·기능 목록·배포 | [`README.md`](./README.md) |
 | 기계가 소비하는 계약 (모델 타입, CSP 값, 매니페스트 …) | **코드** — DESIGN.md의 「코드가 정본인 것들」 목록 |
 
@@ -87,9 +122,14 @@ Git 협업 상세의 SSOT는 [CONTRIBUTING.md](./CONTRIBUTING.md)이고 아래 G
 | `npm run test:e2e` | 실제 브라우저 시나리오 (Playwright) | UI 동작·동기화·CSP·터치를 만졌을 때 |
 
 e2e는 웹 서버를 **둘** 띄운다 — dev(5173)와 `vite preview`(4173). `csp.spec.ts`와
-`install.spec.ts`는 빌드 결과(4173)를 상대로 돈다. 환경에 Playwright 브라우저가 따로 없으면
-`PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome npm run test:e2e`. GitHub 백엔드 스펙은 동기화
-케이던스 때문에 오래 걸린다(`test.setTimeout(120_000)` 수준).
+`install.spec.ts`는 빌드 결과(4173)를 상대로 돈다. GitHub 백엔드 스펙은 동기화 케이던스 때문에
+오래 걸린다(`test.setTimeout(120_000)` 수준).
+
+**브라우저는 `playwright.config.ts`가 스스로 찾는다.** Playwright가 핀으로 박은 빌드가 없으면
+`PLAYWRIGHT_BROWSERS_PATH` 아래에 실제로 있는 chromium을 쓴다 — 컨테이너가 미리 넣어둔
+브라우저와 패키지의 핀은 각자 따로 움직이고, 어긋나면 **몇 개가 실패하는 게 아니라 전 스펙이
+launch에서 죽어 e2e 신호가 0이 된다.** 그래서 못 맞추는 브라우저(시스템 Chrome 등)를 가리킬 때만
+`PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome`가 필요하다.
 
 ## 테스트 최소화 원칙
 

@@ -74,3 +74,46 @@ function writeLocalStorage(workspace: Workspace) {
     /* quota exceeded — the in-memory doc is still intact */
   }
 }
+
+/* ------------------------------------------------------------------ */
+/* storage durability                                                  */
+/* ------------------------------------------------------------------ */
+
+/**
+ * What the browser promises about the notes kept here.
+ *
+ * `best-effort` is IndexedDB's default grade and it means what it says: under
+ * storage pressure — or after a stretch of not being opened, which iOS Safari
+ * counts in days — the browser may delete everything. An app that says
+ * "your data stays on your device" cannot leave that to the browser's
+ * discretion, so the grade is asked for rather than assumed.
+ *
+ * `unknown` is kept apart from `best-effort` on purpose: a browser that does
+ * not answer the question is not the same as one that answered no, and the UI
+ * must not claim more than it was told.
+ */
+export type StorageGrade = "persisted" | "best-effort" | "unknown";
+
+/**
+ * Asks for the durable grade, returning the grade actually in force.
+ *
+ * Safe to call on every start, and it has to be: the answer changes as the
+ * user commits to the app. Chrome grants persistence off engagement signals
+ * (installed, bookmarked, visited often), so the first visit is refused and a
+ * later one is granted — asking once and remembering the no would understate
+ * what the browser is now willing to promise. Firefox prompts instead, which
+ * is why the same call sits behind a button in the sync panel.
+ */
+export async function requestPersistence(): Promise<StorageGrade> {
+  if (typeof navigator === "undefined") return "unknown";
+  const storage = navigator.storage;
+  if (!storage?.persist || !storage.persisted) return "unknown";
+  try {
+    if (await storage.persisted()) return "persisted";
+    return (await storage.persist()) ? "persisted" : "best-effort";
+  } catch {
+    // A refused prompt and a broken API arrive the same way here, and neither
+    // is evidence about the grade.
+    return "unknown";
+  }
+}
