@@ -15,6 +15,7 @@ import {
   reparent,
   splitAt,
   toOutlineText,
+  widerScope,
   bulkMove,
   linkChildren,
   subtree,
@@ -212,6 +213,34 @@ b
   b1`);
     const chosen = [find(doc, "a1"), find(doc, "a2")];
     expect(shape(bulkMove(doc, doc.rootId, chosen, 1).doc)).toBe("a\nb\n  a1\n  a2\n  b1");
+  });
+});
+
+describe("widerScope", () => {
+  const doc = build(`
+a
+  a1
+    a11
+  a2
+b`);
+  const rows = visibleRows(doc, doc.rootId);
+  const texts = (ids: Id[]) => ids.map((id) => doc.nodes[id].text);
+
+  it("grows from a row to what hangs under it, then to the list it sits in", () => {
+    const own = widerScope(rows, [find(doc, "a")]);
+    expect(texts(own)).toEqual(["a", "a1", "a11", "a2"]);
+    expect(texts(widerScope(rows, own))).toEqual(["a", "a1", "a11", "a2", "b"]);
+  });
+
+  it("skips a step that would not grow the selection", () => {
+    // a11 is a childless only child, so both its own subtree and its own list
+    // are just itself; the first press has to land on a1's list.
+    expect(texts(widerScope(rows, [find(doc, "a11")]))).toEqual(["a1", "a11", "a2"]);
+  });
+
+  it("stops once everything drawn is held", () => {
+    const all = rows.map((row) => row.id);
+    expect(widerScope(rows, all)).toBe(all);
   });
 });
 

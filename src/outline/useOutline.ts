@@ -389,6 +389,16 @@ export function useOutline(
         requestFocus(next.id, event.key === "ArrowDown" ? Math.min(caret, next.node.text.length) : 0);
         return;
       }
+      // ⌘A climbs out of the text once the text is already all held, and hands
+      // the ladder to `useRowSelection`: this row, then the list it sits in,
+      // then the list that one sits in. An empty row has nothing to hold, so
+      // the first press leaves it straight away.
+      if (mod && event.key === "a" && element.selectionStart === 0 && element.selectionEnd === element.value.length) {
+        stop();
+        element.blur();
+        rowSelection.select(row.id);
+        return;
+      }
       if (event.key === "Escape") {
         stop();
         element.blur();

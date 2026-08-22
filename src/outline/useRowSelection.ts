@@ -13,7 +13,8 @@ import {
   rowAfter,
   rowBefore,
   toOutlineText,
-  topLevel
+  topLevel,
+  widerScope
 } from "./tree";
 import type { LiveRef } from "./useLive";
 
@@ -136,9 +137,11 @@ export function useRowSelection(
         }
         return;
       }
+      // Each press widens by one step instead of jumping to the whole outline.
+      // The last step is everything drawn, so nothing is lost by the ladder.
       if (mod && event.key === "a") {
         stop();
-        enterSelection(visible.map((row) => row.id));
+        enterSelection(widerScope(visible, chosen));
         return;
       }
       if (event.key === " ") {

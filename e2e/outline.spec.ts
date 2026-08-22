@@ -129,6 +129,32 @@ test("a zoomed outline is the wall a vertical move stops at", async ({ page }) =
   expect(await rowTexts(page)).toEqual(["Task"]);
 });
 
+test("⌘A widens the selection one step at a time", async ({ page }) => {
+  await page.keyboard.type("head");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("one");
+  await page.keyboard.press("Enter");
+  await page.keyboard.type("two");
+
+  // The caret sits in "two", so the first press is the browser taking the text.
+  await page.keyboard.press("Control+a");
+  await expect(page.locator(".row-selected")).toHaveCount(0);
+
+  await page.keyboard.press("Control+a");
+  await expect(page.locator(".row-selected")).toHaveCount(1);
+
+  await page.keyboard.press("Control+a");
+  await expect(page.locator(".row-selected")).toHaveCount(2);
+
+  await page.keyboard.press("Control+a");
+  await expect(page.locator(".row-selected")).toHaveCount(3);
+
+  // The whole outline is the last step, and pressing again holds there.
+  await page.keyboard.press("Control+a");
+  await expect(page.locator(".row-selected")).toHaveCount(3);
+});
+
 test("selects rows with Escape and moves them together", async ({ page }) => {
   await page.keyboard.type("head");
   await page.keyboard.press("Enter");

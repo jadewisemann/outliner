@@ -630,6 +630,49 @@ export function topLevel(doc: Doc, zoomId: Id, ids: Id[]): Id[] {
     .filter((id) => selected.has(id) && !ancestors(doc, id).some((parent) => selected.has(parent)));
 }
 
+/** The row at `at` together with every row drawn under it. */
+function subtreeRun(rows: Row[], at: number): Id[] {
+  let end = at + 1;
+  while (end < rows.length && rows[end].depth > rows[at].depth) end += 1;
+  return rows.slice(at, end).map((row) => row.id);
+}
+
+/** Every row of the list that holds `at` at `depth`, the rows drawn under them included. */
+function listRun(rows: Row[], at: number, depth: number): Id[] {
+  let start = at;
+  while (start > 0 && rows[start - 1].depth >= depth) start -= 1;
+  let end = at + 1;
+  while (end < rows.length && rows[end].depth >= depth) end += 1;
+  return rows.slice(start, end).map((row) => row.id);
+}
+
+/**
+ * One step up the selection ladder: the row alone, then the row with what hangs
+ * under it, then the list it sits in, then the list that list sits in, and
+ * finally everything drawn.
+ *
+ * A step that would not grow the selection is skipped, so a childless only
+ * child does not cost three presses to climb out of. Returns `chosen` unchanged
+ * once everything drawn is already held, which is what tells the caller to stop.
+ */
+export function widerScope(rows: Row[], chosen: Id[]): Id[] {
+  const at = rows.findIndex((row) => row.id === chosen[0]);
+  if (at === -1) return chosen;
+  const grew = (candidate: Id[]) => {
+    if (candidate.length <= chosen.length) return null;
+    const inside = new Set(candidate);
+    return chosen.every((id) => inside.has(id)) ? candidate : null;
+  };
+
+  const own = grew(subtreeRun(rows, at));
+  if (own) return own;
+  for (let depth = rows[at].depth; depth >= 0; depth -= 1) {
+    const list = grew(listRun(rows, at, depth));
+    if (list) return list;
+  }
+  return chosen;
+}
+
 /** Runs a single-row step over a whole selection against one shared draft. */
 function bulk(doc: Doc, ids: Id[], reverse: boolean, step: (nodes: Nodes, id: Id) => void): Edit {
   if (ids.length === 0) return { doc };
