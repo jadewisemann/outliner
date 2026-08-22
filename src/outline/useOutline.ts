@@ -340,7 +340,7 @@ export function useOutline(
       }
       if (bound("moveUp") || bound("moveDown")) {
         stop();
-        edit((current) => moveVertically(current, row.id, bound("moveUp") ? -1 : 1));
+        edit((current) => moveVertically(current, row.id, bound("moveUp") ? -1 : 1, zoomId));
         return;
       }
       if (event.key === "Enter" && event.shiftKey) {
@@ -440,7 +440,7 @@ export function useOutline(
       },
       move(direction) {
         const id = target();
-        if (id) edit((current) => moveVertically(current, id, direction));
+        if (id) edit((current) => moveVertically(current, id, direction, live.current.zoomId));
       }
     };
   }, [edit]);

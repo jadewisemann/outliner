@@ -276,14 +276,88 @@ function outdentInto(nodes: Nodes, id: Id, zoomId: Id): void {
   move(nodes, id, grandparentId, nodes[grandparentId].children.indexOf(parentId) + 1);
 }
 
-function moveVerticallyInto(nodes: Nodes, id: Id, direction: -1 | 1): void {
+/** A place to insert at, expressed so that the row currently there is pushed down. */
+type Slot = { parentId: Id; index: number };
+
+/** The deepest row drawn under `id`, which is the row just above whatever follows it. */
+function lastDrawn(nodes: Nodes, id: Id): Id {
+  let cursor = id;
+  const seen = new Set<Id>();
+  while (!seen.has(cursor)) {
+    seen.add(cursor);
+    const node = nodes[cursor];
+    if (!node || node.collapsed || node.children.length === 0) return cursor;
+    cursor = node.children[node.children.length - 1];
+  }
+  return cursor;
+}
+
+/** The row drawn immediately above `id`, or null when `id` is the first row of the zoom. */
+function rowAbove(nodes: Nodes, zoomId: Id, id: Id): Id | null {
   const parentId = nodes[id]?.parent;
-  if (!parentId) return;
-  const siblings = nodes[parentId].children;
-  const target = siblings.indexOf(id) + direction;
-  if (target < 0 || target >= siblings.length) return;
-  // +1 when moving down because the target index is measured after removal.
-  move(nodes, id, parentId, direction === 1 ? target + 1 : target);
+  if (!parentId) return null;
+  const index = nodes[parentId].children.indexOf(id);
+  if (index > 0) return lastDrawn(nodes, nodes[parentId].children[index - 1]);
+  return parentId === zoomId ? null : parentId;
+}
+
+/** The row drawn immediately below everything `id` contains, or null at the end of the zoom. */
+function rowAfterSubtree(nodes: Nodes, zoomId: Id, id: Id): Id | null {
+  let cursor: Id | null = id;
+  const seen = new Set<Id>();
+  while (cursor && cursor !== zoomId && !seen.has(cursor)) {
+    seen.add(cursor);
+    const parentId: Id | null = nodes[cursor].parent;
+    const siblings = parentId ? nodes[parentId]?.children : null;
+    if (!parentId || !siblings) return null;
+    const index = siblings.indexOf(cursor);
+    if (index !== -1 && index + 1 < siblings.length) return siblings[index + 1];
+    cursor = parentId;
+  }
+  return null;
+}
+
+/** The slot `id` occupies, so that inserting there lands directly above it. */
+function slotOf(nodes: Nodes, id: Id): Slot | null {
+  const parentId = nodes[id]?.parent;
+  if (!parentId) return null;
+  return { parentId, index: nodes[parentId].children.indexOf(id) };
+}
+
+/**
+ * Where `id` lands when it steps one drawn row up or down.
+ *
+ * Vertical movement follows the outline as it is drawn rather than the sibling
+ * list, so a row that steps past a parent boundary takes the level of whatever
+ * it lands beside: stepping down in front of an expanded row means becoming its
+ * first child, and stepping up out of a first child means landing above the
+ * parent. One press is always one row, which is what makes the key usable for
+ * carrying an item across the document instead of only within one list.
+ *
+ * Null means the step would leave the zoom, which is the only wall left.
+ */
+function stepSlot(nodes: Nodes, zoomId: Id, id: Id, direction: -1 | 1): Slot | null {
+  if (!nodes[id]) return null;
+  if (direction === -1) {
+    const above = rowAbove(nodes, zoomId, id);
+    return above ? slotOf(nodes, above) : null;
+  }
+
+  // Landing below `passed` means taking the slot of the row drawn below it; the
+  // row's own children come first, and with nothing below it the end of its list.
+  const passed = rowAfterSubtree(nodes, zoomId, id);
+  if (!passed) return null;
+  const node = nodes[passed];
+  if (!node.collapsed && node.children.length > 0) return slotOf(nodes, node.children[0]);
+  const below = rowAfterSubtree(nodes, zoomId, passed);
+  if (below) return slotOf(nodes, below);
+  const slot = slotOf(nodes, passed);
+  return slot && { parentId: slot.parentId, index: slot.index + 1 };
+}
+
+function moveVerticallyInto(nodes: Nodes, zoomId: Id, id: Id, direction: -1 | 1): void {
+  const slot = stepSlot(nodes, zoomId, id, direction);
+  if (slot) move(nodes, id, slot.parentId, slot.index);
 }
 
 function removeInto(nodes: Nodes, graves: Record<Id, Stamp>, id: Id): void {
@@ -410,16 +484,14 @@ export function outdent(doc: Doc, id: Id, zoomId: Id): Edit {
   return { doc: withNodes(doc, nodes), focusId: id };
 }
 
-/** Swaps `id` with the sibling above/below, carrying its subtree. */
-export function moveVertically(doc: Doc, id: Id, direction: -1 | 1): Edit {
-  const parentId = doc.nodes[id]?.parent;
-  if (!parentId) return { doc };
-  const siblings = doc.nodes[parentId].children;
-  const index = siblings.indexOf(id);
-  const target = index + direction;
-  if (target < 0 || target >= siblings.length) return { doc };
+/**
+ * Steps `id` one drawn row up or down, carrying its subtree and taking the
+ * level of the place it lands. No-op at the first and last row of the zoom.
+ */
+export function moveVertically(doc: Doc, id: Id, direction: -1 | 1, zoomId: Id): Edit {
+  if (!stepSlot(doc.nodes, zoomId, id, direction)) return { doc };
   const nodes = draft(doc);
-  moveVerticallyInto(nodes, id, direction);
+  moveVerticallyInto(nodes, zoomId, id, direction);
   return { doc: withNodes(doc, nodes), focusId: id };
 }
 
@@ -578,15 +650,9 @@ export function bulkMove(doc: Doc, zoomId: Id, ids: Id[], direction: -1 | 1): Ed
   const ordered = topLevel(doc, zoomId, ids);
   // If any selected row is already at the wall the others would move through
   // it, quietly reordering the selection. Refuse the whole thing instead.
-  const blocked = ordered.some((id) => {
-    const siblings = doc.nodes[doc.nodes[id]?.parent ?? ""]?.children;
-    if (!siblings) return true;
-    const target = siblings.indexOf(id) + direction;
-    return target < 0 || target >= siblings.length;
-  });
-  if (blocked) return { doc };
+  if (ordered.some((id) => !stepSlot(doc.nodes, zoomId, id, direction))) return { doc };
   // Moving down starts from the bottom so rows do not step over each other.
-  return bulk(doc, ordered, direction === 1, (nodes, id) => moveVerticallyInto(nodes, id, direction));
+  return bulk(doc, ordered, direction === 1, (nodes, id) => moveVerticallyInto(nodes, zoomId, id, direction));
 }
 
 export function bulkRemove(doc: Doc, zoomId: Id, ids: Id[]): Edit {

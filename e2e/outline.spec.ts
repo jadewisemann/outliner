@@ -96,6 +96,39 @@ test("reads @ as a tag as well, and leaves an address alone", async ({ page }) =
   await expect(page.locator(".search-hit")).toHaveCount(1);
 });
 
+test("moving a row down leaves its parent instead of stopping", async ({ page }) => {
+  await page.keyboard.type("Project");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("Task");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Shift+Tab");
+  await page.keyboard.type("Other");
+
+  await page.locator(".row", { hasText: "Task" }).first().click();
+  await page.keyboard.press("Control+Shift+ArrowDown");
+  expect(await rowTexts(page)).toEqual(["Project", "Other", "Task"]);
+
+  // The last row of the outline is still a wall.
+  await page.keyboard.press("Control+Shift+ArrowDown");
+  expect(await rowTexts(page)).toEqual(["Project", "Other", "Task"]);
+});
+
+test("a zoomed outline is the wall a vertical move stops at", async ({ page }) => {
+  await page.keyboard.type("Project");
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Tab");
+  await page.keyboard.type("Task");
+
+  await page.locator(".row", { hasText: "Project" }).first().locator(".row-bullet").click();
+  expect(await rowTexts(page)).toEqual(["Task"]);
+
+  // Without the zoom root the step would carry Task above Project, out of sight.
+  await page.locator(".row", { hasText: "Task" }).first().click();
+  await page.keyboard.press("Control+Shift+ArrowUp");
+  expect(await rowTexts(page)).toEqual(["Task"]);
+});
+
 test("selects rows with Escape and moves them together", async ({ page }) => {
   await page.keyboard.type("head");
   await page.keyboard.press("Enter");
