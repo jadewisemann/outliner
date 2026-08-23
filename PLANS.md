@@ -113,12 +113,14 @@ DESIGN.md(및 하위 문서)에 반영한다.
       롤백 단계를 문서화했다.
 - [ ] **1. 기준선 재측정**: 현재 production 빌드에서 2,000행과 10,000행의 초기 구성, 입력
       지연, DOM 수, 서브트리 이동과 메모리를 같은 장비에서 기록한다.
-- [ ] **2. 격리된 CodeMirror POC**: 앱의 production 편집 경로를 건드리지 않고 Enter,
-      Backspace, Tab, Shift+Tab, 접기, 확대와 이동을 transaction으로 구현한다.
+- [x] **2. 격리된 CodeMirror POC**: `poc/text-buffer/`의 별도 Vite 진입점에서 Enter,
+      Backspace, Tab, Shift+Tab, 접기, 확대, 이동·복제·삭제를 transaction으로 구현했다.
+      CodeMirror와 Lezer는 개발 의존성이고 production의 `src/`에서는 가져오지 않는다.
 - [ ] **3. IME와 모바일 게이트**: 한글 조합과 Android Chrome, 삼성 키보드에서 입력 누락과
-      selection 파손이 0회인지 확인한다.
-- [ ] **4. Outline Markdown 왕복**: 지원 문법, 미지원 블록 보존, 문서와 항목 ID 표기 두 후보를
-      실제 파일로 비교한다.
+      selection 파손이 0회인지 확인한다. POC에 composition 계측기는 구현했으며 실제 기기
+      검증이 남아 있다.
+- [ ] **4. Outline Markdown 왕복**: 파일 열기·저장, 미지원 블록 보존, 외부 변경과 충돌 사본은
+      POC에 구현했다. 문서와 항목 ID 표기 두 후보의 실제 파일 비교가 남아 있다.
 - [ ] **5. 채택 판정**: text-buffer-native, Markdown + Node 런타임, 현재 구조 유지 중 하나를
       고른다. 채택한 경우에만 DESIGN.md와 ADR 변경을 계획한다.
 

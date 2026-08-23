@@ -18,7 +18,7 @@ import { chromium, defineConfig, devices } from "@playwright/test";
  * specs fine — they are ordinary DOM, keyboard and CDP work, not anything
  * version-tender.
  */
-function chromiumPath(): string | undefined {
+export function chromiumPath(): string | undefined {
   // An explicit path wins: it is how someone points at a browser this cannot
   // guess (a system Chrome, a build outside the browsers directory).
   if (process.env.PLAYWRIGHT_CHROMIUM_PATH) return process.env.PLAYWRIGHT_CHROMIUM_PATH;

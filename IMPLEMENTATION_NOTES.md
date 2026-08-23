@@ -8,6 +8,31 @@
 
 ---
 
+## 2026-08-23 - Text buffer 격리 POC
+
+- **POC는 production 진입점에 넣지 않았다.** `poc/text-buffer/`가 별도의 Vite root와 build
+  output을 가지며, CodeMirror와 Lezer 패키지는 개발 의존성이다. `src/`에서 이 패키지들을
+  가져오는 곳은 0개다. 따라서 DESIGN.md 원칙 12의 production 런타임 의존성 계약은 아직
+  바뀌지 않았다고 판정했다.
+- **OutlineIndex는 현재 전체 문서를 선형으로 다시 읽는다.** CodeMirror의 Lezer 구문 트리는
+  증분이지만, 아웃라인 부분집합의 부모·서브트리 인덱스는 transaction마다 다시 계산한다.
+  처음부터 복잡한 부분 갱신을 구현하지 않고 10,000행 입력 측정이 1.5배 게이트를 넘을 때만
+  최적화하기로 판정했다. 이 상태를 숨기지 않도록 POC 화면에 `parseMs`를 따로 표시한다.
+- **원문 보존과 구조 조작의 경계를 분리했다.** front matter, fenced code, 인용과 알 수 없는
+  블록은 OutlineIndex 항목이 아니지만 text buffer에는 그대로 남는다. 구조 명령은 선택한
+  항목의 원문 범위만 transaction으로 옮긴다.
+- **CodeMirror Markdown 묶음은 작지 않다.** 같은 최종 검증에서 production main JS는
+  274.36kB, gzip 92.00kB였고 독립 POC JS는 544.85kB, gzip 189.45kB였다. 독립 앱끼리라
+  단순 합산할 값은 아니지만, 채택 시 지연 로드와 불필요한 언어 지원 제거를 검토하고 production
+  통합 빌드의 실제 증분 크기를 다시 측정해야 한다.
+- **브라우저 e2e 4건을 작성했지만 현재 세션에서는 실행 신호를 얻지 못했다.** 컨테이너에
+  Chromium이 없었고, Playwright 설치 CDN 응답이 0MiB의 잘린 zip으로 다섯 번 끝났다.
+  TypeScript, production build, POC build와 전체 유닛 227건은 통과했다. e2e를 통과했다고
+  기록하지 않으며, 브라우저가 있는 환경에서 다시 실행해야 한다.
+- **합성 composition 이벤트는 실제 IME 판정이 아니다.** 이벤트 순서 계측과 조합 중 Enter를
+  명령에서 제외하는 방어는 구현했지만, 데스크톱 한글 IME와 Android Chrome·삼성 키보드에서
+  입력 손실 0회를 확인하기 전에는 PLANS.md 3단계를 완료로 표시하지 않는다.
+
 ## 2026-08-22 - ⌘A를 확장 선택으로
 
 - **⌘A는 테이블 밖에 있었고, 그대로 두었다.** 행 선택 상태의 ⌘C·⌘X·Space가 이미

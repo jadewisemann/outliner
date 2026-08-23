@@ -1,9 +1,9 @@
 # Markdown 파일 및 text-buffer 전환 검토
 
-- 상태: 제안
+- 상태: 격리 POC 구현, 측정과 채택 판정 전
 - 작성일: 2026-08-23
 - 범위: 설계 검토와 POC 계획
-- 구현 상태: 미착수
+- 구현 상태: `poc/text-buffer/`에 1단계 POC를 구현했으며 production 경로는 변경하지 않음
 
 > 이 문서는 채택된 설계가 아니다. 현재 정본은 계속 [DESIGN.md](../../DESIGN.md)와 관련 ADR이다.
 > 이 문서는 Markdown 파일을 사용자 데이터의 정본으로 삼는 제품 전환이 타당한지 실측하기 위한
@@ -380,36 +380,62 @@ POC는 production 코드와 분리된 경로에서 한 문서만 연다. 저장,
 
 ### 단계 1: 최소 편집기
 
-- [ ] CodeMirror 6의 최소 패키지로 editor를 연다.
-- [ ] Markdown list를 OutlineIndex로 읽는다.
-- [ ] bullet과 깊이를 decoration으로 표시한다.
-- [ ] Enter, Backspace, Tab과 Shift+Tab을 아웃라인 명령으로 구현한다.
-- [ ] 한글 조합 이벤트를 계측한다.
+- [x] CodeMirror 6의 최소 패키지로 editor를 연다.
+- [x] Markdown list를 OutlineIndex로 읽는다.
+- [x] bullet과 깊이를 decoration으로 표시한다.
+- [x] Enter, Backspace, Tab과 Shift+Tab을 아웃라인 명령으로 구현한다.
+- [x] 한글 조합 이벤트를 계측한다.
 
 ### 단계 2: 구조 조작
 
-- [ ] 서브트리 범위를 계산한다.
-- [ ] 위와 아래 이동을 하나의 transaction으로 구현한다.
-- [ ] 복제와 삭제를 구현한다.
-- [ ] 접기와 펼치기를 구현한다.
-- [ ] 노드 확대와 복귀를 구현한다.
-- [ ] 여러 행 선택을 검증한다.
+- [x] 서브트리 범위를 계산한다.
+- [x] 위와 아래 이동을 하나의 transaction으로 구현한다.
+- [x] 복제와 삭제를 구현한다.
+- [x] 접기와 펼치기를 구현한다.
+- [x] 노드 확대와 복귀를 구현한다.
+- [x] 여러 selection의 선택 범위를 하나의 구조 명령으로 처리한다.
 
 ### 단계 3: 표시와 모바일
 
-- [ ] checkbox와 numbered list를 표시한다.
-- [ ] 인라인 Markdown을 표시한다.
-- [ ] 기존 touch bar 명령을 editor transaction에 연결한다.
+- [x] checkbox와 numbered list를 표시한다.
+- [x] 인라인 Markdown을 표시한다.
+- [x] touch bar 명령을 editor transaction에 연결한다.
 - [ ] Android Chrome과 삼성 키보드에서 조합 입력을 확인한다.
 - [ ] 스크롤 중 포커스를 강제로 되돌리지 않는지 확인한다.
 
 ### 단계 4: 파일 왕복
 
-- [ ] Markdown을 열고 같은 바이트로 저장할 수 있는지 확인한다.
-- [ ] 지원하지 않는 블록을 보존한다.
-- [ ] 외부 변경을 buffer에 반영한다.
-- [ ] base, local, remote 충돌을 재현한다.
+- [x] Markdown을 열고 수정하지 않은 buffer를 그대로 저장하는 경로를 구현한다.
+- [x] 지원하지 않는 블록을 원문에 보존한다.
+- [x] 외부 변경을 buffer transaction으로 반영한다.
+- [x] base, local, remote 충돌을 재현하고 양쪽 충돌 사본을 남긴다.
 - [ ] ID 표기 두 후보를 비교한다.
+
+### POC 배치와 현재 판정
+
+POC는 `poc/text-buffer/`에 별도의 Vite 진입점으로 배치했습니다. CodeMirror와 Lezer 패키지는
+개발 의존성이고 production의 `src/`에서는 가져오지 않습니다. 따라서 기존 편집기, IndexedDB,
+동기화, production 번들과 DESIGN.md의 현재 불변식은 그대로입니다.
+
+구조 명령과 충돌 판정은 순수 함수 또는 독립 모듈로 분리했으며, POC 유닛 테스트 11건으로 다음
+동작을 고정했습니다.
+
+- front matter, fenced code와 지원하지 않는 블록을 OutlineIndex에서 제외합니다.
+- 부모, 형제와 서브트리 범위를 Markdown 원문 위치로 계산합니다.
+- 항목 분할, 들여쓰기, 서브트리 이동·복제와 Backspace 병합을 text transaction으로 수행합니다.
+- 외부 변경에서 clean, local-only와 실제 충돌을 구분합니다.
+- 저장 도중 buffer revision이 바뀌면 dirty 상태를 유지합니다.
+
+아직 채택 판정에 사용할 수 없는 이유는 두 가지입니다. 첫째, 현재 OutlineIndex는 변경할 때마다
+Outline Markdown 부분집합을 선형으로 다시 읽습니다. Lezer 구문 트리는 증분으로 갱신되지만
+구조 인덱스의 부분 갱신은 아직 구현하지 않았습니다. 10,000행 측정에서 이 선형 비용이 게이트를
+넘을 때만 복잡한 부분 갱신을 추가합니다. 둘째, 합성 composition 이벤트는 실제 한글 IME와
+Android 키보드의 대체물이 아닙니다. POC 화면에 계측기를 넣었지만 실제 기기 판정은 남아 있습니다.
+
+번들 비용도 채택 근거에 포함해야 합니다. 현재 production main JS는 274.36kB, gzip 92.00kB이고,
+독립 POC JS는 544.85kB, gzip 189.45kB입니다. 두 빌드는 기능 범위가 달라 단순 합산할 수 없지만,
+CodeMirror Markdown 언어 묶음이 가볍지 않다는 사실은 확정되었습니다. 채택안을 만들 때는 POC
+지연 로드, 불필요한 언어 지원 제거와 production 통합 빌드의 실제 증분 크기를 따로 측정합니다.
 
 ## 13. 성능과 정확성 게이트
 
