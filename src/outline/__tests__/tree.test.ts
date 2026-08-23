@@ -15,6 +15,7 @@ import {
   reparent,
   splitAt,
   toOutlineText,
+  widerScope,
   bulkMove,
   linkChildren,
   subtree,
@@ -157,11 +158,89 @@ b`);
 });
 
 describe("moveVertically", () => {
-  it("swaps with the sibling above and stops at the edge", () => {
+  it("swaps with the sibling above and stops at the top of the zoom", () => {
     const doc = build("a\nb");
-    const moved = moveVertically(doc, find(doc, "b"), -1).doc;
+    const moved = moveVertically(doc, find(doc, "b"), -1, doc.rootId).doc;
     expect(shape(moved)).toBe("b\na");
-    expect(moveVertically(moved, find(moved, "b"), -1).doc).toBe(moved);
+    expect(moveVertically(moved, find(moved, "b"), -1, doc.rootId).doc).toBe(moved);
+  });
+
+  it("leaves the parent at the end of its list instead of stopping", () => {
+    const doc = build(`
+a
+  a1
+b`);
+    const moved = moveVertically(doc, find(doc, "a1"), 1, doc.rootId).doc;
+    expect(shape(moved)).toBe("a\nb\na1");
+    expect(moveVertically(moved, find(moved, "a1"), 1, doc.rootId).doc).toBe(moved);
+  });
+
+  it("enters the row below when that row is expanded", () => {
+    const doc = build(`
+a
+  a1
+  a2
+b
+  b1`);
+    expect(shape(moveVertically(doc, find(doc, "a2"), 1, doc.rootId).doc)).toBe("a\n  a1\nb\n  a2\n  b1");
+  });
+
+  it("steps over a collapsed row rather than into it", () => {
+    const doc = build(`
+a
+  a1
+  a2
+b
+  b1`);
+    const collapsed = patchNode(doc, find(doc, "b"), { collapsed: true });
+    expect(shape(moveVertically(collapsed, find(collapsed, "a2"), 1, doc.rootId).doc)).toBe("a\n  a1\nb\na2");
+  });
+
+  it("takes the level of the deepest row above when moving up", () => {
+    const doc = build(`
+a
+  a1
+b`);
+    expect(shape(moveVertically(doc, find(doc, "b"), -1, doc.rootId).doc)).toBe("a\n  b\n  a1");
+  });
+
+  it("carries a whole selection across a level boundary", () => {
+    const doc = build(`
+a
+  a1
+  a2
+b
+  b1`);
+    const chosen = [find(doc, "a1"), find(doc, "a2")];
+    expect(shape(bulkMove(doc, doc.rootId, chosen, 1).doc)).toBe("a\nb\n  a1\n  a2\n  b1");
+  });
+});
+
+describe("widerScope", () => {
+  const doc = build(`
+a
+  a1
+    a11
+  a2
+b`);
+  const rows = visibleRows(doc, doc.rootId);
+  const texts = (ids: Id[]) => ids.map((id) => doc.nodes[id].text);
+
+  it("grows from a row to what hangs under it, then to the list it sits in", () => {
+    const own = widerScope(rows, [find(doc, "a")]);
+    expect(texts(own)).toEqual(["a", "a1", "a11", "a2"]);
+    expect(texts(widerScope(rows, own))).toEqual(["a", "a1", "a11", "a2", "b"]);
+  });
+
+  it("skips a step that would not grow the selection", () => {
+    // a11 is a childless only child, so both its own subtree and its own list
+    // are just itself; the first press has to land on a1's list.
+    expect(texts(widerScope(rows, [find(doc, "a11")]))).toEqual(["a1", "a11", "a2"]);
+  });
+
+  it("stops once everything drawn is held", () => {
+    const all = rows.map((row) => row.id);
+    expect(widerScope(rows, all)).toBe(all);
   });
 });
 

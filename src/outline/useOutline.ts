@@ -340,7 +340,7 @@ export function useOutline(
       }
       if (bound("moveUp") || bound("moveDown")) {
         stop();
-        edit((current) => moveVertically(current, row.id, bound("moveUp") ? -1 : 1));
+        edit((current) => moveVertically(current, row.id, bound("moveUp") ? -1 : 1, zoomId));
         return;
       }
       if (event.key === "Enter" && event.shiftKey) {
@@ -387,6 +387,16 @@ export function useOutline(
         if (!next) return;
         stop();
         requestFocus(next.id, event.key === "ArrowDown" ? Math.min(caret, next.node.text.length) : 0);
+        return;
+      }
+      // ⌘A climbs out of the text once the text is already all held, and hands
+      // the ladder to `useRowSelection`: this row, then the list it sits in,
+      // then the list that one sits in. An empty row has nothing to hold, so
+      // the first press leaves it straight away.
+      if (mod && event.key === "a" && element.selectionStart === 0 && element.selectionEnd === element.value.length) {
+        stop();
+        element.blur();
+        rowSelection.select(row.id);
         return;
       }
       if (event.key === "Escape") {
@@ -440,7 +450,7 @@ export function useOutline(
       },
       move(direction) {
         const id = target();
-        if (id) edit((current) => moveVertically(current, id, direction));
+        if (id) edit((current) => moveVertically(current, id, direction, live.current.zoomId));
       }
     };
   }, [edit]);
