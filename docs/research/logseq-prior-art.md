@@ -1,0 +1,186 @@
+# Logseq 선행 사례 조사 — 아웃라이너에서 Markdown 파일을 정본으로 두면 무슨 일이 벌어지나
+
+> **언제 여나.** Markdown 파일이나 실제 폴더를 사용자 데이터의 정본으로 삼는 방안을
+> 검토할 때, 또는 파생 Markdown 파일(미러)을 내보내는 기능을 만들 때 연다. 이 문서는
+> 결정이 아니라 **바깥 사례의 기록**이다. 이 저장소의 정본은 계속 [DESIGN.md](../../DESIGN.md)와
+> `docs/adr/`이다.
+
+## 0. 조사 대상과 시점
+
+| 항목 | 값 |
+|---|---|
+| 저장소 | `logseq/logseq` |
+| 커밋 | `3e85583` (2026-08-26) |
+| 버전 | 2.0.1 |
+| 읽은 범위 | `deps/db`, `deps/outliner`, `deps/graph-parser`, `src/main/frontend/worker/markdown_mirror.cljs`, `src/main/logseq/common/export/file.cljs`, `docs/adr/` |
+
+Logseq은 이 저장소와 같은 장르(키보드 중심 아웃라이너, 로컬 우선)이면서, **Markdown 파일을
+정본으로 삼는 구조를 실제로 출시하고 운영한 유일한 주요 사례**다. 그래서 이 저장소가
+검토 중인 방안의 결과를 미리 볼 수 있는 자료가 된다.
+
+## 1. 결론 다섯 가지
+
+1. **Logseq은 Markdown 파일 정본에서 물러났다.** 2.0에서 SQLite 데이터베이스를 정본으로 삼는
+   버전과 파일 기반 버전(Logseq OG)으로 갈라섰고, 파일 기반은 유지 보수만 받는다.
+2. **데이터베이스 버전의 모델은 이 저장소의 모델과 사실상 같다.** 안정적인 uuid, `parent` 참조,
+   base-62 분수 인덱스 정렬 키의 조합이다. 우리가 이미 가진 것에 수렴했다.
+3. **파일은 파생물로 돌아왔다.** ADR 0016 「Electron Markdown Mirror」가 데이터베이스에서
+   Markdown 파일을 **단방향으로** 써 내려가는 기능을 정의했고, 코드에 구현되어 있다.
+4. **미러는 백업이 아니다.** Logseq 자신이 non-goal로 "가져오기 충실도를 보장하는 백업 형식이
+   아니다"라고 명시했다.
+5. **파일 이름 짓기가 생각보다 큰 문제다.** 미러 구현의 상당 부분이 파일 이름 정규화와 중복
+   제목 처리에 쓰인다.
+
+## 2. 데이터 모델 대조
+
+Logseq 데이터베이스 버전의 블록 스키마(`deps/db/src/logseq/db/frontend/schema.cljs`)와
+이 저장소의 `src/types.ts`를 나란히 놓으면 이렇다.
+
+| 역할 | Logseq DB | 이 저장소 |
+|---|---|---|
+| 정체성 | `:block/uuid` (`:db.unique/identity`) | `Node.id` |
+| 부모 | `:block/parent` (ref, indexed) | `Node.parent` |
+| 형제 순서 | `:block/order` (indexed) | `Node.sort` |
+| 접힘 | `:block/collapsed?` | `Node.collapsed` |
+| 소속 문서 | `:block/page` (ref) | `Doc.nodes`의 소유 관계 |
+
+`:block/order`의 구현(`deps/db/src/logseq/db/common/order.cljs`)은
+`logseq.clj-fractional-indexing`의 `generate-key-between`을 쓰고 키를 base-62로 검증한다.
+이 저장소의 `src/shared/order.ts`의 `keyBetween`과 **같은 기법이고 같은 진법**이다.
+
+> **판정에 쓸 점.** DESIGN.md 원칙 3(범용 CRDT 대신 `parent` + `sort` + 묘비)은 이 장르에서
+> 고립된 선택이 아니다. Logseq이 파일 기반을 접고 데이터베이스로 갈 때 도착한 곳이 같은
+> 모델이다.
+
+## 3. 파일 정본에서 물러난 경위
+
+`deps/graph-parser/README.md`가 지금 이 라이브러리의 역할을 이렇게 적고 있다.
+
+> This library parses a file graph directory and returns it as a datascript database
+> connection. This library mainly exists to convert file graphs to DB graphs.
+
+즉 **파일 파서는 런타임 적재기가 아니라 이주 도구로 강등되었다.** 그 파서
+(`deps/graph-parser/src/logseq/graph_parser/exporter.cljs`)는 3,169줄이다. 파일과 데이터베이스
+사이의 왕복을 성립시키는 비용의 실측값으로 읽을 수 있다.
+
+파일 기반 시절에 파일이 어떻게 오염되었는지는 `deps/graph-parser`의 속성 목록에 남아 있다.
+`hidden-built-in-properties`에 `:id`, `:collapsed`, `:heading`, `:background-color`가 들어
+있는데, 이것들은 사용자가 쓴 내용이 아니라 **앱의 상태를 파일 본문에 적은 것**이다. 접힘
+상태가 `collapsed:: true`로 본문에 박히고, 블록 정체성이 `id::`로 박힌다.
+
+> **판정에 쓸 점.** 이 저장소가 Markdown 정본을 고르면 같은 자리에 같은 문제가 생긴다.
+> `Node`의 `collapsed`, `color`, `bookmarked`, `sort`, 스탬프 세 개는 Markdown에 자리가 없고,
+> `DocView`의 `zoomId`·`hideCompleted`·`filter`도 마찬가지다.
+
+## 4. Markdown 미러 (ADR 0016)
+
+Logseq이 파일을 다시 들여온 방식이다. 결정의 정본은 저쪽 저장소의
+`docs/adr/0016-markdown-mirror.md`(2026-05-05, Accepted)이고, 구현은
+`src/main/frontend/worker/markdown_mirror.cljs`(714줄)에 있다.
+
+### 4.1 성격
+
+- **데이터베이스가 정본이고 파일은 파생물이다.** ADR 결정 5번이 그렇게 못박았다.
+- **단방향이다.** 미러 파일을 고쳐도 그래프에 반영되지 않는다. ADR 결정 6번은 미러 디렉터리를
+  가져오기와 파일 watcher와 파싱에서 **제외하라고** 지시한다. 코드도 `:from-disk?` 트랜잭션을
+  건너뛴다.
+- **선택 기능이다.** Electron 설정의 `:feature/markdown-mirror?` 토글로 켠다. 기본값은 꺼짐이다.
+- **런타임이 제한된다.** `supported-runtime?`가 node와 Electron만 허용한다. 브라우저와 모바일
+  빌드에는 설정 자체가 노출되지 않는다.
+
+### 4.2 배치와 이름
+
+- 경로는 `<graph>/mirror/markdown/` 아래이고, `journals/`와 `pages/`로 나뉜다.
+- 파일 이름은 **페이지 제목**을 쓴다. uuid를 파일 이름에 넣지 않는다. ADR 5번이 "Emacs,
+  VS Code, Obsidian 같은 외부 도구에서 쓸 만해야 한다"를 이유로 든다.
+- 대신 **페이지 uuid를 파일 첫 줄에 `id:: <uuid>`로 적는다.** 이름은 주소이고 uuid가 정체성이라는
+  구분을 파일 안에서 유지하는 방법이다.
+- 제목이 겹치면 `Foo.md`, `Foo (2).md`, `Foo (3).md`로 번호를 붙인다.
+
+### 4.3 파일 이름 정규화에서 실제로 걸린 것들
+
+`normalize-file-stem`이 처리하는 목록이다. 파일에 쓰는 기능을 만들 때 그대로 재사용할 수 있는
+체크리스트다.
+
+1. Windows에서 못 쓰는 문자(`< > : " | ? * \ /`)를 `_`로 바꾼다.
+2. ASCII 제어 문자를 `_`로 바꾼다.
+3. 끝의 공백과 마침표를 지운다. Windows가 보존하지 않기 때문이다.
+4. 예약 장치 이름(`CON`, `PRN`, `AUX`, `NUL`, `COM1`~`COM9`, `LPT1`~`LPT9`)을 거부한다.
+5. 길이를 160자로 자르고, 유니코드를 NFC로 정규화한다. 파일 시스템마다 정규화가 달라서
+   같은 제목이 다른 경로가 되는 것을 막는다.
+
+### 4.4 쓰기 규율
+
+- **디바운스.** 페이지별 작업을 큐에 넣고 기본 1초 뒤에 몰아서 쓴다. 같은 페이지의 반복 편집은
+  최신 상태 하나로 합쳐진다.
+- **내용이 같으면 안 쓴다.** `<write-if-changed!`가 현재 파일을 읽어 비교한 뒤 같으면 건너뛴다.
+  이 저장소의 원칙 9(no-op 푸시 스킵)와 같은 발상이다.
+- **원자적 쓰기.** 같은 디렉터리의 임시 파일에 쓰고 rename으로 덮는다. 실패해도 기존 파일이
+  남는다.
+- **편집 경로를 막지 않는다.** ADR은 렌더러 메인 스레드에서 렌더링과 파일 입출력을 금지하고,
+  저장 경로는 작업을 큐에 넣고 즉시 반환하라고 규정한다.
+- **이름 변경과 삭제.** 새 경로에 먼저 쓰고, 성공한 뒤에 옛 경로를 지운다.
+- **충돌은 덮어쓰지 않고 실패시킨다.** 같은 날짜의 저널이 둘이면 승자를 고르지 않고 진단을
+  남기며 실패한다.
+
+### 4.5 미러가 하지 않는다고 못박은 것 (ADR Non-goals)
+
+1. 양방향 동기화가 아니다.
+2. 미러 파일을 고쳐도 그래프가 바뀌지 않는다.
+3. **가져오기 충실도를 보장하는 백업 형식이 아니다.**
+4. 기존 내보내기 기능을 대체하지 않는다.
+5. 브라우저와 모바일을 지원하지 않는다.
+
+ADR의 Tradeoffs 절도 솔직하다. 미러는 최신 편집보다 늦고, 외부에서 고친 미러 파일은 다음
+편집에 덮어쓰이며, 속성 페이지가 빠지므로 **완전한 내보내기가 아니다.**
+
+## 5. 함정 — ADR과 구현이 어긋나는 지점
+
+ADR 0016은 경로 안정성을 위해 `mirror/markdown/.index.edn`에 uuid와 경로의 대응을 저장하고,
+"한 번 배정된 경로는 이름 변경이나 삭제 전까지 유지하라"(결정 8번)고 규정한다.
+
+**그런데 이 커밋의 구현에는 그 인덱스가 없다.** `.index.edn`을 참조하는 코드가 0곳이다.
+`page-relative-path`는 같은 제목을 가진 페이지들을 uuid 순으로 정렬해 그때그때 번호를 매긴다.
+
+그래서 같은 제목의 페이지가 새로 생겼을 때 그 uuid가 앞서 정렬되면, **기존 페이지의 미러
+경로가 바뀐다.** ADR이 금지한 재번호가 실제로는 일어날 수 있다.
+
+> **판정에 쓸 점.** 사람이 읽는 이름으로 파일을 쓰기로 하면, 이름과 정체성을 잇는 인덱스가
+> 반드시 함께 있어야 한다. 인덱스 없이 "그때그때 계산"하면 조용히 경로가 흔들린다.
+
+## 6. 암호화에 대한 Logseq의 결론
+
+ADR 0003(Proposed)은 동기화 그래프를 만들 때 암호화 여부를 **그래프 단위로 고르게** 하고,
+생성 이후에는 바꿀 수 없게 한다. 기본값은 암호화다. 이유로 자체 호스팅 환경의 신뢰와, 저장소를
+직접 읽는 외부 도구와의 연동을 든다.
+
+> **판정에 쓸 점.** "평문이라 외부 도구와 연동된다"와 "암호화라 저장소를 가진 쪽이 못 읽는다"는
+> 함께 가질 수 없다는 결론이 저쪽에서도 같다. 이 저장소의 「알려진 한계」에 이미 같은 문장이
+> 있다.
+
+## 7. 이 저장소가 가져올 것과 가져오지 않을 것
+
+**가져올 만한 것**
+
+1. 미러의 성격 규정: 파생물이고, 단방향이고, 백업이 아니다.
+2. 이름은 주소이고 uuid가 정체성이라는 구분, 그리고 그것을 파일 첫 줄에 적는 수법.
+3. 파일 이름 정규화 체크리스트(§4.3)와 이름-정체성 인덱스(§5).
+4. 내용이 같으면 쓰지 않는 규칙. 이 저장소는 이미 원칙 9로 같은 것을 하고 있다.
+5. 충돌 상황에서 승자를 고르지 않고 실패시키는 태도. 원칙 7·8과 결이 같다.
+
+**가져오지 않을 것**
+
+1. Electron 전용이라는 제약. 이 저장소는 정적 빌드 하나가 제품 전부이므로(원칙 1) 전제가 다르다.
+2. `mirror/markdown/` 디렉터리 배치. 이 저장소의 GitHub 백엔드는 이미 문서당 파일 하나를
+   커밋하므로, 같은 커밋에 파생 파일을 나란히 두는 편이 자연스럽다.
+3. 속성을 `*` 목록 항목으로 적는 Logseq Markdown 문법. 이 저장소의 원칙 14(서식은 전부 `text`
+   안의 마크다운)와 어긋난다.
+
+## 참고 자료
+
+- `logseq/logseq` 커밋 `3e85583` — `docs/adr/0016-markdown-mirror.md`,
+  `docs/adr/0003-optional-sync-graph-encryption.md`
+- `src/main/frontend/worker/markdown_mirror.cljs`, `src/test/frontend/worker/markdown_mirror_test.cljs` (테스트 45건)
+- `deps/db/src/logseq/db/frontend/schema.cljs`, `deps/db/src/logseq/db/common/order.cljs`
+- `deps/graph-parser/README.md`, `deps/graph-parser/src/logseq/graph_parser/exporter.cljs`
+- [Big update: Logseq is splitting into two versions](https://logseq.io/page/b2ad9ce1-9cb7-4436-8083-54cb4516d324/df4dc09d-0a12-4c87-904e-22a9bf4c350a)
