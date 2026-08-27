@@ -8,6 +8,24 @@
 
 ---
 
+## 2026-08-27 - i-have-adhd 플러그인의 선언과 설치는 다르다
+
+- **선언은 이미 있었고 형식도 옳았다.** `.claude/settings.json`의
+  `extraKnownMarketplaces`(`ayghri/i-have-adhd`)와 `enabledPlugins`
+  (`i-have-adhd@i-have-adhd`)는 공식 설치 명령 두 개가 사용자 설정에 기록하는 JSON과 형식이
+  동일하다. 원본 저장소의 `.claude-plugin/marketplace.json`과 `plugin.json`이 둘 다 이름을
+  `i-have-adhd`로 선언하고 있어서 `i-have-adhd@i-have-adhd`라는 식별자가 맞다. 검증한 커밋은
+  `cbe69fb`이고 플러그인 버전은 0.2.0이다.
+- **문서-코드 충돌 판정: 문서가 과했다.** AGENTS.md는 "선언하고 있으므로 이 저장소의 모든
+  세션에서 스킬을 쓸 수 있다"라고 단정했는데, 원격 컨테이너에서 확인해 보니
+  `~/.claude/plugins/installed_plugins.json`이 비어 있고 스킬이 목록에 나타나지 않았다.
+  선언은 어떤 플러그인을 쓸지 정하는 것이고, 본체를 받아오는 설치는 별도로 수행되어야 한다.
+  구현(선언)이 아니라 서술을 고쳤고, 수동 설치 명령을 함께 적었다.
+- **자동 설치 훅은 두지 않기로 판정했다.** `SessionStart` 훅에서 `claude plugin install`을
+  부르면 저장소가 다른 사람의 사용자 설정을 건드리게 된다. AGENTS.md가 명시한 설계 의도
+  ("선언을 커밋해도 다른 사람의 출력 방식이 강제로 바뀌지는 않는다")와 어긋나므로, 문서로
+  안내하는 쪽을 골랐다.
+
 ## 2026-08-22 - ⌘A를 확장 선택으로
 
 - **⌘A는 테이블 밖에 있었고, 그대로 두었다.** 행 선택 상태의 ⌘C·⌘X·Space가 이미

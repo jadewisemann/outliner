@@ -35,8 +35,21 @@ Git 협업 상세의 SSOT는 [CONTRIBUTING.md](./CONTRIBUTING.md)이고 아래 G
 | [docs/korean-output.md](./docs/korean-output.md) | **문장을 어떻게 구성하는가** — 조사·어미·문장 성분·어휘 선택 | 한국어를 출력할 때 항상 |
 | `i-have-adhd` 플러그인 스킬 | **무엇을 어떤 순서로 얼마나 쓰는가** — 행동 우선, 번호 매기기, 분량 | `/i-have-adhd`로 켰을 때만 |
 
-`.claude/settings.json`이 플러그인을 선언하고 있으므로 이 저장소의 모든 세션에서 스킬을 쓸 수
-있다. 다만 스킬 본문에 `disable-model-invocation: true`가 있어서 **사용자가 켜지 않으면
+`.claude/settings.json`이 마켓플레이스(`ayghri/i-have-adhd`)와 `enabledPlugins`를 선언하고
+있으므로, 플러그인이 설치된 기기에서는 이 저장소의 세션에서 스킬을 쓸 수 있다. 다만 **선언이
+설치를 대신하지는 않는다.** 플러그인 본체를 받아오는 과정이 수행되지 않은 환경에서는 스킬이
+목록에 나타나지 않으며, Claude Code on the web의 원격 컨테이너가 그런 환경이다. 그때는 다음 두
+명령으로 설치한다.
+
+```bash
+claude plugin marketplace add ayghri/i-have-adhd
+claude plugin install i-have-adhd@i-have-adhd
+```
+
+이 두 명령이 기록하는 사용자 설정은 위 저장소 선언과 형식이 동일하므로, 저장소의 선언이 곧
+공식 설치 방법을 그대로 옮긴 것이다.
+
+스킬 본문에 `disable-model-invocation: true`가 있어서 **사용자가 켜지 않으면
 활성화되지 않는다.** 상시 활성 플래그(`~/.claude/.i-have-adhd-always`)는 저장소가 아니라 기기에
 있으므로, 선언을 커밋해도 다른 사람의 출력 방식이 강제로 바뀌지는 않는다. 개인적으로 끄려면
 `.claude/settings.local.json`에 `"i-have-adhd@i-have-adhd": false`를 넣는다(설정 우선순위가
