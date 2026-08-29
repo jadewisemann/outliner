@@ -290,6 +290,22 @@
   color: var(--muted);
 }
 
+/* A checkbox reads as one line, not as a label stacked above a control. */
+.field-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+}
+
+.field-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
+.field-check:has(input:disabled) {
+  opacity: 0.55;
+}
+
 .field-input {
   padding: 8px 10px;
   font: inherit;

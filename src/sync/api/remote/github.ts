@@ -1,6 +1,7 @@
-import type { Doc, Id, Stamp } from "../../../types";
+import type { Doc, Id, Stamp, SyncPayload } from "../../../types";
 import { readDoc, readGraves, readPayload } from "../../../storage/validate";
 import type { Keyring } from "../cipher";
+import { markdownMirror } from "./mirror";
 import { TIMEOUT_MS, type Backend, type GithubVersion, type Stored, type SyncConfig } from "./contract";
 import { fromBase64, fromBinaryString, parse, serialize, toBase64, toBinaryString } from "./codec";
 
@@ -35,6 +36,7 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
     `https://api.github.com/repos/${config.repo}/contents/${segments.map(encodeURIComponent).join("/")}`;
   const docsUrl = contents([...folder, "docs"]);
   const gravesUrl = contents([...folder, "graves.json"]);
+  const markdownUrl = contents([...folder, "markdown"]);
   // Where the workspace lived before it was split up.
   const legacyUrl = contents([...folder.slice(0, -1), `${folder[folder.length - 1]}.json`]);
 
@@ -57,6 +59,17 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
    * `Doc` so a pull can skip re-parsing a file whose sha has not moved.
    */
   let mirror = new Map<Id, { sha: string; text: string; doc: Doc | null }>();
+  /**
+   * What the Markdown folder holds, name to sha. Null until the first push
+   * lists it: a device that has just started does not know, and everything
+   * after that is maintained by this device's own writes.
+   */
+  let markdownShas: Map<string, string> | null = null;
+  /** What this device last wrote, so an unchanged file costs no request. */
+  const markdownText = new Map<string, string>();
+  // Encryption wins: the mirror is plaintext by definition, so the two cannot
+  // both be on. Off is not passive — it removes whatever is already there.
+  const enabled = config.markdown === true && !config.passphrase;
   let graves: { etag: string | null; sha: string | null; text: string; value: Record<Id, Stamp> } = {
     etag: null,
     sha: null,
@@ -184,6 +197,71 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
     if (response.status === 409 || response.status === 422) return false;
     if (!response.ok) throw new Error(`github push failed: ${response.status}`);
     return true;
+  }
+
+  /** The Markdown files present, name to sha. Empty when there is no folder. */
+  async function listMarkdown(): Promise<Map<string, string>> {
+    const response = await api(markdownUrl);
+    if (response.status === 404) return new Map();
+    if (!response.ok) throw new Error(`github mirror list failed: ${response.status}`);
+    const body = (await response.json()) as unknown;
+    if (!Array.isArray(body)) return new Map();
+    const found = new Map<string, string>();
+    for (const item of body) {
+      if (!item || typeof item !== "object") continue;
+      const { name, sha, type } = item as { name?: unknown; sha?: unknown; type?: unknown };
+      if (type !== "file" || typeof name !== "string" || typeof sha !== "string") continue;
+      if (name.endsWith(".md")) found.set(name, sha);
+    }
+    return found;
+  }
+
+  /**
+   * Brings the Markdown folder in line with the payload: write what changed,
+   * delete what no longer belongs, and when the feature is off, leave nothing
+   * behind. Turning encryption on takes this path too — a plaintext copy
+   * sitting next to the ciphertext would hand the whole workspace to whoever
+   * holds the repository.
+   *
+   * The whole set is recomputed rather than patched, so a device that has been
+   * away does not need to remember anything to converge. Failures here never
+   * reach the caller: these files are derived, and losing them costs a reader
+   * their convenience, not their notes.
+   */
+  async function writeMirror(payload: SyncPayload): Promise<void> {
+    const wanted = enabled ? markdownMirror(payload) : [];
+    if (!enabled && markdownShas?.size === 0) return;
+
+    if (!markdownShas) markdownShas = await listMarkdown();
+    const keep = new Set(wanted.map((file) => file.name));
+
+    for (const file of wanted) {
+      const sha = markdownShas.get(file.name) ?? null;
+      if (sha && markdownText.get(file.name) === file.text) continue;
+      const written = await write(
+        contents([...folder, "markdown", file.name]),
+        file.text,
+        sha,
+        `outliner: markdown ${file.name.replace(/\.md$/, "")}`
+      );
+      // A lost race is not an error: the next push recomputes the same file.
+      if (!written) {
+        markdownShas = null;
+        return;
+      }
+      markdownShas.set(file.name, written);
+      markdownText.set(file.name, file.text);
+    }
+
+    for (const [name, sha] of [...markdownShas]) {
+      if (keep.has(name)) continue;
+      if (!(await remove(contents([...folder, "markdown", name]), sha, "outliner: remove markdown"))) {
+        markdownShas = null;
+        return;
+      }
+      markdownShas.delete(name);
+      markdownText.delete(name);
+    }
   }
 
   return {
@@ -342,6 +420,16 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
         }
         delete shas[id];
         mirror.delete(id);
+      }
+
+      // Last, and never at the expense of the notes: the documents above are
+      // the workspace, these are a projection of it.
+      try {
+        await writeMirror(payload);
+      } catch {
+        // Derived output. A failed mirror write is retried on the next push,
+        // and must not turn a successful document push into a failed one.
+        markdownShas = null;
       }
 
       // The split files now hold everything the old one did.
