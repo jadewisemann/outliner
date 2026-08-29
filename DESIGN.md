@@ -142,6 +142,7 @@ src/
 | [docs/design/code-rationale.md](./docs/design/code-rationale.md) | **값을 바꾸거나 단순화하기 전에 해당 심볼을 여기서 먼저 찾아본다** |
 | [docs/parity.md](./docs/parity.md) | 기능 방향의 근거 — Dynalist 격차 분석, P0~P2 이력, 스키마 변경 총계 |
 | [docs/research/logseq-prior-art.md](./docs/research/logseq-prior-art.md) | Markdown 파일을 정본으로 두는 방안이나 파생 Markdown 미러를 검토할 때. Logseq이 같은 선택을 하고 물러난 기록이다 |
+| [docs/research/backend-capacity.md](./docs/research/backend-capacity.md) | 자체 서버 도입, GitHub 백엔드의 한계, delta 동기화를 검토할 때 |
 | [docs/design/refactor-plan.md](./docs/design/refactor-plan.md) | 진행 중 모듈 리팩터(R1~R6)의 상세 계획 — PLANS.md가 가리킨다 |
 | [docs/adr/](./docs/adr/) | 구조적 결정의 이유 — "왜 이렇게 안 했는가" |
 | [docs/korean-output.md](./docs/korean-output.md) | 한국어를 출력할 때. **작업 종류와 무관하게 항상 적용되므로, 이 표의 「필요한 것만 연다」 규칙의 예외다** |
