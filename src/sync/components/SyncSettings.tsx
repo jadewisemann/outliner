@@ -36,6 +36,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
   const [path, setPath] = useState(config?.kind === "github" ? config.path : "outliner");
   const [token, setToken] = useState(oauth?.token ?? config?.token ?? "");
   const [passphrase, setPassphrase] = useState(config?.passphrase ?? "");
+  const [markdown, setMarkdown] = useState(config?.kind === "github" && config.markdown === true);
 
   // The login button only appears when this deployment has the OAuth function.
   const [clientId, setClientId] = useState<string | null>(null);
@@ -48,7 +49,14 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
   const built: SyncConfig | null =
     mode === "github"
       ? /^[^\s/]+\/[^\s/]+$/.test(repo.trim()) && token.trim() !== ""
-        ? { kind: "github", repo: repo.trim(), path: path.trim() || "outliner", token: token.trim(), passphrase: secret }
+        ? {
+            kind: "github",
+            repo: repo.trim(),
+            path: path.trim() || "outliner",
+            token: token.trim(),
+            passphrase: secret,
+            markdown: markdown && secret === undefined ? true : undefined
+          }
         : null
       : url.trim() !== ""
         ? { kind: "rest", url: url.trim(), token: token.trim(), passphrase: secret }
@@ -173,6 +181,28 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
             <p className="sync-note">
               로그인은 계정의 저장소 전체에 대한 권한(<code>repo</code> scope)을 받습니다 — GitHub OAuth의
               한계입니다. 권한을 노트 저장소 하나로 좁히고 싶으면 fine-grained PAT를 만들어 붙여넣으세요.
+            </p>
+
+            <label className="field field-check">
+              <input
+                type="checkbox"
+                checked={markdown && passphrase === ""}
+                disabled={passphrase !== ""}
+                onChange={(event) => setMarkdown(event.target.checked)}
+              />
+              <span>읽을 수 있는 Markdown 사본도 함께 두기</span>
+            </label>
+            <p className="sync-note">
+              문서마다 <code>markdown/제목.md</code>를 함께 커밋합니다. 앱이 다시 읽지 않는 <strong>파생
+              사본</strong>이라, 앱 없이도 저장소만으로 노트를 읽을 수 있는 것이 목적입니다. 이 파일을 직접
+              고쳐도 노트에 반영되지 않고 다음 저장에 덮어써집니다. 끄면 이미 만들어진 사본을 지웁니다.
+              {passphrase !== "" ? (
+                <>
+                  {" "}
+                  <strong>암호를 걸면 켤 수 없습니다</strong> — 암호문 옆에 평문 사본을 두면 암호를 건 의미가
+                  사라집니다.
+                </>
+              ) : null}
             </p>
           </>
         )}

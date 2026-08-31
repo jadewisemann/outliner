@@ -17,7 +17,10 @@ export function loadSyncConfig(): SyncConfig | null {
         repo: parsed.repo,
         path: typeof parsed.path === "string" && parsed.path !== "" ? parsed.path : "outliner",
         token: parsed.token,
-        passphrase
+        passphrase,
+        // Absent means off, the same shape `passphrase` uses: the stored
+        // config carries a key only for what was actually turned on.
+        markdown: parsed.markdown === true ? true : undefined
       };
     }
     // Configs saved before backends had a `kind` were always plain REST.

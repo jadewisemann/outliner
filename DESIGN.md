@@ -66,6 +66,8 @@ Dynalist를 대신하는 로컬 우선 아웃라이너. 브라우저에서 열�
     사라지면 `(없는 항목)`으로 남긴다 — 조용히 지우지 않는다.
 17. **백엔드의 `history`/`files`는 전송 계약이 아니라 선택적 능력이다.** 계약("버전 붙은
     JSON + CAS")에 능력을 섞는 구현은 위반이다 — REST 백엔드는 능력 없이도 완전한 백엔드다.
+    읽을 수 있는 Markdown 사본도 같은 계열이지만 `Backend` 표면에 멤버를 더하지 않는다 —
+    GitHub 백엔드의 `push` 안에서 끝난다 ([ADR-0007](./docs/adr/0007-markdown-mirror.md)).
 18. **저장의 지속성은 요청하고, 거절당하면 말한다.** IndexedDB의 기본 등급은 best-effort이고
     그건 저장 압박·미사용 정리에 브라우저가 노트를 지울 수 있다는 뜻이다. 로컬 우선(원칙 1)을
     표방하면서 그걸 브라우저 재량에 맡기는 것은 의도된 트레이드가 아니라 구멍이다. 그래서
@@ -74,6 +76,12 @@ Dynalist를 대신하는 로컬 우선 아웃라이너. 브라우저에서 열�
     조용히 넘기는 구현은 위반이다 — 후자는 하지 않은 보장을 한 척하는 것이다.
     **"persisted 여야 한다"는 불변식이 아니다** — 판정하는 것은 코드가 아니라 브라우저이고,
     코드가 지킬 수 있는 것은 묻는 것과 정직하게 말하는 것까지다.
+19. **읽을 수 있는 Markdown 사본은 파생물이고, 암호와 함께 갈 수 없다.** `.json`이 정본이고
+    `.md`는 그것의 사본이다. 앱이 이 파일을 **읽는** 구현은 위반이다 — 정본이 둘이 된다.
+    그리고 **암호가 걸린 워크스페이스에 사본을 남기는 구현은 위반이다** — 암호문 옆의 평문은
+    암호를 건 의미를 없앤다. 끄거나 암호를 걸었을 때 이미 만들어진 사본을 지우는 데까지가 이
+    불변식이고, 판정은 UI가 아니라 백엔드가 한다
+    ([ADR-0007](./docs/adr/0007-markdown-mirror.md)).
 
 ## 아키텍처
 
@@ -116,7 +124,7 @@ src/
     components/   Outline, Row, RowMenu, Editable, TouchBar, TeX, Attachment — 렌더링만
   palette/      palette.ts(후보 랭킹), commands.ts(앱의 모든 명령) + Palette
   sync/         merge.ts(병합 규칙), useSync.ts(pull–merge–push 루프·백오프·탭 간 핑)
-    api/          remote/(전송 — contract·rest·github·codec·settings, 입구는 index.ts),
+    api/          remote/(전송 — contract·rest·github·codec·settings·mirror, 입구는 index.ts),
                   cipher.ts(E2EE), attachments.ts(내용 해시 이름과 object URL),
                   githubAuth.ts(OAuth 플로)
     components/   SyncSettings(+SyncBadge), HistoryPanel
@@ -141,6 +149,8 @@ src/
 | [docs/design/trust-boundary.md](./docs/design/trust-boundary.md) | 외부 데이터 검증, CSP, 실패 처리, 토큰·암호의 경계를 만질 때 |
 | [docs/design/code-rationale.md](./docs/design/code-rationale.md) | **값을 바꾸거나 단순화하기 전에 해당 심볼을 여기서 먼저 찾아본다** |
 | [docs/parity.md](./docs/parity.md) | 기능 방향의 근거 — Dynalist 격차 분석, P0~P2 이력, 스키마 변경 총계 |
+| [docs/research/logseq-prior-art.md](./docs/research/logseq-prior-art.md) | Markdown 파일을 정본으로 두는 방안이나 파생 Markdown 미러를 검토할 때. Logseq이 같은 선택을 하고 물러난 기록이다 |
+| [docs/research/backend-capacity.md](./docs/research/backend-capacity.md) | 자체 서버 도입, GitHub 백엔드의 한계, delta 동기화를 검토할 때 |
 | [docs/design/refactor-plan.md](./docs/design/refactor-plan.md) | 진행 중 모듈 리팩터(R1~R6)의 상세 계획 — PLANS.md가 가리킨다 |
 | [docs/adr/](./docs/adr/) | 구조적 결정의 이유 — "왜 이렇게 안 했는가" |
 | [docs/korean-output.md](./docs/korean-output.md) | 한국어를 출력할 때. **작업 종류와 무관하게 항상 적용되므로, 이 표의 「필요한 것만 연다」 규칙의 예외다** |
@@ -175,6 +185,9 @@ src/
 - **`$$수식$$`은 KaTeX를 받아온다.** 유일한 런타임 의존성이고 앱 전체보다 네 배쯤 크다. 지연
   로드라 수식 없는 워크스페이스는 한 바이트도 안 받고, 도착 전에는 원문이 보인다 (ADR-0004).
 - **코드 하이라이팅은 근사다.** 언어를 모르고 문자열·주석·숫자·키워드만 구분한다.
+- **읽을 수 있는 Markdown 사본의 파일 이름은 링크를 걸 만큼 안정적이지 않다.** 같은 제목의
+  문서가 새로 생기면 기존 문서의 사본이 `제목 (2).md`로 밀릴 수 있다. 읽기에는 충분하고,
+  파생 파일에 그 이상을 요구하지 않기로 했다 (ADR-0007).
 - **히스토리·첨부는 저장소 백엔드만의 기능이다.** 능력의 비대칭은 여기서 선을 그었다 —
   계약만으로 구현되지 않는 능력을 더 늘리지 않는다 (ADR-0005).
 - **저장 등급은 브라우저가 정한다.** 원칙 18대로 묻지만, 답은 우리 것이 아니다 — Chrome은

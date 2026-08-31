@@ -33,6 +33,12 @@ export type SyncConfig =
       token: string;
       /** Set to keep the remote from being able to read any of it. */
       passphrase?: string;
+      /**
+       * Write a readable `.md` beside every document. Derived output only: the
+       * app never reads these back. Ignored while `passphrase` is set, because
+       * a plaintext copy next to the ciphertext would undo the encryption.
+       */
+      markdown?: boolean;
     };
 
 /** Per-file shas of the split GitHub layout — one token covering many files. */

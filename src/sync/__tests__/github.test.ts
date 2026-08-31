@@ -125,6 +125,10 @@ function fakeGithub(seed: Record<string, string> = {}) {
 const connect = (passphrase?: string): Backend =>
   createBackend({ kind: "github", repo: "tester/notes", path: "outliner", token: "pat", passphrase });
 
+/** The same backend with the readable Markdown copy turned on. */
+const mirrored = (passphrase?: string): Backend =>
+  createBackend({ kind: "github", repo: "tester/notes", path: "outliner", token: "pat", passphrase, markdown: true });
+
 const payload = (docs: Doc[], graves: SyncPayload["graves"] = {}): SyncPayload => ({
   docs: Object.fromEntries(docs.map((doc) => [doc.id, doc])),
   graves
@@ -393,6 +397,70 @@ describe("the GitHub backend, one file per document", () => {
 
     expect([...(await backend.files!.get("abc123.png"))!]).toEqual([...bytes]);
     expect(await backend.files!.get("missing.png")).toBeNull();
+  });
+
+  it("commits a readable copy beside each document when the mirror is on", async () => {
+    const repo = fakeGithub();
+    const backend = mirrored();
+    const one = makeDoc("장보기");
+    one.nodes[one.nodes[one.rootId].children[0]].text = "우유";
+
+    await backend.push(payload([one]), null);
+
+    const copy = repo.files.get("outliner/markdown/장보기.md");
+    expect(copy).toBeDefined();
+    expect(copy!.text).toContain(`outliner-id: ${one.id}`);
+    expect(copy!.text).toContain("- 우유");
+    // The document itself is untouched by the mirror: the JSON is still what
+    // the merge reads, and it is still what got written first.
+    expect(docFiles(repo)).toHaveLength(1);
+  });
+
+  it("writes no copy at all when the mirror is off", async () => {
+    const repo = fakeGithub();
+
+    await connect().push(payload([makeDoc("장보기")]), null);
+
+    expect([...repo.files.keys()].some((path) => path.endsWith(".md"))).toBe(false);
+  });
+
+  it("removes copies that a passphrase has made unsafe to keep", async () => {
+    const repo = fakeGithub();
+    const one = makeDoc("장보기");
+
+    // Plaintext first, mirror on: the readable copy exists.
+    const version = await mirrored().push(payload([one]), null);
+    expect(repo.files.has("outliner/markdown/장보기.md")).toBe(true);
+
+    // Then the passphrase goes on. A plaintext copy sitting beside the
+    // ciphertext would hand over everything the encryption was hiding, so the
+    // mirror is not merely skipped: what is already there has to go.
+    await mirrored("hunter2").push(payload([one]), version as Version);
+    expect(repo.files.has("outliner/markdown/장보기.md")).toBe(false);
+  });
+
+  it("takes a copy away with the document it came from", async () => {
+    const repo = fakeGithub();
+    const one = makeDoc("버릴 문서");
+    const backend = mirrored();
+
+    const version = await backend.push(payload([one]), null);
+    expect(repo.files.has("outliner/markdown/버릴 문서.md")).toBe(true);
+
+    await backend.push(payload([], { [one.id]: stamp() }), version as Version);
+    expect(repo.files.has("outliner/markdown/버릴 문서.md")).toBe(false);
+  });
+
+  it("does not commit a copy that has not changed", async () => {
+    const repo = fakeGithub();
+    const backend = mirrored();
+    const one = makeDoc("장보기");
+
+    const version = await backend.push(payload([one]), null);
+    const before = repo.writes.filter((path) => path.endsWith(".md")).length;
+    await backend.push(payload([reread(one)]), version as Version);
+
+    expect(repo.writes.filter((path) => path.endsWith(".md"))).toHaveLength(before);
   });
 
   it("does not commit the same attachment twice", async () => {
