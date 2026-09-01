@@ -7,8 +7,9 @@ Git 협업 상세의 SSOT는 [CONTRIBUTING.md](./CONTRIBUTING.md)이고 아래 G
 ## 저장소 정보
 
 - Dynalist를 대신하는 로컬 우선(local-first) 아웃라이너. 단일 패키지 — 작업 디렉터리는 루트 하나다.
-- 스택: Vite + React 18 + TypeScript. **런타임 의존성은 react/react-dom 뿐**이고 이것은 의도된
-  제약이다 (DESIGN.md 원칙 12).
+- 스택: Vite + React 18 + TypeScript. **런타임 의존성은 react/react-dom, 그리고 수식이 있을
+  때만 지연 로드되는 katex 뿐**이고 이것은 의도된 제약이다 (DESIGN.md 원칙 12, ADR-0004).
+  새 런타임 의존성 추가는 ADR을 요구한다.
 - 실행법·기능 목록·배포는 [README.md](./README.md), 설계·불변식은 [DESIGN.md](./DESIGN.md).
 
 ## 절대 규칙

@@ -15,6 +15,8 @@ function fakeGithub(seed: Record<string, string> = {}) {
   const commits: string[] = [];
   /** Every version a path has held, newest last — the repository's memory. */
   const past = new Map<string, { sha: string; text: string; message: string }[]>();
+  /** Paths the contents API refuses to inline, as it does past 1MB. */
+  const oversize = new Set<string>();
   let writtenMessage = "seed";
   let counter = 0;
   let blobReads = 0;
@@ -76,6 +78,10 @@ function fakeGithub(seed: Record<string, string> = {}) {
       }
       if (held) {
         if (ifNoneMatch === held.sha) return reply(304);
+        // Too big to inline: the metadata arrives without the bytes.
+        if (oversize.has(path)) {
+          return reply(200, { content: "", encoding: "none", sha: held.sha }, { etag: held.sha });
+        }
         return reply(
           200,
           { content: Buffer.from(held.text, "utf8").toString("base64"), encoding: "base64", sha: held.sha },
@@ -118,6 +124,7 @@ function fakeGithub(seed: Record<string, string> = {}) {
     commits,
     /** Rewrites a file behind the backend's back, as another device would. */
     overwrite: store,
+    oversize,
     blobReads: () => blobReads
   };
 }
@@ -233,6 +240,25 @@ describe("the GitHub backend, one file per document", () => {
     // the missing file for a document of its own to upload again.
     expect(repo.writes).toEqual(["outliner/graves.json", `outliner/docs/${gone.id}.json`]);
     expect(docFiles(repo)).toEqual([`outliner/docs/${kept.id}.json`]);
+  });
+
+  it("fails the pull rather than reading gravestones it did not receive as none", async () => {
+    const repo = fakeGithub();
+    const backend = connect();
+    const kept = makeDoc("kept");
+    const gone = makeDoc("gone");
+    const first = await backend.push(payload([kept, gone]), (await backend.pull()).version);
+    await backend.push(payload([kept], { [gone.id]: stamp() }), first as Version);
+    const buried = repo.files.get("outliner/graves.json")!.text;
+    // The file has outgrown what the contents API will inline.
+    repo.oversize.add("outliner/graves.json");
+    repo.writes.length = 0;
+
+    await expect(backend.pull()).rejects.toThrow(/graves\.json/);
+    // Nothing followed the failure: no copy of the buried document went back
+    // up, and the real gravestones are still the ones in the repository.
+    expect(repo.writes).toEqual([]);
+    expect(repo.files.get("outliner/graves.json")!.text).toBe(buried);
   });
 
   it("leaves a document it cannot read alone rather than deleting it", async () => {

@@ -131,8 +131,17 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
     }
     if (!response.ok) throw new Error(`github pull failed: ${response.status}`);
     const body = (await response.json()) as { content?: string; encoding?: string; sha?: string };
-    const stored = body.encoding === "base64" && typeof body.content === "string" ? fromBase64(body.content) : "{}";
-    const text = await keys.open(stored);
+    // A file past the contents API's inline limit answers with no content and
+    // `encoding: "none"`. Reading that as an empty set would cause the one
+    // thing this file exists to prevent: documents missing without their
+    // gravestone are live documents to the merge, so this device would upload
+    // its copies straight back, and the push after it would write its own
+    // short list over the real one. Failing the pull stops both — the loop
+    // backs off and reports itself, and no push follows a failed pull.
+    if (body.encoding !== "base64" || typeof body.content !== "string") {
+      throw new Error(`github pull failed: graves.json unreadable (encoding: ${String(body.encoding)})`);
+    }
+    const text = await keys.open(fromBase64(body.content));
     graves = {
       etag: response.headers.get("etag"),
       sha: body.sha ?? null,
