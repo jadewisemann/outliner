@@ -109,6 +109,8 @@ Dynalist를 대신하는 로컬 우선 아웃라이너. 브라우저에서 열�
 
 ```
 api/            Vercel serverless — OAuth code↔token 교환 (client secret 보관처)
+server/         레퍼런스 셀프 호스트 백엔드 — 정적 파일 + GET/PUT + If-Match, 의존성 0.
+                앱은 이것을 import 하지 않는다. REST 백엔드가 요구하는 계약의 구현 하나일 뿐이다
 public/sw.js    셸 캐시 — 오프라인으로 "여는" 것만 담당
 src/
   types.ts      Node / Doc / Workspace 모델, 문서 트리(폴더) (코드가 정본)

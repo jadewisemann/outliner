@@ -8,6 +8,33 @@
 
 ---
 
+## 2026-09-01 - 레퍼런스 셀프 호스트 서버
+
+- **ADR을 새로 쓰지 않기로 판정했다.** 구조적 결정이 없다. REST 백엔드가 이미 계약을
+  정의하고 있고(`contract.ts`·`rest.ts`), 이 파일은 그 계약의 구현 하나다. `Backend` 타입도
+  `SyncPayload`도 안 바뀌었고 앱은 `server/`를 import 하지 않는다. DESIGN.md 구조 트리에 한
+  줄 더한 것이 문서 변경의 전부다.
+- **`Access-Control-Expose-Headers: etag`가 이 서버의 유일한 조용한 실패 지점이다.** 이것이
+  없으면 curl로는 멀쩡한데 브라우저에서만 `response.headers.get("etag")`가 null이 되고,
+  `rest.ts`는 그것을 "원격에 아무것도 없다"로 읽어 **모든 푸시가 무조건 쓰기가 된다.** 동기화는
+  겉보기에 계속 동작하므로 증상이 없다. e2e에서 브라우저로 직접 `fetch`해 헤더가 보이는지를
+  확인하는 이유다.
+- **`If-Match` 없는 PUT은 파일이 이미 있으면 412로 돌려준다.** `rest.ts`가 `If-Match`를 빼는
+  경우는 pull이 404를 받았을 때뿐이므로, 파일이 생긴 뒤의 무조건 쓰기는 낡은 주장이다.
+  GitHub 백엔드가 sha 없는 푸시에 주는 답과 같은 규칙으로 맞췄다.
+- **쓰기를 프로미스 하나로 직렬화했다.** 두 기기가 동시에 PUT 하면 둘 다 읽기-비교 단계를
+  통과한 뒤 나중 쓰기가 조용히 이기는 경합이 생긴다. 노드가 단일 스레드라는 것은 I/O 사이의
+  원자성을 보장하지 않는다.
+- **본문을 파싱하지 않는다.** 암호를 걸면 봉해진 봉투가 오므로, 본문을 JSON으로 해석하겠다고
+  주장하는 서버는 곧 내용을 읽을 수 있어야 하는 서버다. 바이트로 저장하고 임시 파일 + rename
+  으로 원자적으로 바꾼다.
+- **함정: `tsc -b`가 e2e까지 본다.** `spawn`에 `stdio: ["ignore","pipe","pipe"]`를 주면 타입이
+  `ChildProcessWithoutNullStreams`가 아니라 `ChildProcessByStdio<null, Readable, Readable>`이다.
+  `npm run typecheck`는 통과하고 `npm run build`에서 잡혔다 — AGENTS.md 검증 표의 그 항목이
+  실제로 작동한 사례다.
+- **검증:** `e2e/server.spec.ts` 2건 green(실제 프로세스 + 두 브라우저 컨텍스트), typecheck·
+  build green.
+
 ## 2026-09-01 - 못 읽는 묘비 파일의 판정, 그리고 문서 두 곳의 어긋남
 
 - **판정: 용량을 감당하는 대신 실패시킨다.** 2026-08-29에 미결로 남긴 `graves.json` 함정을
