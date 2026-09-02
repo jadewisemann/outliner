@@ -7,6 +7,11 @@ test.beforeEach(async ({ page }) => {
     indexedDB.deleteDatabase("outliner");
   });
   await page.goto("/");
+  // The app answers keys only once it has mounted and read the workspace; until
+  // then it renders "불러오는 중…" and a keystroke lands on nothing. Specs that
+  // click a row first wait for this by accident — these press a key first, so
+  // they have to wait for it on purpose.
+  await expect(page.locator(".row").first()).toBeVisible();
 });
 
 /** The rebinding panel, which is where the presets live. */
