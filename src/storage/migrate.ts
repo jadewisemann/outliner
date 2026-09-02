@@ -18,15 +18,20 @@ import { makeWorkspace, stamp, type Doc, type Id, type Node, type Workspace } fr
  * which is the honest answer: the old workspace never said where a capture
  * should go, and guessing from a title would be picking a document for the
  * user. The first capture settles it instead.
+ *
+ * Version 8 adds `keymap`, and leaves it null for the same reason: an upgraded
+ * workspace has never said which keyboard convention it is on. The device's own
+ * stored table is what it keeps using, and the first deliberate choice puts one
+ * here (`App.tsx`).
  */
 export function migrate(raw: unknown): Workspace {
   if (!isRecord(raw)) return makeWorkspace();
-  if (raw.version === 7) return raw as unknown as Workspace;
-  // 4 → 5 → 6 → 7 are additive only, and `validate.ts` already supplies a
+  if (raw.version === 8) return raw as unknown as Workspace;
+  // 4 → 5 → 6 → 7 → 8 are additive only, and `validate.ts` already supplies a
   // default for every field they added, so each step is a version bump. Storage
   // always passes through validation on the way in, which is what makes that safe.
-  if (raw.version === 4 || raw.version === 5 || raw.version === 6) {
-    return { ...(raw as unknown as Workspace), version: 7 };
+  if (raw.version === 4 || raw.version === 5 || raw.version === 6 || raw.version === 7) {
+    return { ...(raw as unknown as Workspace), version: 8 };
   }
   if (raw.version === 3) return fromV3(raw);
   return makeWorkspace();
@@ -48,9 +53,10 @@ function fromV3(raw: Record<string, unknown>): Workspace {
   if (Object.keys(docs).length === 0) return makeWorkspace();
   const activeDocId = docs[raw.activeDocId as Id] ? (raw.activeDocId as Id) : Object.keys(docs)[0];
   return {
-    version: 7,
+    version: 8,
     docs,
     graves: {},
+    keymap: null,
     activeDocId,
     views: (raw.views as Workspace["views"]) ?? {}
   };

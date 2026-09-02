@@ -15,7 +15,7 @@ import { IMPORT_ACCEPT } from "../transfer/formats";
 import { applyAppearance, forgetShare, loadAppearance, saveAppearance, sharedText, type Appearance } from "./appearance";
 import { Backlinks } from "./Backlinks";
 import { Icon } from "./Icon";
-import { loadKeymap, matches, saveKeymap, type Keymap } from "../shared/keymap";
+import { matches, resolveKeymap, saveKeymap, storedKeymap, type Keymap } from "../shared/keymap";
 import { Keys } from "./Keys";
 import { Settings } from "./Settings";
 import { Shortcuts } from "./Shortcuts";
@@ -42,7 +42,10 @@ export function App() {
       (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
   );
   const [appearance, setAppearance] = useState<Appearance>(loadAppearance);
-  const [keymap, setKeymap] = useState<Keymap>(loadKeymap);
+  // Until the workspace carries a table, whatever this device stored before
+  // the setting started travelling still applies (ADR-0008). Read once: it is
+  // a fallback, not a second source of truth.
+  const [deviceKeymap] = useState<Keymap | null>(storedKeymap);
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement | null>(null);
   const filterInput = useRef<HTMLInputElement>(null);
@@ -58,7 +61,21 @@ export function App() {
     saveAppearance(appearance);
   }, [appearance]);
 
-  useEffect(() => saveKeymap(keymap), [keymap]);
+  // The workspace's table when there is one, this device's old one until then.
+  const keymap = useMemo(
+    () => (store.keymap ? resolveKeymap(store.keymap.keys) : (deviceKeymap ?? resolveKeymap(null))),
+    [store.keymap, deviceKeymap]
+  );
+
+  const setKeymap = useCallback(
+    (next: Keymap) => {
+      // Kept on the device too, so a rebinding made before this workspace has
+      // ever synced still survives a reload.
+      saveKeymap(next);
+      store.setKeymap(next);
+    },
+    [store.setKeymap]
+  );
 
   // Stable identities: these reach every row and the window listener, and a
   // new function each render would defeat the memo on Row.

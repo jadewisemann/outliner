@@ -116,9 +116,9 @@ DESIGN.md(및 하위 문서)에 반영한다.
    실제 프로세스를 상대로 도는 검증은 `e2e/server.spec.ts`.
 4. 아주 큰 워크스페이스를 위한 delta 동기화
 5. R5(`Doc` 판별 유니온 — **물면 그때**)
-6. **단축키 잔여** — 프리셋을 기기 사이에서 옮기는 것(지금은 `localStorage`라 기기마다 다시
-   고른다), 그리고 Dynalist에 대응 키가 없어 `editor` 값을 물려받은 액션들(취소선·강조·복제·
-   명령 팔레트)을 실사용에서 Dynalist 손이 어디로 찾는지 관찰한 뒤 조정. **물면 그때.**
+6. **단축키 잔여** — 기기 사이 이동은 2026-09-01 완료(스키마 v8, [ADR-0008](./docs/adr/0008-keymap-travels.md)).
+   남은 것은 Dynalist에 대응 키가 없어 `editor` 값을 물려받은 액션들(취소선·강조·복제·명령
+   팔레트)을 실사용에서 Dynalist 손이 어디로 찾는지 관찰한 뒤 조정하는 것. **물면 그때.**
 
 (R6 CSS 분할은 2026-08-20 완료 — tokens/chrome/outline/panels 네 파일, 규칙 순서 불변.
 [refactor-plan.md](./docs/design/refactor-plan.md) 「R6」.)

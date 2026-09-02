@@ -4,8 +4,8 @@
 조용히 코드를 따르지 않고 [AGENTS.md](./AGENTS.md)의 판정 규칙대로 판정한다. 이 문서를
 정본으로 승격한 결정 자체는 [ADR-0001](./docs/adr/0001-design-doc-authority.md)에 있다.
 
-> **작성 기준: 2026-08-21, Dynalist 전환 잔여 작업(스키마 v7 — `Doc.inbox`) 반영.** 이 문서는
-> 코드에서 추출해 동기화한 것이며, 이 시점 이후에 생긴 어긋남만 판정 대상이다.
+> **작성 기준: 2026-09-01, 스키마 v8(`Workspace.keymap`) 반영.** 이 문서는 코드에서 추출해
+> 동기화한 것이며, 이 시점 이후에 생긴 어긋남만 판정 대상이다.
 
 ## 무엇인가
 
@@ -58,8 +58,8 @@ Dynalist를 대신하는 로컬 우선 아웃라이너. 브라우저에서 열�
     `deleted` 스탬프로 구분되는 같은 레코드·같은 파일·같은 병합 규칙. 이들을 위해 동기화
     페이로드나 파일 종류를 늘리는 구현은 위반이다. 퀵 캡처의 도착지도 같은 수법으로
     `Doc.inbox` 필드다 — 워크스페이스 최상위 필드로 두는 구현은 위반이다: 건너가는 것은
-    `SyncPayload`(`docs` + `graves`) 안에 있는 것뿐이라, 최상위에 두면 기기마다 도착지가
-    달라진다. 여러 문서가 표시를 들고 있을 수 있으므로 **하나로 정하는 것은 읽는 쪽**
+    `SyncPayload`(`docs` + `graves` + `keymap`) 안에 있는 것뿐이라, 문서에 딸린 값을 최상위에
+    두면 기기마다 도착지가 달라진다. 여러 문서가 표시를 들고 있을 수 있으므로 **하나로 정하는 것은 읽는 쪽**
     (`inboxDoc`)이고, 모든 기기가 같은 답을 내야 한다.
 16. **항목 링크 `((id))`는 라벨을 갖지 않는다 — 대상의 현재 텍스트로 렌더한다.** 링크에
     라벨을 저장하는 구현은 위반이다(대상과 어긋날 수 없음이 이 기능의 성질이다). 대상이
@@ -130,7 +130,7 @@ src/
                   cipher.ts(E2EE), attachments.ts(내용 해시 이름과 object URL),
                   githubAuth.ts(OAuth 플로)
     components/   SyncSettings(+SyncBadge), HistoryPanel
-  storage/      persist(IndexedDB + 지속성 등급), migrate(스키마 — v7), validate(신뢰 경계)
+  storage/      persist(IndexedDB + 지속성 등급), migrate(스키마 — v8), validate(신뢰 경계)
   search/       query.ts(질의 언어), search.ts(전체 검색), links.ts(항목 링크·백링크)
                 + SearchPanel
   transfer/     Markdown/OPML/백업 변환, paths(피커가 준 경로) + useTransfer(파일 입출력)
@@ -206,5 +206,7 @@ src/
   ([ADR-0006](./docs/adr/0006-keymap-presets.md)).
 - **프리셋은 액션을 비워 둘 수 있다.** Dynalist 프리셋에서 ⌘]는 확대라 들여쓰기 바인딩이
   비어 있다 — Tab·Shift+Tab이 바인딩이 아니라서 손해가 없다.
-- 키맵은 기기 로컬(`localStorage`)이다. 동기화 대상이 아니다.
+- **단축키 표는 기기 사이를 건너고, 화면 설정과 테마는 건너지 않는다.** 측정값은 화면의
+  것이고 단축키는 사람의 것이다 ([ADR-0008](./docs/adr/0008-keymap-travels.md)). 대가로
+  동기화 페이로드가 노트만 싣던 것에서 표시 설정 하나를 더 싣는 것으로 자랐다.
 - `Node` 타입 이름이 DOM의 `Node`를 가린다.

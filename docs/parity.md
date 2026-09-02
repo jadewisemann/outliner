@@ -385,6 +385,7 @@ P0·P1·P2 전부가 들어가는 데 든 **모델 변경의 전부**다. 예측
 | `Node` | `created: Stamp` | **더 이른 쪽** — 유일한 새 규칙 |
 | `Doc` | `parent`, `kind: "doc" \| "folder" \| "search"`, `query`, `bookmarked`, `deleted` | `parent`는 `moved`, 나머지는 `titleEdited` |
 | `Doc` | `inbox` (v7, 2026-08-21) | `titleEdited` LWW — 새 규칙 아님 |
+| `Workspace` | `keymap` (v8, 2026-09-01) | 표 **전체**를 `edited` LWW로. 고른 적 없는 쪽(`null`)은 고른 쪽을 이기지 못한다 ([ADR-0008](./adr/0008-keymap-travels.md)) |
 | `DocView` | `hideCompleted`, `hideNotes`, `filter` | 동기화 안 함 (기기 로컬) |
 
 계획에서 **바뀐 것 둘**:

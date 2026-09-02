@@ -242,5 +242,5 @@ export function parseBackup(content: string): Workspace | null {
 
 function isKnownVersion(raw: unknown): boolean {
   const version = (raw as { version?: unknown } | null)?.version;
-  return version === 3 || version === 4 || version === 5 || version === 6 || version === 7;
+  return version === 3 || version === 4 || version === 5 || version === 6 || version === 7 || version === 8;
 }

@@ -136,9 +136,14 @@ const connect = (passphrase?: string): Backend =>
 const mirrored = (passphrase?: string): Backend =>
   createBackend({ kind: "github", repo: "tester/notes", path: "outliner", token: "pat", passphrase, markdown: true });
 
-const payload = (docs: Doc[], graves: SyncPayload["graves"] = {}): SyncPayload => ({
+const payload = (
+  docs: Doc[],
+  graves: SyncPayload["graves"] = {},
+  keymap: SyncPayload["keymap"] = null
+): SyncPayload => ({
   docs: Object.fromEntries(docs.map((doc) => [doc.id, doc])),
-  graves
+  graves,
+  keymap
 });
 
 const docFiles = (repo: { files: Map<string, unknown> }) =>
@@ -259,6 +264,26 @@ describe("the GitHub backend, one file per document", () => {
     // up, and the real gravestones are still the ones in the repository.
     expect(repo.writes).toEqual([]);
     expect(repo.files.get("outliner/graves.json")!.text).toBe(buried);
+  });
+
+  it("keeps the keyboard table in its own file and reads it back", async () => {
+    const repo = fakeGithub();
+    const backend = connect();
+    const doc = makeDoc("notes");
+    const keymap = { keys: { bold: "Mod+Alt+B" }, edited: stamp() };
+
+    const version = await backend.push(payload([doc], {}, keymap), (await backend.pull()).version);
+    expect(repo.files.has("outliner/keymap.json")).toBe(true);
+    expect(repo.commits).toContain("outliner: keyboard");
+
+    // A second device reads it back rather than starting from the defaults.
+    const other = connect();
+    expect((await other.pull()).payload.keymap?.keys.bold).toBe("Mod+Alt+B");
+
+    // And an unchanged table costs no commit, like an unchanged document.
+    repo.writes.length = 0;
+    await backend.push(payload([doc], {}, keymap), version as Version);
+    expect(repo.writes).toEqual([]);
   });
 
   it("leaves a document it cannot read alone rather than deleting it", async () => {

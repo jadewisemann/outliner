@@ -42,7 +42,7 @@ export type SyncConfig =
     };
 
 /** Per-file shas of the split GitHub layout — one token covering many files. */
-export type GithubVersion = { docs: Record<Id, string>; graves: string | null };
+export type GithubVersion = { docs: Record<Id, string>; graves: string | null; keymap?: string | null };
 
 /**
  * Whatever a backend needs to recognise its own last write. Opaque to the sync
@@ -93,5 +93,5 @@ export type Backend = {
 };
 
 export function emptyPayload(): SyncPayload {
-  return { docs: {}, graves: {} };
+  return { docs: {}, graves: {}, keymap: null };
 }

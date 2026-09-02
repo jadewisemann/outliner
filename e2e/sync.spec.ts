@@ -465,3 +465,33 @@ test("a second tab of the same browser picks up the changes", async ({ browser, 
 
   await context.close();
 });
+
+test("a shortcut preset chosen on one device reaches the other", async ({ browser, baseURL }) => {
+  // The keyboard table is workspace state rather than device state (ADR-0008),
+  // so it travels the same way a row does.
+  const laptop = await browser.newContext();
+  const phone = await browser.newContext();
+  const remote = await serveSharedDocument([laptop, phone]);
+
+  const one = await openSynced(laptop, baseURL!);
+  await one.keyboard.type("first row, so there is something to sync");
+  await remote.uploaded("first row, so there is something to sync");
+
+  await one.keyboard.press("Control+Shift+p");
+  await one.locator(".search-input").fill(">단축키 바꾸기");
+  await one.keyboard.press("Enter");
+  await one.getByRole("button", { name: "Dynalist", exact: true }).click();
+  await one.keyboard.press("Escape");
+  // ⌘` for code is the Dynalist table's, and the editor table has no such
+  // chord — so seeing it in the payload is seeing the choice travel.
+  await remote.uploaded("Mod+`");
+
+  const two = await openSynced(phone, baseURL!);
+  await two.keyboard.press("Control+Shift+p");
+  await two.locator(".search-input").fill(">단축키 바꾸기");
+  await two.keyboard.press("Enter");
+  await expect(two.locator(".keys-preset-active")).toHaveText("Dynalist", { timeout: 20_000 });
+
+  await laptop.close();
+  await phone.close();
+});

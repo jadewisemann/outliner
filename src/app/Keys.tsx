@@ -136,8 +136,8 @@ export function Keys({
       </div>
 
       <footer className="panel-foot">
-        이 기기에만 적용됩니다. Enter·Backspace·Tab·화살표는 편집 그 자체라 바꾸지 않습니다 — 프리셋을
-        바꿔도 들여쓰기는 Tab 그대로입니다. 녹화 중 Backspace는 키를 비웁니다.
+        동기화를 켜 두었다면 다른 기기에도 따라갑니다. Enter·Backspace·Tab·화살표는 편집 그 자체라 바꾸지
+        않습니다 — 프리셋을 바꿔도 들여쓰기는 Tab 그대로입니다. 녹화 중 Backspace는 키를 비웁니다.
       </footer>
     </Panel>
   );

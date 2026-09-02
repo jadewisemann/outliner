@@ -8,7 +8,11 @@ function fork(doc: Doc): [Doc, Doc] {
   return [structuredClone(doc), structuredClone(doc)];
 }
 
-const payload = (doc: Doc, graves: SyncPayload["graves"] = {}): SyncPayload => ({ docs: { [doc.id]: doc }, graves });
+const payload = (doc: Doc, graves: SyncPayload["graves"] = {}): SyncPayload => ({
+  docs: { [doc.id]: doc },
+  graves,
+  keymap: null
+});
 
 const shape = (payload: SyncPayload, docId: Id) =>
   visibleRows(payload.docs[docId], payload.docs[docId].rootId)
@@ -121,15 +125,15 @@ describe("mergeWorkspace", () => {
 
   it("never leaves the workspace with no documents", () => {
     const { doc } = seed();
-    const merged = mergeWorkspace({ docs: {}, graves: { [doc.id]: stamp() } }, payload(doc));
+    const merged = mergeWorkspace({ docs: {}, graves: { [doc.id]: stamp() }, keymap: null }, payload(doc));
     expect(Object.keys(merged.docs)).toHaveLength(1);
   });
 
   it("removes a document on the device that still has it", () => {
     const { doc } = seed();
     const other = makeDoc("kept");
-    const both: SyncPayload = { docs: { [doc.id]: doc, [other.id]: other }, graves: {} };
-    const dropped: SyncPayload = { docs: { [other.id]: other }, graves: { [doc.id]: stamp() } };
+    const both: SyncPayload = { docs: { [doc.id]: doc, [other.id]: other }, graves: {}, keymap: null };
+    const dropped: SyncPayload = { docs: { [other.id]: other }, graves: { [doc.id]: stamp() }, keymap: null };
 
     expect(Object.keys(mergeWorkspace(both, dropped).docs)).toEqual([other.id]);
   });
@@ -167,8 +171,8 @@ describe("regressions", () => {
     const revived = patchNode(important.doc, important.b, { text: "beta, edited after the delete" });
 
     const merged = mergeWorkspace(
-      { docs: { [keep.id]: keep }, graves: { [important.doc.id]: buriedAt } },
-      { docs: { [keep.id]: keep, [revived.id]: revived }, graves: {} }
+      { docs: { [keep.id]: keep }, graves: { [important.doc.id]: buriedAt }, keymap: null },
+      { docs: { [keep.id]: keep, [revived.id]: revived }, graves: {}, keymap: null }
     );
     expect(merged.docs[revived.id]).toBeDefined();
     expect(merged.graves[revived.id]).toBeUndefined();
@@ -183,8 +187,8 @@ describe("regressions", () => {
     const one = makeDoc("one");
     const two = makeDoc("two");
     const both = { [one.id]: one, [two.id]: two };
-    const mine: SyncPayload = { docs: { [two.id]: two }, graves: { [one.id]: stamp() } };
-    const theirs: SyncPayload = { docs: { [one.id]: one }, graves: { [two.id]: stamp() } };
+    const mine: SyncPayload = { docs: { [two.id]: two }, graves: { [one.id]: stamp() }, keymap: null };
+    const theirs: SyncPayload = { docs: { [one.id]: one }, graves: { [two.id]: stamp() }, keymap: null };
 
     const a = mergeWorkspace(mine, theirs);
     const b = mergeWorkspace(theirs, mine);
@@ -252,7 +256,7 @@ describe("pruneGraves", () => {
     const before = Object.keys(deleted.graves).length;
     expect(before).toBeGreaterThan(0);
 
-    const pruned = pruneGraves({ docs: { [doc.id]: deleted }, graves: {} }, Date.now() + 40 * 24 * 3600 * 1000);
+    const pruned = pruneGraves({ docs: { [doc.id]: deleted }, graves: {}, keymap: null }, Date.now() + 40 * 24 * 3600 * 1000);
     expect(Object.keys(pruned.docs[doc.id].graves)).toHaveLength(0);
   });
 
@@ -261,7 +265,7 @@ describe("pruneGraves", () => {
     const long = 40 * 24 * 3600 * 1000;
     const binned: Doc = { ...doc, deleted: { at: Date.now() - long, by: "laptop" } };
 
-    const pruned = pruneGraves({ docs: { [doc.id]: binned }, graves: {} }, Date.now());
+    const pruned = pruneGraves({ docs: { [doc.id]: binned }, graves: {}, keymap: null }, Date.now());
     expect(pruned.docs[doc.id]).toBeUndefined();
     expect(pruned.graves[doc.id]).toBeDefined();
   });
@@ -270,8 +274,52 @@ describe("pruneGraves", () => {
     const doc = seed().doc;
     const binned: Doc = { ...doc, deleted: { at: Date.now(), by: "laptop" } };
 
-    const pruned = pruneGraves({ docs: { [doc.id]: binned }, graves: {} }, Date.now());
+    const pruned = pruneGraves({ docs: { [doc.id]: binned }, graves: {}, keymap: null }, Date.now());
     expect(pruned.docs[doc.id].deleted).not.toBeNull();
     expect(pruned.graves[doc.id]).toBeUndefined();
+  });
+});
+
+describe("the keyboard table", () => {
+  const withKeys = (doc: Doc, keys: Record<string, string>, at: number): SyncPayload => ({
+    ...payload(doc),
+    keymap: { keys, edited: { at, by: "laptop" } }
+  });
+
+  it("takes the table that was chosen most recently", () => {
+    const doc = makeDoc("notes");
+    const older = withKeys(doc, { bold: "Mod+B" }, 1_000);
+    const newer = withKeys(doc, { bold: "Mod+Alt+B" }, 2_000);
+
+    expect(mergeWorkspace(older, newer).keymap?.keys.bold).toBe("Mod+Alt+B");
+    expect(mergeWorkspace(newer, older).keymap?.keys.bold).toBe("Mod+Alt+B");
+  });
+
+  it("does not let a device that never chose one take the choice away", () => {
+    const doc = makeDoc("notes");
+    const chosen = withKeys(doc, { bold: "Mod+Alt+B" }, 5_000);
+    const silent = payload(doc);
+
+    expect(mergeWorkspace(silent, chosen).keymap?.keys.bold).toBe("Mod+Alt+B");
+    expect(mergeWorkspace(chosen, silent).keymap?.keys.bold).toBe("Mod+Alt+B");
+  });
+
+  it("survives a first sync that adopts the remote outright", () => {
+    // The joining device brought its own bindings and no notes. Adopting the
+    // remote's documents must not throw its keyboard away with them.
+    const remote = withKeys(makeDoc("already there"), { bold: "Mod+B" }, 1_000);
+    const joining = { ...payload(makeDoc("Inbox")), keymap: remote.keymap };
+    const mine: SyncPayload = { ...joining, keymap: { keys: { bold: "Mod+Alt+B" }, edited: { at: 9_000, by: "phone" } } };
+
+    expect(mergeWorkspace(mine, remote, { adoptRemote: true }).keymap?.keys.bold).toBe("Mod+Alt+B");
+  });
+
+  it("counts as something the merge brought in, so the app redraws for it", () => {
+    const doc = makeDoc("notes");
+    const local = payload(doc);
+    const merged = mergeWorkspace(local, withKeys(doc, { bold: "Mod+Alt+B" }, 3_000));
+
+    expect(changedBy(local, merged)).toBe(true);
+    expect(changedBy(merged, merged)).toBe(false);
   });
 });

@@ -1,5 +1,5 @@
 import type { Doc, Id, Stamp, SyncPayload } from "../../../types";
-import { readDoc, readGraves, readPayload } from "../../../storage/validate";
+import { readDoc, readGraves, readKeymap, readPayload } from "../../../storage/validate";
 import type { Keyring } from "../cipher";
 import { markdownMirror } from "./mirror";
 import { TIMEOUT_MS, type Backend, type GithubVersion, type Stored, type SyncConfig } from "./contract";
@@ -16,6 +16,7 @@ import { fromBase64, fromBinaryString, parse, serialize, toBase64, toBinaryStrin
  *
  *     {folder}/docs/{id}.json    one whole document
  *     {folder}/graves.json       ids of deleted documents
+ *     {folder}/keymap.json       the chosen keyboard table, when there is one
  *
  * A single file makes every commit a rewrite of everything, which says nothing
  * about what changed. Split up, a push carries only the documents that were
@@ -36,6 +37,7 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
     `https://api.github.com/repos/${config.repo}/contents/${segments.map(encodeURIComponent).join("/")}`;
   const docsUrl = contents([...folder, "docs"]);
   const gravesUrl = contents([...folder, "graves.json"]);
+  const keymapUrl = contents([...folder, "keymap.json"]);
   const markdownUrl = contents([...folder, "markdown"]);
   // Where the workspace lived before it was split up.
   const legacyUrl = contents([...folder.slice(0, -1), `${folder[folder.length - 1]}.json`]);
@@ -75,6 +77,17 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
     sha: null,
     text: serialize({}),
     value: {}
+  };
+  /**
+   * The keyboard table, in its own file for the same reason the documents are
+   * in theirs: a workspace that never changes it never rewrites it, and the
+   * commit that does says so by name.
+   */
+  let keymap: { etag: string | null; sha: string | null; text: string; value: SyncPayload["keymap"] } = {
+    etag: null,
+    sha: null,
+    text: "",
+    value: null
   };
   // Conditional GETs: an unchanged file or folder answers 304 with no body,
   // which does not count against the rate limit — polling an idle remote is
@@ -148,6 +161,25 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
       text,
       value: readGraves(parse(text))
     };
+  }
+
+  async function loadKeymap(): Promise<void> {
+    const response = await api(keymapUrl, keymap.etag ? { headers: { "if-none-match": keymap.etag } } : {});
+    if (response.status === 304) return;
+    if (response.status === 404) {
+      keymap = { etag: null, sha: null, text: "", value: null };
+      return;
+    }
+    if (!response.ok) throw new Error(`github pull failed: ${response.status}`);
+    const body = (await response.json()) as { content?: string; encoding?: string; sha?: string };
+    // Same refusal as the gravestones: bytes this cannot read are not an
+    // empty table, and pretending otherwise would push a default over a
+    // choice the user actually made on another device.
+    if (body.encoding !== "base64" || typeof body.content !== "string") {
+      throw new Error(`github pull failed: keymap.json unreadable (encoding: ${String(body.encoding)})`);
+    }
+    const text = await keys.open(fromBase64(body.content));
+    keymap = { etag: response.headers.get("etag"), sha: body.sha ?? null, text, value: readKeymap(parse(text)) };
   }
 
   /**
@@ -355,6 +387,7 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
         if (adopted) return adopted;
       }
       await loadGraves();
+      await loadKeymap();
 
       const docs: Record<Id, Doc> = {};
       const shas: Record<Id, string> = {};
@@ -371,12 +404,15 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
       mirror = next;
 
       const empty = (entries === null || entries.length === 0) && graves.sha === null;
-      return { payload: { docs, graves: graves.value }, version: empty ? null : { docs: shas, graves: graves.sha } };
+      return {
+        payload: { docs, graves: graves.value, keymap: keymap.value },
+        version: empty ? null : { docs: shas, graves: graves.sha, keymap: keymap.sha }
+      };
     },
 
     async push(payload, version) {
       const known: GithubVersion =
-        version && typeof version === "object" ? version : { docs: {}, graves: null };
+        version && typeof version === "object" ? version : { docs: {}, graves: null, keymap: null };
       const shas = { ...known.docs };
 
       // Gravestones travel ahead of the deletions they justify.
@@ -387,6 +423,18 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
         if (!written) return null;
         gravesSha = written;
         graves = { etag: null, sha: written, text: gravesText, value: payload.graves };
+      }
+
+      // The keyboard table, when this device is carrying one. Written before
+      // the documents only because it is small and independent: nothing about
+      // a document depends on it, and nothing about it depends on a document.
+      const keymapText = payload.keymap ? serialize(payload.keymap) : "";
+      let keymapSha = known.keymap ?? null;
+      if (keymapText !== keymap.text && keymapText !== "") {
+        const written = await write(keymapUrl, keymapText, keymapSha, "outliner: keyboard");
+        if (!written) return null;
+        keymapSha = written;
+        keymap = { etag: null, sha: written, text: keymapText, value: payload.keymap };
       }
 
       // A document that buried something goes first. Moving a row to another
@@ -447,7 +495,7 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
         legacySha = null;
       }
 
-      return { docs: shas, graves: gravesSha };
+      return { docs: shas, graves: gravesSha, keymap: keymapSha };
     }
   };
 }

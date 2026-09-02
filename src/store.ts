@@ -109,7 +109,9 @@ export function useStore() {
     (next: Workspace, previous: Workspace, options: EditOptions) => {
       if (!options.transient) history.record(previous, options.coalesceKey);
       // Zoom and focus live on this device only; they should not wake sync.
-      if (next.docs !== previous.docs || next.graves !== previous.graves) sync.noteEdit();
+      if (next.docs !== previous.docs || next.graves !== previous.graves || next.keymap !== previous.keymap) {
+        sync.noteEdit();
+      }
       applyWorkspace(next);
     },
     [applyWorkspace, history, sync.noteEdit]
@@ -200,6 +202,19 @@ export function useStore() {
 
   const undo = useCallback(() => step((current) => history.undo(current)), [step, history]);
   const redo = useCallback(() => step((current) => history.redo(current)), [step, history]);
+
+  /**
+   * The keyboard table is workspace state, not device state, so a rebinding is
+   * an ordinary edit: it stamps, it merges, it travels (ADR-0008). It is also
+   * undoable, which is what anyone who has just cleared the wrong binding
+   * expects of ⌘Z.
+   */
+  const setKeymap = useCallback(
+    (keys: Record<string, string>) => {
+      editWorkspace((current) => ({ ...current, keymap: { keys, edited: stamp() } }));
+    },
+    [editWorkspace]
+  );
 
   /* ---------------------------------------------------------------- */
   /* documents                                                         */
@@ -514,6 +529,9 @@ export function useStore() {
     undo,
     redo,
     docs,
+    /** The chosen keyboard table, or null while nobody has chosen one. */
+    keymap: workspace?.keymap ?? null,
+    setKeymap,
     sync: {
       status: sync.status,
       config: sync.config,

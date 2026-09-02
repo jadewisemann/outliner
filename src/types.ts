@@ -114,16 +114,33 @@ export type DocView = {
   filter: string;
 };
 
+/**
+ * The keyboard convention this workspace is set to, or null while nobody has
+ * chosen one and the default table applies.
+ *
+ * Unlike the theme and the appearance settings this travels: a measure that
+ * suits a phone does not suit a 27-inch screen, but a hand that learned ⌘] as
+ * zoom learned it everywhere. The chords are stored resolved rather than as
+ * "preset plus edits" because a table is what the app and the rebinding panel
+ * already pass around ([ADR-0008](./docs/adr/0008-keymap-travels.md)).
+ *
+ * Typed structurally rather than as `Keymap` so that `shared/keymap.ts` can go
+ * on importing this module: what an action *means* stays there, and what is
+ * stored is a table of names to chords.
+ */
+export type KeymapSetting = { keys: Record<string, string>; edited: Stamp };
+
 export type Workspace = {
-  version: 7;
+  version: 8;
   docs: Record<Id, Doc>;
   graves: Record<Id, Stamp>;
+  keymap: KeymapSetting | null;
   activeDocId: Id;
   views: Record<Id, DocView>;
 };
 
 /** The part of a workspace that travels between devices. */
-export type SyncPayload = Pick<Workspace, "docs" | "graves">;
+export type SyncPayload = Pick<Workspace, "docs" | "graves" | "keymap">;
 
 export type Row = {
   id: Id;
@@ -218,9 +235,10 @@ export function makeWorkspace(): Workspace {
   // somewhere to land without conjuring a document nobody asked for.
   const doc = makeDoc("Inbox", { inbox: true });
   return {
-    version: 7,
+    version: 8,
     docs: { [doc.id]: doc },
     graves: {},
+    keymap: null,
     activeDocId: doc.id,
     views: { [doc.id]: makeView(doc) }
   };
