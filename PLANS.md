@@ -114,7 +114,10 @@ DESIGN.md(및 하위 문서)에 반영한다.
 3. ~~레퍼런스 셀프 호스트 서버~~ — 2026-09-01 완료. `server/outliner-server.mjs`, 의존성 0인
    파일 하나(정적 파일 + `GET`/`PUT` + `If-Match` + CORS). 실행법은 README 「직접 띄우는 서버」,
    실제 프로세스를 상대로 도는 검증은 `e2e/server.spec.ts`.
-4. 아주 큰 워크스페이스를 위한 delta 동기화
+4. **delta 동기화** — 2026-09-01에 실측하고 설계를 정리했다:
+   [ADR-0009](./docs/adr/0009-delta-sync.md). 판정은 **지금은 하지 않는다**이고, 그 문서에
+   뒤집을 조건(5,000노드 넘는 문서, REST 백엔드에 문서 20개 초과, GitHub 쓰기 거절)이 적혀
+   있다. 실측은 [backend-capacity.md](./docs/research/backend-capacity.md) 「2026-09-01 실측」.
 5. R5(`Doc` 판별 유니온 — **물면 그때**)
 6. **단축키 잔여** — 기기 사이 이동은 2026-09-01 완료(스키마 v8, [ADR-0008](./docs/adr/0008-keymap-travels.md)).
    남은 것은 Dynalist에 대응 키가 없어 `editor` 값을 물려받은 액션들(취소선·강조·복제·명령
