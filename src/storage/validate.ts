@@ -17,7 +17,7 @@ export function readPayload(value: unknown, now = Date.now()): SyncPayload | nul
   if (!isRecord(value)) return null;
   const docs = readDocs(value.docs, now);
   if (!docs) return null;
-  return { docs, graves: readGraves(value.graves, now) };
+  return { docs, graves: readGraves(value.graves, now), keymap: readKeymap(value.keymap, now) };
 }
 
 /** A full workspace, as stored locally or found in a backup file. */
@@ -47,7 +47,7 @@ export function readWorkspace(value: unknown, now = Date.now()): Workspace | nul
       };
     }
   }
-  return { version: 7, ...payload, activeDocId, views };
+  return { version: 8, ...payload, activeDocId, views };
 }
 
 /**
@@ -129,6 +129,29 @@ function readNodes(value: unknown, now: number): Record<Id, Node> | null {
     node.children = node.children.filter((child) => nodes[child]);
   }
   return nodes;
+}
+
+/**
+ * The stored keyboard table.
+ *
+ * Bounded on both axes because this arrives from outside: a remote that sent
+ * thousands of entries, or one enormous chord, would be held in memory and
+ * pushed back out by every device forever. Names the running build does not
+ * know are kept rather than dropped — an older build must not quietly erase
+ * the binding of an action a newer one added.
+ */
+export function readKeymap(value: unknown, now = Date.now()): Workspace["keymap"] {
+  if (!isRecord(value) || !isRecord(value.keys)) return null;
+  const keys: Record<string, string> = {};
+  let count = 0;
+  for (const [action, chord] of entries(value.keys)) {
+    if (typeof chord !== "string" || chord.length > 64) continue;
+    if (action.length > 64) continue;
+    keys[action] = chord;
+    if ((count += 1) >= 200) break;
+  }
+  if (count === 0) return null;
+  return { keys, edited: readStamp(value.edited, now) };
 }
 
 export function readGraves(value: unknown, now = Date.now()): Record<Id, Stamp> {

@@ -66,7 +66,7 @@ export function useSync(options: {
   const absorb = useCallback(
     (payload: SyncPayload) => {
       const current = live.current;
-      if (!current || !changedBy({ docs: current.docs, graves: current.graves }, payload)) return;
+      if (!current || !changedBy(payloadOf(current), payload)) return;
       onAbsorb();
 
       const active = payload.docs[current.activeDocId] ? current.activeDocId : Object.keys(payload.docs)[0];
@@ -207,5 +207,5 @@ export function useSync(options: {
 }
 
 function payloadOf(workspace: Workspace): SyncPayload {
-  return { docs: workspace.docs, graves: workspace.graves };
+  return { docs: workspace.docs, graves: workspace.graves, keymap: workspace.keymap };
 }

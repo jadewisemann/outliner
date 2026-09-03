@@ -6,7 +6,7 @@ import {
   UNBOUND,
   conflicts,
   describe as show,
-  loadKeymap,
+  storedKeymap,
   matches,
   presetOf,
   saveKeymap,
@@ -123,15 +123,22 @@ describe("stored keymaps", () => {
     // "" used to read as "nothing stored" and quietly came back bound, which
     // would undo half of the Dynalist preset on the next visit.
     saveKeymap({ ...DYNALIST_KEYMAP });
-    expect(loadKeymap().indent).toBe(UNBOUND);
-    expect(presetOf(loadKeymap())).toBe("dynalist");
+    expect(storedKeymap()!.indent).toBe(UNBOUND);
+    expect(presetOf(storedKeymap()!)).toBe("dynalist");
   });
 
   it("falls back to the default for an action saved before it existed", () => {
     const old: Partial<Keymap> = { bold: "Mod+Alt+B" };
     localStorage.setItem("outliner:keys", JSON.stringify(old));
-    const loaded = loadKeymap();
+    const loaded = storedKeymap()!;
     expect(loaded.bold).toBe("Mod+Alt+B");
     expect(loaded.color1).toBe(DEFAULT_KEYMAP.color1);
+  });
+
+  it("says nothing is stored rather than answering with the defaults", () => {
+    // A device that never chose must stay distinguishable from one that chose
+    // the defaults, or it would push its own table over another device's.
+    localStorage.removeItem("outliner:keys");
+    expect(storedKeymap()).toBeNull();
   });
 });

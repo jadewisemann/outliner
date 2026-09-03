@@ -34,11 +34,11 @@ describe("createHistory", () => {
     const row = doc.nodes[doc.rootId].children[0];
 
     const typed = edit(before, (current) => patchNode(current, row, { text: "typed on this device" }));
-    const remote = { docs: typed.docs, graves: typed.graves };
+    const remote = { docs: typed.docs, graves: typed.graves, keymap: typed.keymap };
 
     history.record(before);
     const undone = history.undo(typed)!;
-    const merged = mergeWorkspace({ docs: undone.docs, graves: undone.graves }, remote);
+    const merged = mergeWorkspace({ docs: undone.docs, graves: undone.graves, keymap: undone.keymap }, remote);
 
     expect(merged.docs[doc.id].nodes[row].text).toBe("");
   });
@@ -50,11 +50,11 @@ describe("createHistory", () => {
     const row = doc.nodes[doc.rootId].children[0];
 
     const added = edit(before, (current) => insertAfter(current, row, "added").doc);
-    const remote = { docs: added.docs, graves: added.graves };
+    const remote = { docs: added.docs, graves: added.graves, keymap: added.keymap };
 
     history.record(before);
     const undone = history.undo(added)!;
-    const merged = mergeWorkspace({ docs: undone.docs, graves: undone.graves }, remote);
+    const merged = mergeWorkspace({ docs: undone.docs, graves: undone.graves, keymap: undone.keymap }, remote);
 
     expect(visibleRows(merged.docs[doc.id], doc.rootId).map((r) => r.node.text)).toEqual([""]);
   });

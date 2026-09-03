@@ -385,6 +385,7 @@ P0·P1·P2 전부가 들어가는 데 든 **모델 변경의 전부**다. 예측
 | `Node` | `created: Stamp` | **더 이른 쪽** — 유일한 새 규칙 |
 | `Doc` | `parent`, `kind: "doc" \| "folder" \| "search"`, `query`, `bookmarked`, `deleted` | `parent`는 `moved`, 나머지는 `titleEdited` |
 | `Doc` | `inbox` (v7, 2026-08-21) | `titleEdited` LWW — 새 규칙 아님 |
+| `Workspace` | `keymap` (v8, 2026-09-01) | 표 **전체**를 `edited` LWW로. 고른 적 없는 쪽(`null`)은 고른 쪽을 이기지 못한다 ([ADR-0008](./adr/0008-keymap-travels.md)) |
 | `DocView` | `hideCompleted`, `hideNotes`, `filter` | 동기화 안 함 (기기 로컬) |
 
 계획에서 **바뀐 것 둘**:
@@ -429,5 +430,6 @@ P0·P1·P2 전부가 들어가는 데 든 **모델 변경의 전부**다. 예측
 - **데이터가 내 것이다.** 서비스가 닫혀도 리포에 JSON이 남는다. 다이나리스트가 사실상 개발이
   멈춘 지금, 이게 이 프로젝트가 존재하는 이유다
 - **오프라인 편집이 손실 없이 병합된다.** 서버 없이, 순서 무관하게
-- **의존성 0** (react/react-dom 제외), 번들 71KB gzip
+- **의존성 0** (react/react-dom 제외), 번들 93KB gzip. 수식을 쓰지 않는 워크스페이스는
+  katex 청크를 한 바이트도 받지 않는다
 - **한글 IME가 브라우저 기본 동작 그대로** — 에디터 프레임워크를 안 쓴 대가로 얻은 것

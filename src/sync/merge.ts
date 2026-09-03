@@ -1,6 +1,6 @@
 import { observe, wins } from "../shared/clock";
 import { rebuildChildren } from "../outline/tree";
-import type { Doc, Id, Node, Stamp, SyncPayload } from "../types";
+import type { Doc, Id, KeymapSetting, Node, Stamp, SyncPayload } from "../types";
 
 /**
  * Merging two versions of the same workspace.
@@ -40,11 +40,12 @@ export type MergeOptions = {
 export function mergeWorkspace(local: SyncPayload, remote: SyncPayload, options: MergeOptions = {}): SyncPayload {
   const now = options.now ?? Date.now();
   observeStamps(remote);
+  const keymap = mergeKeymap(local.keymap, remote.keymap);
 
   // A device signing in for the first time adopts what is already there rather
   // than contributing its untouched starter document.
   if (options.adoptRemote && isUntouched(local) && Object.keys(remote.docs).length > 0) {
-    return normalise(remote, now);
+    return { ...normalise(remote, now), keymap };
   }
 
   const graves = mergeGraves(local.graves, remote.graves);
@@ -73,7 +74,21 @@ export function mergeWorkspace(local: SyncPayload, remote: SyncPayload, options:
   // gravestone and vanish for good.
   for (const id of Object.keys(docs)) delete graves[id];
 
-  return pruneGraves({ docs, graves }, now);
+  return pruneGraves({ docs, graves, keymap }, now);
+}
+
+/**
+ * The newest chosen keyboard table wins, and a device that has never chosen
+ * one never takes the choice away from a device that has.
+ *
+ * No new rule: this is the same last-writer-wins the document fields ride,
+ * applied to the whole table at once. Half of one device's bindings mixed with
+ * half of another's would be a table neither person picked.
+ */
+function mergeKeymap(mine: KeymapSetting | null, theirs: KeymapSetting | null): KeymapSetting | null {
+  if (!mine) return theirs;
+  if (!theirs) return mine;
+  return wins(theirs.edited, mine.edited) ? theirs : mine;
 }
 
 function mergeDoc(mine: Doc, theirs: Doc): Doc {
@@ -142,7 +157,7 @@ function settle(doc: Doc): Doc {
 function normalise(payload: SyncPayload, now: number): SyncPayload {
   const docs: Record<Id, Doc> = {};
   for (const [id, doc] of Object.entries(payload.docs)) docs[id] = settle(doc);
-  return pruneGraves({ docs, graves: payload.graves }, now);
+  return pruneGraves({ docs, graves: payload.graves, keymap: payload.keymap }, now);
 }
 
 /**
@@ -298,11 +313,12 @@ export function pruneGraves(payload: SyncPayload, now: number): SyncPayload {
     const kept = keep(doc.graves);
     docs[id] = kept === doc.graves ? doc : { ...doc, graves: kept };
   }
-  return { docs, graves: keep(graves) };
+  return { docs, graves: keep(graves), keymap: payload.keymap };
 }
 
 /** True when the merge adopted anything the local side did not already have. */
 export function changedBy(local: SyncPayload, merged: SyncPayload): boolean {
+  if (local.keymap !== merged.keymap) return true;
   const ids = union(local.docs, merged.docs);
   return ids.some((id) => local.docs[id] !== merged.docs[id]);
 }

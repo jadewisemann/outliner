@@ -24,7 +24,7 @@ const HOSTILE: [string, unknown][] = [
 describe("readPayload", () => {
   it.each(HOSTILE)("survives %s", (_label, value) => {
     const payload = readPayload(value);
-    expect(() => mergeWorkspace({ docs: {}, graves: {} }, payload ?? { docs: {}, graves: {} })).not.toThrow();
+    expect(() => mergeWorkspace({ docs: {}, graves: {}, keymap: null }, payload ?? { docs: {}, graves: {}, keymap: null })).not.toThrow();
   });
 
   it("drops prototype-chain keys instead of adopting them", () => {
@@ -75,6 +75,22 @@ describe("parseBackup", () => {
     expect(parseBackup(JSON.stringify({ version: 9, docs: { a: { rootId: "r", nodes: { r: {} } } } }))).toBeNull();
     expect(parseBackup(JSON.stringify({ docs: { a: 1 } }))).toBeNull();
     expect(parseBackup("not json")).toBeNull();
+  });
+
+  it("keeps a stored keyboard table and drops a malformed one", () => {
+    const doc = { rootId: "r", nodes: { r: { children: [] } } };
+    const of = (keymap: unknown) => readPayload({ docs: { a: doc }, graves: {}, keymap })?.keymap;
+
+    expect(of({ keys: { bold: "Mod+B" }, edited: { at: 5, by: "laptop" } })?.keys.bold).toBe("Mod+B");
+    // An action this build has never heard of is kept, not erased: an older
+    // build must not take away a binding a newer one added.
+    expect(of({ keys: { somethingNew: "Mod+J" } })?.keys.somethingNew).toBe("Mod+J");
+
+    expect(of(null)).toBeNull();
+    expect(of({ keys: "not a table" })).toBeNull();
+    expect(of({ keys: {} })).toBeNull();
+    expect(of({ keys: { bold: 7 } })).toBeNull();
+    expect(of({ keys: { bold: "x".repeat(200) } })).toBeNull();
   });
 
   it("refuses a v4 backup whose documents are unusable", () => {

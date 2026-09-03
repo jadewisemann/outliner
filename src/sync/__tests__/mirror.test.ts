@@ -18,7 +18,7 @@ function doc(id: Id, title: string, lines: string[], extra: Partial<Doc> = {}): 
 }
 
 function payload(docs: Doc[]): SyncPayload {
-  return { docs: Object.fromEntries(docs.map((entry) => [entry.id, entry])), graves: {} };
+  return { docs: Object.fromEntries(docs.map((entry) => [entry.id, entry])), graves: {}, keymap: null };
 }
 
 describe("the markdown mirror", () => {

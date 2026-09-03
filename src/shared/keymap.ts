@@ -306,21 +306,39 @@ export function describe(spec: string): string {
 
 const KEY = "outliner:keys";
 
-export function loadKeymap(): Keymap {
+/**
+ * A stored table read back as a complete one.
+ *
+ * "" is a real value here — an action the user unbound on purpose. Only a
+ * missing or non-string entry falls back, which is also how a table saved
+ * before a new action existed picks up that action's default.
+ */
+export function resolveKeymap(keys: Record<string, string> | null | undefined): Keymap {
+  if (!keys) return DEFAULT_KEYMAP;
+  const map = { ...DEFAULT_KEYMAP };
+  for (const action of Object.keys(DEFAULT_KEYMAP) as Action[]) {
+    const bound = keys[action];
+    if (typeof bound === "string") map[action] = bound;
+  }
+  return map;
+}
+
+/**
+ * What this device stored before the table started travelling, or null when it
+ * never chose one.
+ *
+ * The workspace is the real home now (ADR-0008). This stays as the fallback so
+ * an upgrade does not silently reset bindings someone already picked, and null
+ * has to stay distinguishable from "the defaults" — a device that never chose
+ * must not push its defaults over another device's choice.
+ */
+export function storedKeymap(): Keymap | null {
   try {
     const raw = JSON.parse(localStorage.getItem(KEY) ?? "null");
-    if (!raw || typeof raw !== "object") return DEFAULT_KEYMAP;
-    const map = { ...DEFAULT_KEYMAP };
-    for (const action of Object.keys(DEFAULT_KEYMAP) as Action[]) {
-      // "" is a real value here — an action the user unbound on purpose. Only
-      // a missing or non-string entry falls back, which is also how a table
-      // saved before a new action existed picks up that action's default.
-      const bound = (raw as Record<string, unknown>)[action];
-      if (typeof bound === "string") map[action] = bound;
-    }
-    return map;
+    if (!raw || typeof raw !== "object") return null;
+    return resolveKeymap(raw as Record<string, string>);
   } catch {
-    return DEFAULT_KEYMAP;
+    return null;
   }
 }
 
@@ -328,7 +346,7 @@ export function saveKeymap(keymap: Keymap): void {
   try {
     localStorage.setItem(KEY, JSON.stringify(keymap));
   } catch {
-    /* private mode — the defaults come back next time */
+    /* private mode — the workspace copy is the one that lasts */
   }
 }
 
