@@ -16,7 +16,7 @@ import {
   type SyncConfig,
   type SyncStatus
 } from "./api/remote";
-import type { SyncPayload, Workspace } from "../types";
+import { payloadOf, type SyncPayload, type Workspace } from "../types";
 
 /** Longest gap between retries after the endpoint starts failing. */
 const MAX_BACKOFF_MS = 5 * 60_000;
@@ -207,8 +207,4 @@ export function useSync(options: {
     files: backend?.files ?? null,
     noteEdit
   };
-}
-
-function payloadOf(workspace: Workspace): SyncPayload {
-  return { docs: workspace.docs, graves: workspace.graves, keymap: workspace.keymap };
 }

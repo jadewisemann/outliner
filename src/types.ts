@@ -337,3 +337,8 @@ export function docTree(workspace: Workspace, openFolders: (id: Id) => boolean =
   walk(null, 0);
   return out;
 }
+
+/** The part of a workspace that travels between devices (and between local replicas). */
+export function payloadOf(workspace: Workspace): SyncPayload {
+  return { docs: workspace.docs, graves: workspace.graves, keymap: workspace.keymap };
+}

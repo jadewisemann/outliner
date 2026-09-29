@@ -18,6 +18,7 @@ import {
 } from "./outline/tree";
 import { parseQuery } from "./search/query";
 import {
+  payloadOf,
   docChildren,
   docList,
   inboxDoc,
@@ -560,12 +561,9 @@ export function useStore() {
  * its storage, the file brings everything back. Device-local fields (views,
  * the open document) come from the database copy when there is one.
  */
-function combineLocal(stored: Workspace | null, replica: Workspace | null): Workspace | null {
+export function combineLocal(stored: Workspace | null, replica: Workspace | null): Workspace | null {
   if (!stored || !replica) return stored ?? replica;
-  const payload = mergeWorkspace(
-    { docs: stored.docs, graves: stored.graves, keymap: stored.keymap },
-    { docs: replica.docs, graves: replica.graves, keymap: replica.keymap }
-  );
+  const payload = mergeWorkspace(payloadOf(stored), payloadOf(replica));
   const activeDocId = payload.docs[stored.activeDocId] ? stored.activeDocId : Object.keys(payload.docs)[0];
   return { ...stored, ...payload, activeDocId };
 }

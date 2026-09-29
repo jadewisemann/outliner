@@ -109,11 +109,14 @@ if [ -n "${status_bottom:-}" ] && [ "$a11y" = 1 ]; then
 fi
 
 adb logcat -d > "$out/logcat.txt"
-if grep -E "FATAL EXCEPTION" "$out/logcat.txt" >/dev/null; then
+# Only the app's own crashes count: uiautomator itself is known to die now and
+# then ("FATAL EXCEPTION: UiAutomation"), and that is not the app's failure.
+if grep -A2 "FATAL EXCEPTION" "$out/logcat.txt" | grep -q "Process: $app"; then
   say "FAIL the app crashed"
   fail=1
 fi
-grep -E "Uncaught|TypeError|ReferenceError|Content Security Policy" "$out/logcat.txt" > "$out/js-errors.txt" || true
+# The webview forwards the page's console to logcat under the chromium tag.
+grep -E "chromium.*(Uncaught|TypeError|ReferenceError|Content Security Policy)" "$out/logcat.txt" > "$out/js-errors.txt" || true
 if [ -s "$out/js-errors.txt" ]; then
   say "FAIL the page reported errors:"
   cat "$out/js-errors.txt"
