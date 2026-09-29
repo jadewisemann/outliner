@@ -78,6 +78,14 @@ sleep 2
 adb shell input text "typed%sfrom%sandroid"
 sleep 3
 adb exec-out screencap -p > "$out/android-typed.png"
+# While a row is being edited the touch bar must be there: a phone has no Tab.
+dump editing
+if grep -q 'text="들여쓰기"\|content-desc="들여쓰기"' "$out/editing.xml"; then
+  say "ok   the touch bar is up while editing"
+elif [ "$a11y" = 1 ]; then
+  say "FAIL no touch bar while editing"
+  fail=1
+fi
 adb shell input keyevent KEYCODE_ESCAPE
 sleep 2
 dump typed
