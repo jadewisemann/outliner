@@ -83,6 +83,19 @@ jobs:
       # Icons are generated from the one canonical source, never committed.
       - run: npm run tauri -- icon public/icon.svg
       - run: npm run tauri -- build ${{ matrix.args }}
+      # The one leg that can run the real app headless: drive it through
+      # tauri-driver and keep screenshots (e2e/native/smoke.mjs).
+      - name: Native smoke test
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get install -y webkit2gtk-driver xvfb
+          cargo install tauri-driver --locked
+          xvfb-run -a -s "-screen 0 1280x860x24" bash e2e/native/run-linux.sh src-tauri/target/release/outliner evidence
+      - name: Publish smoke evidence
+        if: always() && matrix.name == 'linux'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-evidence.sh evidence desktop-linux
       - name: Collect installers
         shell: bash
         run: |
@@ -162,6 +175,35 @@ jobs:
           name: outliner-android
           path: out/*
           if-no-files-found: error
+
+  # Installs the signed APK on an emulator, opens it, types a row, and keeps
+  # screenshots and the app's log (e2e/native/android.sh).
+  android-smoke:
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: outliner-android
+          path: apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: bash e2e/native/android.sh apk/outliner-android.apk evidence
+      - name: Publish smoke evidence
+        if: always()
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-evidence.sh evidence android
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')

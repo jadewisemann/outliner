@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { changedBy, mergeWorkspace } from "./merge";
+import { shouldPush } from "./push";
 import { isLocked } from "./api/cipher";
 import { loadWorkspace, saveWorkspace } from "../storage/persist";
 import {
@@ -96,18 +97,10 @@ export function useSync(options: {
           })
         );
 
-        // Nothing of ours is unpushed and the remote has a version, so a push
-        // would only echo back what it already holds. On GitHub every push is
-        // a commit — an idle device must not leave a trail of empty ones.
-        // Two exceptions, both from backends without compare-and-swap: the
-        // remote asked to be rewritten, or it no longer holds everything this
-        // device does (something replaced our last write without asking).
-        if (
-          edits.current === pushed.current &&
-          stored.version !== null &&
-          !stored.rewrite &&
-          !(backend.unguarded && lacks(stored.payload, payloadOf(live.current!)))
-        ) {
+        // Usually: only when there is something of ours to send (see push.ts
+        // for why, and for the two remotes that need more than that).
+        const unpushed = edits.current !== pushed.current;
+        if (!shouldPush({ stored, local: payloadOf(live.current!), unpushed, unguarded: backend.unguarded === true })) {
           break;
         }
 
@@ -214,15 +207,6 @@ export function useSync(options: {
     files: backend?.files ?? null,
     noteEdit
   };
-}
-
-/**
- * Whether `remote` is missing anything `local` holds. Merging local into the
- * remote hands back the remote's own objects when there is nothing to bring
- * in (principle 4), so identity answers it without serialising anything.
- */
-function lacks(remote: SyncPayload, local: SyncPayload): boolean {
-  return changedBy(remote, mergeWorkspace(remote, local));
 }
 
 function payloadOf(workspace: Workspace): SyncPayload {
