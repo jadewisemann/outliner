@@ -15,7 +15,7 @@ import { IMPORT_ACCEPT } from "../transfer/formats";
 import { applyAppearance, forgetShare, loadAppearance, saveAppearance, sharedText, type Appearance } from "./appearance";
 import { Backlinks } from "./Backlinks";
 import { Icon } from "./Icon";
-import { matches, resolveKeymap, saveKeymap, storedKeymap, type Keymap } from "../shared/keymap";
+import { describe, matches, resolveKeymap, saveKeymap, storedKeymap, type Keymap } from "../shared/keymap";
 import { Keys } from "./Keys";
 import { Settings } from "./Settings";
 import { Shortcuts } from "./Shortcuts";
@@ -221,7 +221,7 @@ export function App() {
           </p>
         ) : null}
         <header className="topbar">
-          <button type="button" className="ghost" title="사이드바 (⌘\)" onClick={() => setSidebarOpen((open) => !open)}>
+          <button type="button" className="ghost" title={`사이드바 (${describe("Mod+\\")})`} onClick={() => setSidebarOpen((open) => !open)}>
             <Icon name="menu" />
           </button>
 
@@ -247,10 +247,10 @@ export function App() {
               what makes a feature available — it is only what makes the bar
               look like a toolbar from another decade.
             */}
-            <button type="button" className="ghost" title="팔레트 (⌘P)" onClick={() => openPalette()}>
+            <button type="button" className="ghost" title={`팔레트 (${describe("Mod+P")})`} onClick={() => openPalette()}>
               <Icon name="command" />
             </button>
-            <button type="button" className="ghost" title="검색 (⌘⇧F)" onClick={() => openSearch()}>
+            <button type="button" className="ghost" title={`검색 (${describe("Mod+Shift+F")})`} onClick={() => openSearch()}>
               <Icon name="search" />
             </button>
 
@@ -286,7 +286,7 @@ export function App() {
                   동기화 설정
                 </button>
                 <button type="button" onClick={() => setOverlay({ kind: "shortcuts" })}>
-                  단축키 (⌘/)
+                  단축키 ({describe("Mod+/")})
                 </button>
               </div>
             </details>
@@ -297,7 +297,7 @@ export function App() {
           <input
             ref={filterInput}
             className="filter-input"
-            placeholder="이 문서 안에서 거르기 (⌘F) — is:incomplete, #태그, -제외"
+            placeholder={`이 문서 안에서 거르기 (${describe("Mod+F")}) — is:incomplete, date:today, #태그, -제외`}
             value={view.filter}
             onChange={(event) => store.setView({ filter: event.target.value })}
             onKeyDown={(event) => {

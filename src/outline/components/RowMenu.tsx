@@ -67,9 +67,13 @@ export function RowMenu({ spot, api, onClose, onMove }: {
             type="button"
             aria-label={`색 ${color}`}
             className={node.color === color ? "row-menu-color row-menu-color-on" : "row-menu-color"}
-            style={{ background: swatch }}
+            // The label tints a row's text, so the swatch is a letter in that
+            // ink (panels.css `.row-menu-color`), not a block of it.
+            style={{ color: swatch }}
             onClick={act(() => api.setColor(row.id, color))}
-          />
+          >
+            가
+          </button>
         ))}
         <button
           type="button"

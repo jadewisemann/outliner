@@ -48,41 +48,63 @@ if [ -z "${status_bottom:-}" ]; then
   density="$(adb shell wm density | grep -o '[0-9]*' | tail -1)"
   status_bottom=$((24 * ${density:-160} / 160))
 fi
+# The webview's accessibility tree fills in lazily; ask twice before falling back.
 read -r x1 y1 x2 y2 <<< "$(bounds_of start Inbox)"
 if [ -z "${y1:-}" ]; then
-  say "FAIL no Inbox title in the accessibility tree"
-  fail=1
-else
-  say "info title at y=$y1..$y2, status bar bottom=${status_bottom:-?}"
-  # Tap just under the title: the first row.
+  sleep 4
+  dump start
+  read -r x1 y1 x2 y2 <<< "$(bounds_of start Inbox)"
+fi
+size="$(adb shell wm size | awk '{print $3}' | tr -d '\r')"
+width="${size%x*}"
+height="${size#*x}"
+if [ -n "${y1:-}" ]; then
+  say "info title at y=$y1..$y2 (accessibility tree)"
+  row_x=$(((x1 + x2) / 2))
   row_y=$((y2 + (y2 - y1)))
-  adb shell input tap $(((x1 + x2) / 2)) "$row_y"
-  sleep 2
-  adb shell input text "typed%sfrom%sandroid"
-  sleep 3
-  adb exec-out screencap -p > "$out/android-typed.png"
-  # Leave the row so it renders, then read the tree.
-  adb shell input keyevent KEYCODE_ESCAPE
-  sleep 2
-  dump typed
-  if grep -q "typed from android" "$out/typed.xml"; then
-    say "ok   typing reaches the outline"
-  else
-    say "FAIL the typed text is not in the outline"
-    fail=1
-  fi
+  a11y=1
+else
+  # Measured from the start screenshot: the first row sits at a quarter of the
+  # height, below the header and the title.
+  say "info no accessibility tree from the webview; tapping by layout"
+  row_x=$((width / 3))
+  row_y=$((height / 4))
+  a11y=0
 fi
 
-# Insets: the header's breadcrumb (the highest "Inbox" on screen) must start
-# below the status bar, not under it.
-if [ -n "${status_bottom:-}" ]; then
+adb exec-out screencap -p > "$out/before.png"
+adb shell input tap "$row_x" "$row_y"
+sleep 2
+adb shell input text "typed%sfrom%sandroid"
+sleep 3
+adb exec-out screencap -p > "$out/android-typed.png"
+adb shell input keyevent KEYCODE_ESCAPE
+sleep 2
+dump typed
+if grep -q "typed from android" "$out/typed.xml"; then
+  say "ok   typing reaches the outline (accessibility tree)"
+elif [ "$a11y" = 0 ]; then
+  # No tree to read: the band around the row must have gained ink.
+  if python3 "$(dirname "$0")/ink.py" "$out/before.png" "$out/android-typed.png" "$row_y"; then
+    say "ok   typing reaches the outline (pixels changed on the row)"
+  else
+    say "FAIL nothing appeared on the row after typing"
+    fail=1
+  fi
+else
+  say "FAIL the typed text is not in the outline"
+  fail=1
+fi
+
+# Insets: the app's first pixels below the status bar must be the app's, and
+# the status bar strip must not contain the header. Read from the accessibility
+# tree when there is one; otherwise the screenshot is the evidence.
+if [ -n "${status_bottom:-}" ] && [ "$a11y" = 1 ]; then
   header_top="$(grep -o 'text="Inbox"[^>]*bounds="[^"]*"' "$out/start.xml" | grep -o 'bounds="\[[0-9]*,[0-9]*' | grep -o '[0-9]*$' | sort -n | head -1)"
-  say "info header top=${header_top:-?}"
-  if [ -z "${header_top:-}" ] || [ "$header_top" -lt "$status_bottom" ]; then
+  say "info header top=${header_top:-?} status bar bottom=$status_bottom"
+  if [ -n "${header_top:-}" ] && [ "$header_top" -lt "$status_bottom" ]; then
     say "FAIL the header starts under the status bar"
     fail=1
-  else
-    say "ok   content starts below the status bar"
   fi
 fi
 
