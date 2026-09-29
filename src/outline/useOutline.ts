@@ -298,8 +298,15 @@ export function useOutline(
       }
 
       // `!!` writes today's date the way Dynalist does, `!(YYYY-MM-DD)`, with
-      // the date itself selected so typing replaces it and → keeps it.
-      if (event.key === "!" && noRange && caret > 0 && element.value[caret - 1] === "!") {
+      // the date itself selected so typing replaces it and → keeps it. Only
+      // at the start of a word: "감사합니다!!" is punctuation, not a date.
+      if (
+        event.key === "!" &&
+        noRange &&
+        caret > 0 &&
+        element.value[caret - 1] === "!" &&
+        (caret === 1 || /\s/.test(element.value[caret - 2]))
+      ) {
         stop();
         const token = dateToken(Date.now());
         const text = element.value.slice(0, caret - 1) + token + element.value.slice(caret);

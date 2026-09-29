@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Store } from "../../store";
 import { Panel } from "../../shared/components/Panel";
-import { pickFolder, type SyncConfig } from "../api/remote";
+import { allowFolder, pickFolder, type SyncConfig } from "../api/remote";
 import { nativeInfo } from "../../shared/native";
 import { beginGithubLogin, createPrivateRepo, fetchOauthClientId } from "../api/githubAuth";
 
@@ -37,6 +37,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
   const [path, setPath] = useState(config?.kind === "github" ? config.path : "outliner");
   const [token, setToken] = useState(oauth?.token ?? (config && config.kind !== "file" ? config.token : ""));
   const [dir, setDir] = useState(config?.kind === "file" ? config.dir : "");
+  const [folderNote, setFolderNote] = useState("");
 
   // The folder option needs a real path on disk: the desktop shell has one to
   // give, a browser tab and a phone do not.
@@ -150,6 +151,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
             >
               폴더 고르기…
             </button>
+            {folderNote ? <p className="sync-note">{folderNote}</p> : null}
           </>
         ) : mode === "rest" ? (
           <>
@@ -321,8 +323,20 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
             className="primary"
             disabled={built === null}
             onClick={() => {
-              store.sync.setConfig(built);
-              onClose();
+              if (built?.kind !== "file") {
+                store.sync.setConfig(built);
+                onClose();
+                return;
+              }
+              // The shell keeps its own list of folders it may touch; a typed
+              // path gets its native confirmation first.
+              void allowFolder(built.dir)
+                .then((allowed) => {
+                  if (!allowed) return setFolderNote("폴더를 허용하지 않아 연결하지 않았습니다.");
+                  store.sync.setConfig(built);
+                  onClose();
+                })
+                .catch(() => setFolderNote("이 폴더를 쓸 수 없습니다."));
             }}
           >
             저장하고 동기화

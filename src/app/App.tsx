@@ -15,6 +15,7 @@ import { IMPORT_ACCEPT } from "../transfer/formats";
 import { applyAppearance, forgetShare, loadAppearance, saveAppearance, sharedText, type Appearance } from "./appearance";
 import { Backlinks } from "./Backlinks";
 import { Icon } from "./Icon";
+import { useDay } from "../shared/useDay";
 import { describe, matches, resolveKeymap, saveKeymap, storedKeymap, type Keymap } from "../shared/keymap";
 import { Keys } from "./Keys";
 import { Settings } from "./Settings";
@@ -33,6 +34,7 @@ type Overlay =
 
 export function App() {
   const store = useStore();
+  const day = useDay();
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 900);
   const [theme, setTheme] = useState<"light" | "dark">(
@@ -327,7 +329,10 @@ export function App() {
           <h1>{zoomed ? doc.nodes[view.zoomId]?.text || "(빈 항목)" : doc.title}</h1>
         </div>
 
+        {/* Keyed by the day: relative dates ("오늘") are words about today,
+            and a new day re-renders every row that says one. */}
         <Outline
+          key={day}
           store={store}
           scrollRef={scroller}
           onTagClick={openSearch}

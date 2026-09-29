@@ -14,9 +14,23 @@ import { makeDoc, makeNode, type SyncPayload } from "../../types";
  */
 function fakeFolder() {
   const files = new Map<string, string>();
+  const retired: string[] = [];
   const stampOf = (text: string) => `${text.length}:${[...text].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7)}`;
   const isCopy = (name: string) =>
-    name !== "outliner.json" && name.startsWith("outliner") && name.endsWith(".json") && /^[ .\-(_]/.test(name.slice(8));
+    name !== "outliner.json" &&
+    name.startsWith("outliner") &&
+    name.endsWith(".json") &&
+    /^[ .\-(_]/.test(name.slice(8)) &&
+    !/^outliner copy( \d+)?\.json$/.test(name);
+  const retire = (copies: { name: string; stamp: string }[]) => {
+    for (const { name, stamp } of copies) {
+      const text = files.get(name);
+      if (!isCopy(name) || text === undefined || stampOf(text) !== stamp) continue;
+      files.delete(name);
+      retired.push(name);
+    }
+    return [];
+  };
 
   const invoke = async (command: string, args: Record<string, unknown> = {}) => {
     if (command === "folder_read") {
@@ -25,6 +39,7 @@ function fakeFolder() {
         canonical: canonical === undefined ? null : { name: "outliner.json", text: canonical, stamp: stampOf(canonical) },
         copies: [...files]
           .filter(([name]) => isCopy(name))
+          .sort(([a], [b]) => (a < b ? -1 : 1))
           .map(([name, text]) => ({ name, text, stamp: stampOf(text) }))
       };
     }
@@ -32,12 +47,20 @@ function fakeFolder() {
       const current = files.get("outliner.json");
       if ((current === undefined ? null : stampOf(current)) !== args.expect) return null;
       files.set("outliner.json", String(args.text));
-      for (const name of args.remove as string[]) if (isCopy(name)) files.delete(name);
+      retire(args.retire as { name: string; stamp: string }[]);
       return stampOf(String(args.text));
+    }
+    if (command === "folder_retire") return retire(args.copies as { name: string; stamp: string }[]);
+    if (command === "folder_set_aside") {
+      const current = files.get("outliner.json");
+      if (current === undefined || stampOf(current) !== args.expect) return false;
+      files.delete("outliner.json");
+      files.set("outliner.unreadable-1.json", current);
+      return true;
     }
     throw new Error(`unexpected command ${command}`);
   };
-  return { files, invoke };
+  return { files, retired, invoke };
 }
 
 function payloadWith(...texts: string[]): SyncPayload {
@@ -118,11 +141,12 @@ describe("folder backend", () => {
     expect(folder.files.get("outliner.json")).toBe(before);
   });
 
-  it("merges conflict copies, writes the result, then removes only what it read", async () => {
+  it("merges conflict copies, writes the result, then moves aside only what it merged", async () => {
     const backend = open();
     await round(backend, payloadWith("canonical"), true);
     folder.files.set("outliner (Jade's conflicted copy 2026-09-29).json", JSON.stringify(payloadWith("in copy")));
     folder.files.set("outliner.sync-conflict-20260929-101010-ABC.json", "not json {");
+    folder.files.set("outliner copy.json", JSON.stringify(payloadWith("a snapshot someone kept")));
     folder.files.set("notes.json", JSON.stringify(payloadWith("unrelated")));
 
     const stored = await backend.pull();
@@ -131,17 +155,66 @@ describe("folder backend", () => {
 
     expect(texts(merged)).toEqual(["canonical", "in copy"]);
     expect(texts(JSON.parse(folder.files.get("outliner.json")!))).toEqual(["canonical", "in copy"]);
-    expect(folder.files.has("outliner (Jade's conflicted copy 2026-09-29).json")).toBe(false);
+    expect(folder.retired).toEqual(["outliner (Jade's conflicted copy 2026-09-29).json"]);
     // Unreadable is not the same as empty: that one stays for a person to look at.
     expect(folder.files.has("outliner.sync-conflict-20260929-101010-ABC.json")).toBe(true);
+    // Finder's Duplicate is a person's snapshot, not a sync service's copy.
+    expect(folder.files.has("outliner copy.json")).toBe(true);
     expect(folder.files.has("notes.json")).toBe(true);
   });
 
-  it("stops at a copy sealed with a passphrase this device does not have", async () => {
+  it("moves a copy the file already covers without rewriting the file", async () => {
+    const backend = open();
+    const local = await round(backend, payloadWith("a"), true);
+    const before = folder.files.get("outliner.json");
+    folder.files.set("outliner (1).json", before!);
+    const stored = await backend.pull();
+    expect(stored.rewrite).toBe(false);
+    expect(shouldPush({ stored, local, unpushed: false, unguarded: true })).toBe(false);
+    expect(folder.retired).toEqual(["outliner (1).json"]);
+    expect(folder.files.get("outliner.json")).toBe(before);
+  });
+
+  it("does not move a copy that changed after it was merged", async () => {
+    const backend = open();
+    await round(backend, payloadWith("a"), true);
+    folder.files.set("outliner (1).json", JSON.stringify(payloadWith("first")));
+    const stored = await backend.pull();
+    // The sync service delivers a newer version under the same name mid-round.
+    folder.files.set("outliner (1).json", JSON.stringify(payloadWith("second")));
+    await backend.push(stored.payload, stored.version);
+    expect(folder.retired).toEqual([]);
+    const next = await round(backend, stored.payload);
+    expect(texts(next)).toContain("second");
+  });
+
+  it("sets an unreadable file aside instead of writing over it", async () => {
+    const backend = open();
+    folder.files.set("outliner.json", "{ half a file");
+    await round(backend, payloadWith("mine"));
+    expect(folder.files.get("outliner.unreadable-1.json")).toBe("{ half a file");
+    expect(texts(JSON.parse(folder.files.get("outliner.json")!))).toEqual(["mine"]);
+  });
+
+  it("skips a copy sealed with a passphrase this device does not have, and leaves it", async () => {
     const backend = open();
     await round(backend, payloadWith("a"), true);
     folder.files.set("outliner 2.json", await createKeyring("other").seal(JSON.stringify(payloadWith("secret"))));
-    await expect(backend.pull()).rejects.toSatisfy(isLocked);
+    const stored = await backend.pull();
+    expect(texts(stored.payload)).toEqual(["a"]);
+    expect(folder.files.has("outliner 2.json")).toBe(true);
+  });
+
+  it("stops at a canonical file sealed with a passphrase this device does not have", async () => {
+    folder.files.set("outliner.json", await createKeyring("other").seal(JSON.stringify(payloadWith("secret"))));
+    await expect(open().pull()).rejects.toSatisfy(isLocked);
+  });
+
+  it("hands back the same answer for an unchanged folder", async () => {
+    const backend = open();
+    await round(backend, payloadWith("a"), true);
+    const first = await backend.pull();
+    expect(await backend.pull()).toBe(first);
   });
 
   it("seals the file when a passphrase is set, and reads it back", async () => {

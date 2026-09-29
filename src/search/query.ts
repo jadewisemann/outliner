@@ -1,5 +1,5 @@
-import { extractTags } from "../outline/inline";
-import { datesIn, daysFrom } from "../outline/dates";
+import { extractTags, inlineDates } from "../outline/inline";
+import { daysFrom } from "../outline/dates";
 import type { Node } from "../types";
 
 /**
@@ -92,7 +92,7 @@ const OPERATORS: Record<string, (value: string, now: number) => Predicate | null
     if (value === "image") return ({ node }) => /!\[[^\]]*\]\([^)\s]+\)/.test(node.text);
     if (value === "tag") return ({ node }) => extractTags(node.text).length > 0;
     if (value === "child") return ({ node }) => node.children.length > 0;
-    if (value === "date") return ({ node }) => datesIn(node.text).length > 0;
+    if (value === "date") return ({ node }) => inlineDates(node.text).length > 0;
     return null;
   },
   date: (value, now) => onDate(value, now),
@@ -116,7 +116,7 @@ function within(value: string, now: number, stampOf: (node: Node) => number): Pr
  * in their text, so this reads the first date written in the row.
  */
 function onDate(value: string, now: number): Predicate | null {
-  const first = (node: Node) => datesIn(node.text)[0] ?? null;
+  const first = (node: Node) => inlineDates(node.text)[0] ?? null;
   const days = (test: (days: number) => boolean): Predicate => ({ node }) => {
     const date = first(node);
     return date !== null && test(daysFrom(date.day, now));

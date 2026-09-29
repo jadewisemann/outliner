@@ -18,7 +18,7 @@ export type {
   SyncStatus,
   Version
 } from "./contract";
-export { pickFolder } from "./file";
+export { allowFolder, pickFolder } from "./file";
 export {
   announceToOtherTabs,
   hasSynced,

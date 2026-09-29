@@ -3,7 +3,7 @@ import { highlight } from "./highlight";
 // Named TeX rather than Math: this file does arithmetic with the global one.
 import { TeX } from "./components/TeX";
 import { Attachment } from "./components/Attachment";
-import { DATE_SOURCE, dateState, formatDate, parseDate } from "./dates";
+import { DATE_SOURCE, dateState, formatDate, parseDate, type ParsedDate } from "./dates";
 
 /**
  * A tag is a sigil plus tag characters, and the sigil may be `#` or `@` — both
@@ -245,6 +245,22 @@ function visibleLength(token: string): number {
   const label = token.match(/^!?\[([^\]]*)\]\(/);
   if (label) return label[1].length;
   return token.length;
+}
+
+/**
+ * The dates a row shows, in order: tokens the renderer draws as dates, so a
+ * date inside a code span or a link label — which renders as plain text —
+ * does not answer `date:` either. Searching what cannot be seen would be a
+ * trap of the same kind as a filter that understood fewer operators.
+ */
+export function inlineDates(source: string): ParsedDate[] {
+  const out: ParsedDate[] = [];
+  for (const match of source.matchAll(PATTERN)) {
+    if (!match[0].startsWith("!(")) continue;
+    const date = parseDate(match[0]);
+    if (date) out.push(date);
+  }
+  return out;
 }
 
 const TAG_PATTERN = new RegExp(TAG_SOURCE, "gu");

@@ -12,8 +12,13 @@
 #   them a throwaway key is made per run: the APK installs, but the next build
 #   cannot update it in place. README 「네이티브 앱」 has the one-time setup.
 #
-# A `v*` tag publishes everything as a draft release; pull requests and manual
+# A `v*` tag publishes everything as a draft release; branch pushes and manual
 # runs keep the files as workflow artifacts.
+#
+# Write access is given only where something is written: the release, and
+# publishing smoke-test evidence. The jobs that run install and build scripts
+# from third parties (npm, cargo, gradle) hold a read-only token, and the
+# Android signing key is only ever decoded in a job that runs none of them.
 name: Native apps
 
 on:
@@ -23,7 +28,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: native-${{ github.ref }}
@@ -91,11 +96,12 @@ jobs:
           sudo apt-get install -y webkit2gtk-driver xvfb fonts-noto-cjk
           cargo install tauri-driver --locked
           xvfb-run -a -s "-screen 0 1280x860x24" bash e2e/native/run-linux.sh src-tauri/target/release/outliner evidence
-      - name: Publish smoke evidence
+      - uses: actions/upload-artifact@v4
         if: always() && matrix.name == 'linux'
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/publish-evidence.sh evidence desktop-linux
+        with:
+          name: evidence-desktop-linux
+          path: evidence
+          if-no-files-found: ignore
       - name: Collect installers
         shell: bash
         run: |
@@ -157,6 +163,22 @@ jobs:
           grep -n "implementation" "$gradle"
       - run: npm run tauri -- icon public/icon.svg
       - run: npm run tauri -- android build --apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-unsigned
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*release*.apk
+          if-no-files-found: error
+
+  # Signing is its own job: nothing from npm, cargo or gradle runs here, so no
+  # third-party script is ever on the machine while the key is.
+  android-sign:
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-unsigned
+          path: unsigned
       - name: Sign
         env:
           KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -166,7 +188,7 @@ jobs:
         run: |
           set -euo pipefail
           tools="$(ls -d "${ANDROID_HOME}"/build-tools/* | sort -V | tail -1)"
-          apk="$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)"
+          apk="$(find unsigned -name '*.apk' | head -1)"
           if [ -n "${KEYSTORE}" ]; then
             echo "${KEYSTORE}" | base64 -d > signing.jks
           else
@@ -191,7 +213,7 @@ jobs:
   # Installs the signed APK on an emulator, opens it, types a row, and keeps
   # screenshots and the app's log (e2e/native/android.sh).
   android-smoke:
-    needs: android
+    needs: android-sign
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -211,19 +233,47 @@ jobs:
           arch: x86_64
           disable-animations: true
           script: bash e2e/native/android.sh apk/outliner-android.apk evidence
-      - name: Publish smoke evidence
+      - uses: actions/upload-artifact@v4
         if: always()
+        with:
+          name: evidence-android
+          path: evidence
+          if-no-files-found: ignore
+
+  # Screenshots and results onto `ci-evidence/<name>` branches, readable with
+  # plain git (.github/scripts/publish-evidence.sh). Runs even when a smoke
+  # test failed — that is when the evidence matters most.
+  evidence:
+    if: always()
+    needs: [desktop, android-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: evidence-*
+          path: evidence
+      - name: Publish
         env:
           GITHUB_TOKEN: ${{ github.token }}
-        run: bash .github/scripts/publish-evidence.sh evidence android
+        run: |
+          for dir in evidence/evidence-*; do
+            [ -d "$dir" ] || continue
+            bash .github/scripts/publish-evidence.sh "$dir" "${dir#evidence/evidence-}"
+          done
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [desktop, android]
+    needs: [desktop, android-sign]
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/download-artifact@v4
         with:
+          pattern: outliner-*
           path: artifacts
           merge-multiple: true
       - name: Draft release

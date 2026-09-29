@@ -6,9 +6,6 @@ name: Toolchain export
 
 on:
   workflow_dispatch:
-  push:
-    branches-ignore: [main, toolchain-cache]
-    paths: ["package-lock.json", ".github/workflows/toolchain.yml"]
 
 permissions:
   contents: write

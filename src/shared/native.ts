@@ -69,7 +69,9 @@ export function installNativeShell(): void {
       const href = anchor.href;
       if (!/^(https?:|mailto:)/i.test(href)) return;
       // A link back into the app itself is navigation, not an outside page.
-      if (href.startsWith(location.origin)) return;
+      // Compared as origins: a prefix test would let `tauri.localhost.example`
+      // through as "ours".
+      if (!href.startsWith("mailto:") && new URL(href).origin === location.origin) return;
       event.preventDefault();
       void invokeNative("open_external", { url: href }).catch(() => {
         /* nothing sensible to fall back to inside a webview */

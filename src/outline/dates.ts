@@ -17,7 +17,6 @@
 /** Matches one date token. Shared by the inline renderer and the search. */
 export const DATE_SOURCE = "!\\(\\d{4}-\\d{2}-\\d{2}(?:[ T]\\d{1,2}:\\d{2})?[^)\\n]*\\)";
 
-const DATE_PATTERN = new RegExp(DATE_SOURCE, "g");
 const PARTS = /^!\((\d{4})-(\d{2})-(\d{2})(?:[ T](\d{1,2}):(\d{2}))?([^)]*)\)$/;
 
 export type ParsedDate = {
@@ -43,11 +42,6 @@ export function parseDate(token: string): ParsedDate | null {
   const time = hh === undefined ? null : `${hh.padStart(2, "0")}:${mm}`;
   if (time && (Number(hh) > 23 || Number(mm) > 59)) return null;
   return { day: date.getTime(), time, rest: rest.trim() };
-}
-
-/** Every valid date in a row's text, in order. */
-export function datesIn(text: string): ParsedDate[] {
-  return [...text.matchAll(DATE_PATTERN)].map((match) => parseDate(match[0])).filter((date) => date !== null);
 }
 
 function midnight(now: number): number {

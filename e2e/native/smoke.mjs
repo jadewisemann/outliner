@@ -21,6 +21,7 @@ const [application, evidence = "evidence"] = process.argv.slice(2);
 if (!application) throw new Error("usage: smoke.mjs <app binary> [evidence dir]");
 const DRIVER = process.env.WEBDRIVER_URL ?? "http://127.0.0.1:4444";
 const folder = join(tmpdir(), `outliner-native-${Date.now()}`);
+const appData = join(process.env.HOME ?? "", ".local/share/io.github.jadewisemann.outliner");
 mkdirSync(evidence, { recursive: true });
 
 async function call(method, path, body) {
@@ -86,11 +87,21 @@ try {
   check("typing reaches the outline", true);
 
   // 2b. Every save also lands in the app's own file (the replica).
-  const replica = join(process.env.HOME ?? "", ".local/share/io.github.jadewisemann.outliner/workspace.json");
+  const replica = join(appData, "workspace.json");
   await until("the replica file", () => existsSync(replica) && readFileSync(replica, "utf8").includes("네이티브에서 쓴 줄"), 15_000);
   check("local save writes the replica", true, replica);
 
-  // 3. The folder backend writes the canonical file.
+  // 3. A folder nobody allowed is refused, whatever the page asks.
+  const refused = await runAsync(
+    "const done = arguments[arguments.length - 1]; window.__TAURI__.core.invoke('folder_read', { dir: arguments[0] }).then(() => done('read'), e => done(String(e)))",
+    [folder]
+  );
+  check("an unallowed folder is refused", /not been allowed/.test(refused), refused);
+
+  // 4. The folder backend writes the canonical file. Allowing happens through
+  // the shell's picker or its native dialog, neither of which a WebDriver
+  // session can drive, so the allow list is written the way the shell would.
+  writeFileSync(join(appData, "allowed-folders.txt"), `${folder}\n`);
   await run("localStorage.setItem('outliner:sync', JSON.stringify({ kind: 'file', dir: arguments[0] }))", [folder]);
   // Let the debounced local save land before reloading.
   await sleep(1000);
@@ -119,8 +130,11 @@ try {
   const copyName = join(folder, "outliner (conflicted copy).json");
   writeFileSync(copyName, JSON.stringify(copy));
   await until("the copy merged into the app", () => run("return document.body.innerText.includes('충돌 사본에서 온 줄')"), 45_000);
-  await until("the copy removed", () => !existsSync(copyName), 20_000);
-  check("conflict copy is merged and removed", readFileSync(file, "utf8").includes("충돌 사본에서 온 줄"));
+  await until("the copy moved aside", () => !existsSync(copyName), 20_000);
+  check(
+    "conflict copy is merged and moved into .outliner-merged",
+    readFileSync(file, "utf8").includes("충돌 사본에서 온 줄") && existsSync(join(folder, ".outliner-merged"))
+  );
 
   // 5. The sync badge reports success rather than an error.
   const badge = await run("const b = document.querySelector('.sync-badge'); return b ? b.className : ''");

@@ -3,8 +3,7 @@ import { createHistory } from "./history";
 import { rememberDoc } from "./palette/palette";
 import { useSync } from "./sync/useSync";
 import { keyBetween } from "./shared/order";
-import { loadReplica, loadWorkspace, requestPersistence, saveWorkspace, type StorageGrade } from "./storage/persist";
-import { mergeWorkspace } from "./sync/merge";
+import { loadLocal, requestPersistence, saveWorkspace, type StorageGrade } from "./storage/persist";
 import { announceToOtherTabs } from "./sync/api/remote";
 import {
   ancestors,
@@ -18,7 +17,6 @@ import {
 } from "./outline/tree";
 import { parseQuery } from "./search/query";
 import {
-  payloadOf,
   docChildren,
   docList,
   inboxDoc,
@@ -62,9 +60,8 @@ export function useStore() {
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([loadWorkspace(), loadReplica()]).then(([stored, replica]) => {
+    void loadLocal().then((loaded) => {
       if (cancelled) return;
-      const loaded = combineLocal(stored, replica);
       const next = loaded && Object.keys(loaded.docs).length > 0 ? loaded : makeWorkspace();
       live.current = next;
       setWorkspace(next);
@@ -90,7 +87,8 @@ export function useStore() {
         announceToOtherTabs();
       }, () => setSaveFailed(true));
     }, SAVE_DEBOUNCE_MS);
-    const flush = () => void saveWorkspace(workspace);
+    // Best effort on the way out; a failure has nowhere left to be shown.
+    const flush = () => void saveWorkspace(workspace).catch(() => undefined);
     window.addEventListener("beforeunload", flush);
     return () => {
       clearTimeout(timer);
@@ -554,16 +552,3 @@ export function useStore() {
   };
 }
 
-/**
- * The webview's database and the native shell's own file are two replicas of
- * one workspace, so they are merged like any two devices. Usually they agree
- * and the merge hands back the database copy unchanged; when the webview lost
- * its storage, the file brings everything back. Device-local fields (views,
- * the open document) come from the database copy when there is one.
- */
-export function combineLocal(stored: Workspace | null, replica: Workspace | null): Workspace | null {
-  if (!stored || !replica) return stored ?? replica;
-  const payload = mergeWorkspace(payloadOf(stored), payloadOf(replica));
-  const activeDocId = payload.docs[stored.activeDocId] ? stored.activeDocId : Object.keys(payload.docs)[0];
-  return { ...stored, ...payload, activeDocId };
-}

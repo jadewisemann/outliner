@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { dateState, dateToken, datesIn, formatDate, parseDate } from "../dates";
+import { dateState, dateToken, formatDate, parseDate } from "../dates";
+import { inlineDates } from "../inline";
 import { parseQuery } from "../../search/query";
 import { makeNode } from "../../types";
 
@@ -34,11 +35,11 @@ describe("dates", () => {
   it("writes today's token and finds every date in a row", () => {
     expect(dateToken(NOW)).toBe("!(2026-09-29)");
     expect(dateToken(NOW, 3)).toBe("!(2026-10-02)");
-    expect(datesIn("from !(2026-09-01) to !(2026-09-30), not !(2026-13-01)")).toHaveLength(2);
+    expect(inlineDates("from !(2026-09-01) to !(2026-09-30), not !(2026-13-01)")).toHaveLength(2);
   });
 
   it("filters with date: and has:date", () => {
-    const rows = ["past !(2026-09-01)", "now !(2026-09-29)", "soon !(2026-10-03)", "none"].map((text) =>
+    const rows = ["past !(2026-09-01)", "now !(2026-09-29)", "soon !(2026-10-03)", "none", "code `!(2026-09-29)`"].map((text) =>
       makeNode({ text })
     );
     const hits = (query: string) =>
@@ -48,6 +49,7 @@ describe("dates", () => {
     expect(hits("date:7d")).toEqual(["now", "soon"]);
     expect(hits("date:2026-10-03")).toEqual(["soon"]);
     expect(hits("has:date")).toEqual(["past", "now", "soon"]);
-    expect(hits("-has:date")).toEqual(["none"]);
+    // A date inside a code span renders as code, so it is not a date to search either.
+    expect(hits("-has:date")).toEqual(["none", "code"]);
   });
 });

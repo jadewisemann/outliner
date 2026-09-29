@@ -65,16 +65,17 @@ export function useSync(options: {
 
   /** Applies a merge result, but only when it actually brought something in. */
   const absorb = useCallback(
-    (payload: SyncPayload) => {
+    (payload: SyncPayload): boolean => {
       const current = live.current;
-      if (!current || !changedBy(payloadOf(current), payload)) return;
+      if (!current || !changedBy(payloadOf(current), payload)) return false;
       onAbsorb();
 
       const active = payload.docs[current.activeDocId] ? current.activeDocId : Object.keys(payload.docs)[0];
-      if (!active) return;
+      if (!active) return false;
       const views = { ...current.views };
       for (const id of Object.keys(views)) if (!payload.docs[id]) delete views[id];
       apply({ ...current, ...payload, activeDocId: active, views });
+      return true;
     },
     [live, apply, onAbsorb]
   );
@@ -86,16 +87,16 @@ export function useSync(options: {
     try {
       // Pull, merge into whatever is local right now, then offer the result
       // back. A lost race just means the next round settles it.
+      let absorbed = false;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const stored = await backend.pull();
         if (!stored) break;
-        absorb(
-          mergeWorkspace(payloadOf(live.current!), stored.payload, {
-            // Nothing typed here yet, and never synced with this remote:
-            // this device is joining, not contributing a blank document.
-            adoptRemote: edits.current === 0 && !hasSynced(configKey(config!))
-          })
-        );
+        const merged = mergeWorkspace(payloadOf(live.current!), stored.payload, {
+          // Nothing typed here yet, and never synced with this remote:
+          // this device is joining, not contributing a blank document.
+          adoptRemote: edits.current === 0 && !hasSynced(configKey(config!))
+        });
+        if (absorb(merged)) absorbed = true;
 
         // Usually: only when there is something of ours to send (see push.ts
         // for why, and for the two remotes that need more than that).
@@ -117,7 +118,9 @@ export function useSync(options: {
       retryAfter.current = 0;
       markSynced(configKey(config!));
       setStatus("idle");
-      void saveWorkspace(live.current!);
+      // Only when something arrived: an idle round has nothing new to keep,
+      // and in the native shell every save is also a file write.
+      if (absorbed) void saveWorkspace(live.current!).catch(() => undefined);
     } catch (error) {
       if (isLocked(error)) {
         // The remote holds bytes this device cannot read. Retrying is pointless

@@ -2,6 +2,8 @@ import { patchNode, setCollapsedDeep } from "../outline/tree";
 import type { Store } from "../store";
 import type { Color, Id, Node } from "../types";
 import type { Command } from "./palette";
+import { dateToken } from "../outline/dates";
+import { describe } from "../shared/keymap";
 
 /**
  * Everything the app can do, as a flat list the palette can search.
@@ -49,6 +51,27 @@ export function buildCommands(store: Store, actions: AppActions): Command[] {
   /** Edits the list the focused row belongs to. */
   const onList = (label: string, id: string, patch: Partial<Node>): Command[] =>
     parentId ? [{ id, label, run: () => store.edit((current) => patchNode(current, parentId, patch)) }] : [];
+
+  /**
+   * Appends a date to the focused row. The keyboard way is `!!`; this is the
+   * way for a phone, whose soft keyboard does not report the keys `!!` reads.
+   */
+  const addDate = (label: string, id: string, days: number): Command[] =>
+    focusId
+      ? [
+          {
+            id,
+            label,
+            hint: "!!",
+            run: () =>
+              store.edit((current) => {
+                const text = current.nodes[focusId]?.text ?? "";
+                const gap = text === "" || text.endsWith(" ") ? "" : " ";
+                return patchNode(current, focusId, { text: `${text}${gap}${dateToken(Date.now(), days)}` });
+              })
+          }
+        ]
+      : [];
 
   return [
     /* structure */
@@ -121,11 +144,13 @@ export function buildCommands(store: Store, actions: AppActions): Command[] {
       label: view.hideNotes ? "메모 보이기" : "메모 숨기기",
       run: () => store.setView({ hideNotes: !view.hideNotes })
     },
-    { id: "view.sidebar", label: "사이드바 열고 닫기", hint: "⌘\\", run: actions.toggleSidebar },
+    { id: "view.sidebar", label: "사이드바 열고 닫기", hint: describe("Mod+\\"), run: actions.toggleSidebar },
     { id: "view.theme", label: "테마 전환", run: actions.toggleTheme },
     { id: "view.settings", label: "표시 설정 — 글꼴·간격·너비", run: actions.openSettings },
 
     /* files and settings */
+    ...addDate("오늘 날짜 붙이기", "row.today", 0),
+    ...addDate("내일 날짜 붙이기", "row.tomorrow", 1),
     { id: "file.md", label: "Markdown 내보내기", run: () => actions.exportAs("markdown") },
     { id: "file.opml", label: "OPML 내보내기", run: () => actions.exportAs("opml") },
     { id: "file.txt", label: "텍스트 내보내기", run: () => actions.exportAs("text") },
@@ -134,12 +159,12 @@ export function buildCommands(store: Store, actions: AppActions): Command[] {
     { id: "file.importFolder", label: "폴더 가져오기 — 폴더 구조까지", run: actions.importFolder },
     { id: "app.sync", label: "동기화 설정", run: actions.openSync },
     { id: "app.history", label: "문서 히스토리", hint: doc.title, run: actions.openHistory },
-    { id: "app.shortcuts", label: "단축키", hint: "⌘/", run: actions.openShortcuts },
+    { id: "app.shortcuts", label: "단축키", hint: describe("Mod+/"), run: actions.openShortcuts },
     { id: "app.keys", label: "단축키 바꾸기", run: actions.openKeys },
 
     /* undo lives here too, so the palette is a complete answer to "how do I…" */
-    { id: "edit.undo", label: "실행 취소", hint: "⌘Z", run: store.undo },
-    { id: "edit.redo", label: "다시 실행", hint: "⇧⌘Z", run: store.redo }
+    { id: "edit.undo", label: "실행 취소", hint: describe("Mod+Z"), run: store.undo },
+    { id: "edit.redo", label: "다시 실행", hint: describe("Mod+Shift+Z"), run: store.redo }
   ];
 }
 
