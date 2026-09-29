@@ -2,7 +2,8 @@
 //! webview, with a handful of commands a browser tab cannot offer.
 //!
 //! What lives here is deliberately small (DESIGN.md principle 20). The shell
-//! reads and writes bytes, opens the system browser, and brings its window
+//! reads and writes bytes (the folder backend's file, and the app's own
+//! replica of the workspace), opens the system browser, and brings its window
 //! forward; it never parses, validates or merges notes. Those stay in the web
 //! code, which is the one implementation every platform runs.
 
@@ -77,6 +78,23 @@ async fn folder_write(dir: String, text: String, expect: Option<String>, remove:
     folder::write(&folder_path(&dir)?, &text, expect.as_deref(), &remove)
 }
 
+/// The app's data folder, where the replica lives. Per-user and per-app on
+/// every platform, and removed with the app.
+fn data_dir(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    use tauri::Manager;
+    app.path().app_data_dir().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn replica_read(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    folder::replica_read(&data_dir(&app)?)
+}
+
+#[tauri::command]
+async fn replica_write(app: tauri::AppHandle, text: String) -> Result<(), String> {
+    folder::replica_write(&data_dir(&app)?, &text)
+}
+
 #[cfg(desktop)]
 #[tauri::command]
 async fn folder_pick(app: tauri::AppHandle) -> Result<Option<String>, String> {
@@ -135,7 +153,15 @@ pub fn run() {
     });
 
     builder
-        .invoke_handler(tauri::generate_handler![native_info, open_external, folder_read, folder_write, folder_pick])
+        .invoke_handler(tauri::generate_handler![
+            native_info,
+            open_external,
+            folder_read,
+            folder_write,
+            folder_pick,
+            replica_read,
+            replica_write
+        ])
         .run(tauri::generate_context!())
         .expect("error while running the outliner shell");
 }

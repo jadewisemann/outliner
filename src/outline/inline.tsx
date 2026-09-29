@@ -3,6 +3,7 @@ import { highlight } from "./highlight";
 // Named TeX rather than Math: this file does arithmetic with the global one.
 import { TeX } from "./components/TeX";
 import { Attachment } from "./components/Attachment";
+import { DATE_SOURCE, dateState, formatDate, parseDate } from "./dates";
 
 /**
  * A tag is a sigil plus tag characters, and the sigil may be `#` or `@` — both
@@ -30,7 +31,7 @@ const TAG_SOURCE = "(?<![\\w#])#[\\p{L}\\p{N}_/-]+|(?<![\\w@])@[\\p{L}\\p{N}_/-]
 /**
  * Inline markup understood in a row: **bold**, *italic*, `code`, ~~strike~~,
  * ==highlight==, ![image](url), [label](url), bare URLs, #tag, @tag,
- * [[document link]], ((item link)) and $$math$$.
+ * [[document link]], ((item link)), $$math$$ and !(2026-09-29) dates.
  *
  * A bare URL is tried before a tag on purpose, so `https://x.com/@user` stays
  * one link instead of a link with a tag inside it.
@@ -38,6 +39,8 @@ const TAG_SOURCE = "(?<![\\w#])#[\\p{L}\\p{N}_/-]+|(?<![\\w@])@[\\p{L}\\p{N}_/-]
 const PATTERN = new RegExp(
   "(\\$\\$(?!\\s)[^$\\n]+\\$\\$|\\*\\*(?!\\s)[^*\\n]+\\*\\*|(?<![\\w*])\\*(?!\\s)(?:[^*\\n]*[^\\s*])?\\*" +
     "|`[^`\\n]+`|~~(?!\\s)[^~\\n]+~~|==(?!\\s)[^=\\n]+==|\\[\\[[^\\]\\n]+\\]\\]|\\(\\([\\w-]{1,64}\\)\\)" +
+    "|" +
+    DATE_SOURCE +
     "|!\\[[^\\]\\n]*\\]\\([^)\\s]+\\)|\\[[^\\]\\n]*\\]\\([^)\\s]+\\)|https?:\\/\\/[^\\s<>()]+|" +
     TAG_SOURCE +
     ")",
@@ -153,6 +156,17 @@ function renderToken(token: string, key: number, handlers: InlineHandlers): Reac
     );
   }
 
+  if (token.startsWith("!(")) {
+    const date = parseDate(token);
+    if (!date) return token;
+    const now = Date.now();
+    return (
+      <time key={key} className={`inline-date inline-date-${dateState(date, now)}`} dateTime={token.slice(2, 12)}>
+        {formatDate(date, now)}
+      </time>
+    );
+  }
+
   if (token.startsWith("![")) {
     const split = token.indexOf("](");
     const alt = token.slice(2, split);
@@ -224,6 +238,10 @@ function visibleLength(token: string): number {
   if (token.startsWith("**") || token.startsWith("~~") || token.startsWith("==")) return token.length - 4;
   if (token.startsWith("[[") || token.startsWith("((") || token.startsWith("$$")) return token.length - 4;
   if (token.startsWith("`") || (token.startsWith("*") && !token.startsWith("**"))) return token.length - 2;
+  if (token.startsWith("!(")) {
+    const date = parseDate(token);
+    return date ? formatDate(date, Date.now()).length : token.length;
+  }
   const label = token.match(/^!?\[([^\]]*)\]\(/);
   if (label) return label[1].length;
   return token.length;

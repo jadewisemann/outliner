@@ -1,6 +1,7 @@
 import { migrate } from "./migrate";
 import type { Workspace } from "../types";
 import { readWorkspace } from "./validate";
+import { invokeNative, isNative } from "../shared/native";
 
 const DB_NAME = "outliner";
 const STORE = "workspace";
@@ -21,11 +22,31 @@ export async function loadWorkspace(): Promise<Workspace | null> {
 
 export async function saveWorkspace(workspace: Workspace): Promise<void> {
   const db = await openDb();
-  if (!db) {
-    writeLocalStorage(workspace);
-    return;
+  if (!db) writeLocalStorage(workspace);
+  else await writeDb(db, workspace);
+  // Inside the native shell the app also keeps its own file, so the notes do
+  // not depend on the webview's storage policy. A failure here rejects, and
+  // the caller shows that the save did not land.
+  if (isNative()) await invokeNative("replica_write", { text: JSON.stringify(workspace) });
+}
+
+/**
+ * The shell's copy of the workspace (`replica_read` in src-tauri), validated
+ * like anything else from outside the page. Null in a browser, and when the
+ * file is missing or unreadable.
+ */
+export async function loadReplica(): Promise<Workspace | null> {
+  if (!isNative()) return null;
+  try {
+    const text = await invokeNative<string | null>("replica_read");
+    return text ? readWorkspace(migrate(JSON.parse(text))) : null;
+  } catch {
+    return null;
   }
-  await new Promise<void>((resolve) => {
+}
+
+function writeDb(db: IDBDatabase, workspace: Workspace): Promise<void> {
+  return new Promise<void>((resolve) => {
     const tx = db.transaction(STORE, "readwrite");
     tx.objectStore(STORE).put(workspace, KEY);
     tx.oncomplete = () => resolve();
@@ -92,7 +113,7 @@ function writeLocalStorage(workspace: Workspace) {
  * not answer the question is not the same as one that answered no, and the UI
  * must not claim more than it was told.
  */
-export type StorageGrade = "persisted" | "best-effort" | "unknown";
+export type StorageGrade = "persisted" | "best-effort" | "unknown" | "file";
 
 /**
  * Asks for the durable grade, returning the grade actually in force.
@@ -105,6 +126,9 @@ export type StorageGrade = "persisted" | "best-effort" | "unknown";
  * is why the same call sits behind a button in the sync panel.
  */
 export async function requestPersistence(): Promise<StorageGrade> {
+  // In the native shell every save also lands in the app's own file, which
+  // no browser policy can clear: that, not the webview's answer, is the grade.
+  if (isNative()) return "file";
   if (typeof navigator === "undefined") return "unknown";
   const storage = navigator.storage;
   if (!storage?.persist || !storage.persisted) return "unknown";

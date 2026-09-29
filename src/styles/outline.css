@@ -483,6 +483,26 @@
   box-shadow: 0 0 0 2.5px var(--accent-soft);
 }
 
+/* Dates read like a tag's quieter cousin: tinted by how near they are, so a
+   scan down the outline finds what is overdue without a search. */
+.inline-date {
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 0.92em;
+  white-space: nowrap;
+  color: var(--muted);
+  background: var(--fill);
+}
+.inline-date-today,
+.inline-date-soon {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+.inline-date-overdue {
+  color: var(--late-ink);
+  background: var(--late-soft);
+}
+
 .inline-doclink {
   text-decoration: underline;
   text-underline-offset: 2px;

@@ -88,7 +88,7 @@ jobs:
       - name: Native smoke test
         if: matrix.name == 'linux'
         run: |
-          sudo apt-get install -y webkit2gtk-driver xvfb
+          sudo apt-get install -y webkit2gtk-driver xvfb fonts-noto-cjk
           cargo install tauri-driver --locked
           xvfb-run -a -s "-screen 0 1280x860x24" bash e2e/native/run-linux.sh src-tauri/target/release/outliner evidence
       - name: Publish smoke evidence
@@ -143,6 +143,18 @@ jobs:
       # The Android project is generated, not committed: it is derived from
       # tauri.conf.json and the Cargo manifest, like the icons.
       - run: npm run tauri -- android init --ci
+      # The one generated file the app owns: window insets (see the file).
+      - name: Own MainActivity
+        run: |
+          target="$(find src-tauri/gen/android -name MainActivity.kt | head -1)"
+          echo "replacing $target"
+          cat "$target"
+          cp src-tauri/android/MainActivity.kt "$target"
+          gradle=src-tauri/gen/android/app/build.gradle.kts
+          # enableEdgeToEdge and the insets API; add them only if the template did not.
+          grep -q 'androidx.activity:activity' "$gradle" || sed -i '/^dependencies {/a\    implementation("androidx.activity:activity-ktx:1.9.3")' "$gradle"
+          grep -q 'androidx.core:core' "$gradle" || sed -i '/^dependencies {/a\    implementation("androidx.core:core-ktx:1.13.1")' "$gradle"
+          grep -n "implementation" "$gradle"
       - run: npm run tauri -- icon public/icon.svg
       - run: npm run tauri -- android build --apk
       - name: Sign

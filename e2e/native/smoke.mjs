@@ -85,6 +85,11 @@ try {
   await until("the typed row", () => run("return document.body.innerText.includes('네이티브에서 쓴 줄') || [...document.querySelectorAll('textarea')].some(t => t.value.includes('네이티브에서 쓴 줄'))"));
   check("typing reaches the outline", true);
 
+  // 2b. Every save also lands in the app's own file (the replica).
+  const replica = join(process.env.HOME ?? "", ".local/share/io.github.jadewisemann.outliner/workspace.json");
+  await until("the replica file", () => existsSync(replica) && readFileSync(replica, "utf8").includes("네이티브에서 쓴 줄"), 15_000);
+  check("local save writes the replica", true, replica);
+
   // 3. The folder backend writes the canonical file.
   await run("localStorage.setItem('outliner:sync', JSON.stringify({ kind: 'file', dir: arguments[0] }))", [folder]);
   // Let the debounced local save land before reloading.

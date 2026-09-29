@@ -335,6 +335,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
 
 const GRADE_LABEL: Record<string, string> = {
   persisted: "저장 보장됨",
+  file: "앱 파일에도 보관됨",
   "best-effort": "보장되지 않음",
   unknown: "알 수 없음"
 };
@@ -351,7 +352,7 @@ function StorageGradeLine({ store }: { store: Store }) {
   return (
     <p className="sync-status-line">
       이 기기의 저장: <strong>{GRADE_LABEL[grade]}</strong>
-      {grade === "persisted" ? null : (
+      {grade === "persisted" || grade === "file" ? null : (
         <button type="button" className="search-save" onClick={request}>
           저장 보장 요청
         </button>

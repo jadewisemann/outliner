@@ -126,23 +126,7 @@ pub fn write(dir: &Path, text: &str, expect: Option<&str>, remove: &[String]) ->
     if current.as_deref() != expect {
         return Ok(None);
     }
-
-    fs::create_dir_all(dir).map_err(|error| format!("cannot create {}: {error}", dir.display()))?;
-    // Write beside, then rename: a reader (or the sync service) never sees
-    // half a workspace, and a crash mid-write leaves the previous file intact.
-    // The leading dot keeps most sync services from uploading the temporary.
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let temporary: PathBuf = dir.join(format!(".{CANONICAL}.{}.{nanos}.tmp", std::process::id()));
-    let result = (|| -> std::io::Result<()> {
-        let mut file = fs::File::create(&temporary)?;
-        file.write_all(text.as_bytes())?;
-        file.sync_all()?;
-        fs::rename(&temporary, &target)
-    })();
-    if let Err(error) = result {
-        let _ = fs::remove_file(&temporary);
-        return Err(format!("cannot write {CANONICAL}: {error}"));
-    }
+    replace(dir, CANONICAL, text)?;
 
     for name in remove {
         if is_copy(name) {
@@ -150,6 +134,40 @@ pub fn write(dir: &Path, text: &str, expect: Option<&str>, remove: &[String]) ->
         }
     }
     Ok(Some(stamp(text.as_bytes())))
+}
+
+/// Writes `name` in `dir` atomically: beside, then rename. A reader (or a
+/// sync service) never sees half a workspace, and a crash mid-write leaves
+/// the previous file intact. The leading dot keeps most sync services from
+/// uploading the temporary.
+fn replace(dir: &Path, name: &str, text: &str) -> Result<(), String> {
+    fs::create_dir_all(dir).map_err(|error| format!("cannot create {}: {error}", dir.display()))?;
+    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
+    let temporary: PathBuf = dir.join(format!(".{name}.{}.{nanos}.tmp", std::process::id()));
+    let result = (|| -> std::io::Result<()> {
+        let mut file = fs::File::create(&temporary)?;
+        file.write_all(text.as_bytes())?;
+        file.sync_all()?;
+        fs::rename(&temporary, dir.join(name))
+    })();
+    result.map_err(|error| {
+        let _ = fs::remove_file(&temporary);
+        format!("cannot write {name}: {error}")
+    })
+}
+
+/// The app's own copy of the workspace, in its data folder: written after
+/// every local save, read back at start. Last write wins, because there is
+/// only ever one writer — this app, on this device.
+pub const REPLICA: &str = "workspace.json";
+
+pub fn replica_write(dir: &Path, text: &str) -> Result<(), String> {
+    let _held = WRITES.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    replace(dir, REPLICA, text)
+}
+
+pub fn replica_read(dir: &Path) -> Result<Option<String>, String> {
+    Ok(read_entry(&dir.join(REPLICA), REPLICA)?.map(|entry| entry.text))
 }
 
 #[cfg(test)]
@@ -208,6 +226,17 @@ mod tests {
         assert_eq!(write(&dir, "{\"d\":4}", Some(&first), &[]).unwrap(), None);
         assert_eq!(read(&dir).unwrap().canonical.unwrap().stamp, second);
         assert_eq!(fs::read_to_string(dir.join(CANONICAL)).unwrap(), "{\"c\":3}");
+    }
+
+    #[test]
+    fn keeps_a_replica_that_survives_rewrites() {
+        let dir = scratch("replica").join("nested");
+        assert_eq!(replica_read(&dir).unwrap(), None);
+        replica_write(&dir, "one").unwrap();
+        replica_write(&dir, "two").unwrap();
+        assert_eq!(replica_read(&dir).unwrap().as_deref(), Some("two"));
+        // The replica is not mistaken for a conflict copy of the folder backend.
+        assert!(!is_copy(REPLICA));
     }
 
     #[test]

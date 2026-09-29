@@ -3,7 +3,8 @@ import { createHistory } from "./history";
 import { rememberDoc } from "./palette/palette";
 import { useSync } from "./sync/useSync";
 import { keyBetween } from "./shared/order";
-import { loadWorkspace, requestPersistence, saveWorkspace, type StorageGrade } from "./storage/persist";
+import { loadReplica, loadWorkspace, requestPersistence, saveWorkspace, type StorageGrade } from "./storage/persist";
+import { mergeWorkspace } from "./sync/merge";
 import { announceToOtherTabs } from "./sync/api/remote";
 import {
   ancestors,
@@ -60,8 +61,9 @@ export function useStore() {
 
   useEffect(() => {
     let cancelled = false;
-    void loadWorkspace().then((loaded) => {
+    void Promise.all([loadWorkspace(), loadReplica()]).then(([stored, replica]) => {
       if (cancelled) return;
+      const loaded = combineLocal(stored, replica);
       const next = loaded && Object.keys(loaded.docs).length > 0 ? loaded : makeWorkspace();
       live.current = next;
       setWorkspace(next);
@@ -549,4 +551,21 @@ export function useStore() {
      */
     storage: { grade: storageGrade, request: askForDurableStorage }
   };
+}
+
+/**
+ * The webview's database and the native shell's own file are two replicas of
+ * one workspace, so they are merged like any two devices. Usually they agree
+ * and the merge hands back the database copy unchanged; when the webview lost
+ * its storage, the file brings everything back. Device-local fields (views,
+ * the open document) come from the database copy when there is one.
+ */
+function combineLocal(stored: Workspace | null, replica: Workspace | null): Workspace | null {
+  if (!stored || !replica) return stored ?? replica;
+  const payload = mergeWorkspace(
+    { docs: stored.docs, graves: stored.graves, keymap: stored.keymap },
+    { docs: replica.docs, graves: replica.graves, keymap: replica.keymap }
+  );
+  const activeDocId = payload.docs[stored.activeDocId] ? stored.activeDocId : Object.keys(payload.docs)[0];
+  return { ...stored, ...payload, activeDocId };
 }
