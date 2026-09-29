@@ -1,7 +1,7 @@
 # `npx wrangler deploy` from this folder. See README.md.
 name = "outliner-sync"
 main = "worker.mjs"
-compatibility_date = "2026-09-01"
+compatibility_date = "2025-09-01"
 
 [[durable_objects.bindings]]
 name = "WORKSPACE"

@@ -21,7 +21,9 @@ const [application, evidence = "evidence"] = process.argv.slice(2);
 if (!application) throw new Error("usage: smoke.mjs <app binary> [evidence dir]");
 const DRIVER = process.env.WEBDRIVER_URL ?? "http://127.0.0.1:4444";
 const folder = join(tmpdir(), `outliner-native-${Date.now()}`);
-const appData = join(process.env.HOME ?? "", ".local/share/io.github.jadewisemann.outliner");
+// Where the shell keeps its data (Tauri's app_data_dir): given by the caller
+// on Windows, Linux's XDG location otherwise.
+const appData = process.env.OUTLINER_APP_DATA ?? join(process.env.HOME ?? "", ".local/share/io.github.jadewisemann.outliner");
 mkdirSync(evidence, { recursive: true });
 
 async function call(method, path, body) {
@@ -70,13 +72,14 @@ const check = (name, ok, detail = "") => {
 
 try {
   await until("the outline", () => run("return document.querySelectorAll('.row').length > 0"));
-  await shot("desktop-start");
+  await shot("start");
 
   // 1. The bridge exists and answers.
   const info = await runAsync(
     "const done = arguments[arguments.length - 1]; window.__TAURI__.core.invoke('native_info').then(done, e => done({ error: String(e) }))"
   );
   check("native_info answers over IPC", info && info.mobile === false, JSON.stringify(info));
+
 
   // 2. Typing works in the shell's webview.
   const row = await find(".row");
@@ -140,18 +143,18 @@ try {
   const badge = await run("const b = document.querySelector('.sync-badge'); return b ? b.className : ''");
   check("sync badge is not in error", !/sync-(error|locked|offline)/.test(badge), badge);
 
-  await shot("desktop-synced");
+  await shot("synced");
 } catch (error) {
   check("smoke run", false, String(error?.stack ?? error));
   try {
-    await shot("desktop-failure");
+    await shot("failure");
   } catch {
     /* no screenshot either */
   }
 } finally {
   await call("DELETE", S).catch(() => {});
   rmSync(folder, { recursive: true, force: true });
-  writeFileSync(join(evidence, "desktop-smoke.json"), JSON.stringify(results, null, 2));
+  writeFileSync(join(evidence, "smoke.json"), JSON.stringify(results, null, 2));
 }
 
 if (results.some((result) => !result.ok)) process.exit(1);

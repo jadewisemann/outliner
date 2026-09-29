@@ -1,0 +1,36 @@
+# Runs the Cloudflare Worker backend on the real Workers runtime (workerd, via
+# `wrangler dev`, with a SQLite-backed Durable Object — no Cloudflare account
+# involved) and holds it to the sync contract with e2e/worker.spec.ts: CAS
+# under concurrent writers, chunked storage past the 2 MB value limit, and two
+# browser devices syncing through it, with and without a passphrase.
+name: Worker
+
+on:
+  push:
+    branches-ignore: [main]
+    paths: ["server/cloudflare/**", "e2e/worker.spec.ts", "src/sync/**", ".github/workflows/worker.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contract:
+    runs-on: ubuntu-latest
+    env:
+      WORKER_TOKEN: ci-worker-token
+      WORKER_URL: http://127.0.0.1:8788/workspace
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Start the Worker in workerd
+        run: bash server/cloudflare/dev.sh
+      - run: npx playwright test e2e/worker.spec.ts --reporter=list
+      - name: Runtime log
+        if: always()
+        run: tail -60 wrangler.log || true

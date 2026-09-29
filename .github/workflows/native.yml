@@ -88,18 +88,37 @@ jobs:
       # Icons are generated from the one canonical source, never committed.
       - run: npm run tauri -- icon public/icon.svg
       - run: npm run tauri -- build ${{ matrix.args }}
-      # The one leg that can run the real app headless: drive it through
-      # tauri-driver and keep screenshots (e2e/native/smoke.mjs).
-      - name: Native smoke test
+      # Run the real app, not just build it (docs/design/native.md 「검증」).
+      # Linux and Windows drive it through tauri-driver; macOS has no WebDriver
+      # for WKWebView, so it launches and checks what the app wrote to disk.
+      - name: Native smoke test (Linux)
         if: matrix.name == 'linux'
         run: |
           sudo apt-get install -y webkit2gtk-driver xvfb fonts-noto-cjk
           cargo install tauri-driver --locked
-          xvfb-run -a -s "-screen 0 1280x860x24" bash e2e/native/run-linux.sh src-tauri/target/release/outliner evidence
+          xvfb-run -a -s "-screen 0 1280x860x24" bash e2e/native/run-driver.sh src-tauri/target/release/outliner evidence
+      - name: Native smoke test (Windows)
+        if: matrix.name == 'windows'
+        shell: bash
+        run: |
+          cargo install tauri-driver --locked
+          # The Edge driver has to match the installed WebView2 exactly.
+          cargo install --git https://github.com/chippers/msedgedriver-tool
+          msedgedriver-tool
+          export NATIVE_DRIVER="$PWD/msedgedriver.exe"
+          export OUTLINER_APP_DATA="$APPDATA/io.github.jadewisemann.outliner"
+          bash e2e/native/run-driver.sh src-tauri/target/release/outliner.exe evidence
+      - name: Native smoke test (macOS)
+        if: matrix.name == 'macos'
+        run: |
+          bundle="$(find src-tauri/target -type d -path '*release/bundle/macos/*.app' | head -1)"
+          binary="$(ls -d "$bundle"/Contents/MacOS/* | head -1)"
+          echo "launching $binary"
+          bash e2e/native/launch.sh "$binary" "$HOME/Library/Application Support/io.github.jadewisemann.outliner" evidence
       - uses: actions/upload-artifact@v4
-        if: always() && matrix.name == 'linux'
+        if: always()
         with:
-          name: evidence-desktop-linux
+          name: evidence-desktop-${{ matrix.name }}
           path: evidence
           if-no-files-found: ignore
       - name: Collect installers
