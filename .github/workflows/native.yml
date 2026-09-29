@@ -1,0 +1,183 @@
+# Builds the native apps from the same static build the web deploys.
+#
+# Desktop (macOS universal, Windows, Linux) and Android come out of one Tauri
+# project (`src-tauri/`). Everything runs on GitHub's free hosted runners —
+# nothing here needs a paid account:
+#
+# - macOS builds are unsigned. Gatekeeper refuses them on first open; right-
+#   click → Open once, or `xattr -dr com.apple.quarantine /Applications/Outliner.app`.
+#   Signing and notarising need a paid Apple developer account.
+# - The Android APK is signed with the keystore in the repository secrets
+#   (ANDROID_KEYSTORE_BASE64 / _PASSWORD, ANDROID_KEY_ALIAS / _PASSWORD). Without
+#   them a throwaway key is made per run: the APK installs, but the next build
+#   cannot update it in place. README 「네이티브 앱」 has the one-time setup.
+#
+# A `v*` tag publishes everything as a draft release; pull requests and manual
+# runs keep the files as workflow artifacts.
+name: Native apps
+
+on:
+  push:
+    tags: ["v*"]
+  pull_request:
+    paths:
+      - "src-tauri/**"
+      - ".github/workflows/native.yml"
+      - "src/shared/native.ts"
+      - "src/sync/api/remote/file.ts"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The folder backend's disk side is plain std and has its own tests; they
+  # run in seconds without compiling Tauri.
+  shell-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustc --edition 2021 --test src-tauri/src/folder.rs -o folder-tests && ./folder-tests
+
+  desktop:
+    needs: shell-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos
+            os: macos-latest
+            args: --target universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - name: windows
+            os: windows-latest
+            args: ""
+            rust-targets: ""
+          - name: linux
+            os: ubuntu-22.04
+            args: ""
+            rust-targets: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+      - name: Linux webview libraries
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - run: npm ci
+      - name: Version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: node -e 'const f="src-tauri/tauri.conf.json",c=require("./"+f);c.version=process.argv[1];require("fs").writeFileSync(f,JSON.stringify(c,null,2)+"\n")' "${GITHUB_REF_NAME#v}"
+      # Icons are generated from the one canonical source, never committed.
+      - run: npm run tauri -- icon public/icon.svg
+      - run: npm run tauri -- build ${{ matrix.args }}
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p out
+          find src-tauri/target -path '*/release/bundle/*' -type f \
+            \( -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) \
+            -exec cp {} out/ \;
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: outliner-${{ matrix.name }}
+          path: out/*
+          if-no-files-found: error
+
+  android:
+    needs: shell-tests
+    runs-on: ubuntu-latest
+    env:
+      NDK_VERSION: 27.2.12479018
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - name: NDK and platform
+        run: |
+          sdkmanager "ndk;${NDK_VERSION}" "platforms;android-34" "build-tools;34.0.0"
+          echo "NDK_HOME=${ANDROID_HOME}/ndk/${NDK_VERSION}" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+      - run: npm ci
+      - name: Version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node -e 'const f="src-tauri/tauri.conf.json",c=require("./"+f);c.version=process.argv[1];require("fs").writeFileSync(f,JSON.stringify(c,null,2)+"\n")' "${GITHUB_REF_NAME#v}"
+      # The Android project is generated, not committed: it is derived from
+      # tauri.conf.json and the Cargo manifest, like the icons.
+      - run: npm run tauri -- android init --ci
+      - run: npm run tauri -- icon public/icon.svg
+      - run: npm run tauri -- android build --apk
+      - name: Sign
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          tools="$(ls -d "${ANDROID_HOME}"/build-tools/* | sort -V | tail -1)"
+          apk="$(find src-tauri/gen/android/app/build/outputs/apk -name '*release*.apk' | head -1)"
+          if [ -n "${KEYSTORE}" ]; then
+            echo "${KEYSTORE}" | base64 -d > signing.jks
+          else
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: signing with a throwaway key. This APK installs, but a later build cannot update it in place."
+            KEYSTORE_PASSWORD=throwaway KEY_PASSWORD=throwaway KEY_ALIAS=outliner
+            keytool -genkeypair -keystore signing.jks -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" \
+              -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Outliner"
+          fi
+          mkdir -p out
+          "$tools/zipalign" -f -p 4 "$apk" aligned.apk
+          "$tools/apksigner" sign --ks signing.jks --ks-pass "pass:${KEYSTORE_PASSWORD}" \
+            --ks-key-alias "${KEY_ALIAS}" --key-pass "pass:${KEY_PASSWORD:-$KEYSTORE_PASSWORD}" \
+            --out out/outliner-android.apk aligned.apk
+          "$tools/apksigner" verify out/outliner-android.apk
+          rm -f signing.jks
+      - uses: actions/upload-artifact@v4
+        with:
+          name: outliner-android
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" artifacts/* --repo "$GITHUB_REPOSITORY" --draft --generate-notes --title "Outliner $GITHUB_REF_NAME"

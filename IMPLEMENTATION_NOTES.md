@@ -8,6 +8,33 @@
 
 ---
 
+## 2026-09-29 - 네이티브 셸과 폴더 백엔드: 검증한 것과 못 한 것
+
+- **결정은 [ADR-0010](./docs/adr/0010-native-shell.md)·[ADR-0011](./docs/adr/0011-folder-backend.md),
+  계획은 PLANS.md 「네이티브 앱과 무료 동기화 선택지」다.** 여기에는 작업 환경에서 나온 사실만 남긴다.
+- **이 세션의 환경은 npm 레지스트리와 crates.io에 닿지 못했다(프록시 403).** 그래서 `npm ci`가 되지
+  않았고, `npm run typecheck`·`npm test`·`npm run build`·e2e를 **돌리지 못했다.** Tauri 셸도 컴파일하지
+  못했다. 이 둘의 첫 검증은 PR의 `check.yml`과 `native.yml`이 한다.
+- **대신 돌린 것:**
+  - 전역 `tsc`로 바꾼 파일만 타입 검사했다. remote 계층 전체는 그대로 통과했고, React를 쓰는 파일
+    (`useSync.ts`·`SyncSettings.tsx`·`main.tsx`)은 느슨한 React 선언을 붙여 검사했으며, 바꾼 파일에서
+    나온 오류는 없었다. 느슨한 선언이 잡지 못하는 오류가 있을 수 있으므로 CI가 최종 판정이다.
+  - `folder.rs`는 std만 쓰게 나눠서 `rustc --test`로 단독 실행했다(4건 통과). CAS, 사본 이름 규칙,
+    합친 사본만 지우는 것, 임시 파일이 남지 않는 것을 확인했다. `native.yml`의 첫 잡이 같은 명령이다.
+  - `remote/file.ts`를 JS로 내보내고 가짜 `invoke`(folder.rs와 같은 규칙)를 붙여 두 기기를 흉내 냈다.
+    동기화 서비스가 파일을 옛 사본으로 바꿔 치운 뒤 `lacks`가 그것을 잡아 다시 푸시하는 것, 충돌
+    사본을 합치고 지우는 것, 깨진 사본은 남기는 것, 모르는 암호의 사본이면 `locked`로 멈추는 것을
+    확인했다. 이 검증은 커밋하지 않았다. 유닛 테스트로 옮길지는 CI가 돌기 시작한 뒤에 판정한다.
+  - Cloudflare Worker는 Node 22의 `Request`/`Response`와 메모리 저장소로 계약(401/503/404/412/ETag/
+    CORS 노출/조각 저장과 남은 조각 삭제, 4.5MB 본문 왕복)을 확인했다.
+- **확인하지 못한 가정:** `tauri icon`이 SVG 입력을 받는다는 것, `tauri android init --ci`가 대화 없이
+  끝난다는 것, macOS·Linux에서 IPC가 `ipc:` 스킴을 쓴다는 것(그래서 CSP `connect-src`에 `ipc:`를
+  더했다. 없으면 postMessage로 물러나 동작은 하지만 느리다). 셋 다 CI 첫 실행이 1차 자료가 된다.
+- **빈 커밋 방지 규칙과 새 보정이 부딪히지 않게 했다.** "편집이 없으면 푸시하지 않는다"는 CAS를
+  전제로 한 규칙이라, CAS가 없는 폴더에서는 잃은 쓰기가 다음 편집까지 복구되지 않는다. 보정은
+  `unguarded` 백엔드에만 켰다. GitHub에서 켜면 묘비 TTL 정리 같은 정규화 차이가 커밋을 만들 수 있기
+  때문이다.
+
 ## 2026-09-01 - settings.spec.ts의 flake는 flake가 아니었다
 
 - **2026-08-20 항목이 "다시 나타나면 그때는 조사 대상"이라고 남긴 그 실패가 다시 나타났다.**

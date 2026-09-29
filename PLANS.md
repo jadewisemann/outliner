@@ -3,6 +3,41 @@
 계획마다 **목표 / 원칙 / 단계별 체크리스트 / 완료 기준**을 적는다. 끝난 계획은 지우고 결과를
 DESIGN.md(및 하위 문서)에 반영한다.
 
+## 네이티브 앱과 무료 동기화 선택지
+
+> **상태: 코드와 파이프라인 작성 완료 (2026-09-29). CI에서 첫 빌드가 통과하는지 확인하는 단계가
+> 남았다.** 이 환경에서는 npm 레지스트리와 crates.io에 닿지 못해서 Tauri 셸을 컴파일하지 못했다.
+> 검증한 것과 못 한 것은 [IMPLEMENTATION_NOTES.md](./IMPLEMENTATION_NOTES.md) 2026-09-29 항목에 있다.
+
+**목표.** 데스크톱(macOS·Windows·Linux)과 Android에 설치되는 앱을 만들고, 각 플랫폼에서 로컬로만
+쓰거나 무료 원격과 연결할 수 있게 한다. 원격은 GitHub, 동기화 서비스 폴더의 파일 하나, 무료 서버를
+모두 열어 둔다.
+
+**원칙.** 셸은 판정하지 않는다(DESIGN.md 원칙 20). 새 백엔드는 기존 계약 안에 들어가고, 계약이
+지켜지지 않는 부분은 백엔드가 밝히고 루프가 보정한다(원칙 21). 웹 배포는 바뀌지 않는다.
+
+**단계별 체크리스트.**
+
+- [x] **1. 결정** — [ADR-0010](./docs/adr/0010-native-shell.md)(Tauri 2 셸),
+      [ADR-0011](./docs/adr/0011-folder-backend.md)(폴더 백엔드).
+- [x] **2. 셸** — `src-tauri/`. 명령 다섯 개(`native_info`·`open_external`·`folder_pick`·
+      `folder_read`·`folder_write`)와 전역 단축키 ⌘⌥O / Ctrl+Alt+O. 웹 쪽 다리는 `shared/native.ts`.
+- [x] **3. 폴더 백엔드** — `remote/file.ts` + `folder.rs`, 루프의 `unguarded`·`rewrite` 보정, 설정
+      패널의 「이 컴퓨터의 폴더」.
+- [x] **4. 무료 서버** — `server/cloudflare/` (Durable Object, 1MB 조각 저장).
+- [x] **5. 파이프라인** — `native.yml`(데스크톱 셋 + Android APK + 태그 시 초안 릴리스), `check.yml`(PR 검사).
+- [ ] **6. CI 첫 통과** — `native.yml`의 모든 잡이 green이 되고, 받은 설치 파일이 macOS와 Android에서
+      실제로 열리는지 확인한다. 여기서 나오는 수정은 이 계획 안에서 처리한다.
+- [ ] **7. Android 서명 키** — 사용자가 키스토어를 한 번 만들어 저장소 비밀값에 넣는다(README
+      「네이티브 앱」). 넣기 전까지는 빌드마다 키가 달라 업데이트 설치가 안 된다.
+- [ ] **8. 실사용 확인** — iCloud Drive·Dropbox 중 하나로 두 컴퓨터를 붙여 충돌 사본이 실제로 어떤
+      이름으로 생기는지 관찰한다. 이름 규칙(ADR-0011 결정 5)의 1차 자료가 된다.
+
+**완료 기준.** 태그 하나로 macOS·Windows·Linux 설치 파일과 Android APK가 초안 릴리스에 올라오고,
+폴더 백엔드로 붙인 두 컴퓨터와 GitHub으로 붙인 폰이 같은 워크스페이스로 수렴한다.
+
+---
+
 ## Dynalist 전환 잔여 — 이주 충실도와 저장 보장
 
 > **상태: 2·4·5·6단계 완료 (2026-08-21). 1·3단계는 사용자가 Dynalist 내보내기 파일을 줘야
@@ -132,6 +167,6 @@ DESIGN.md(및 하위 문서)에 반영한다.
 ## 범위에서 뺀 것 (다시 논의하려면 근거부터)
 
 - **날짜·일정 계열** — 사용자 결정. [docs/parity.md](./docs/parity.md) §5.
-- **Tauri 데스크톱** — PWA가 설치·오프라인·공유 캡처까지 하는 지금, 남는 것은 작업 표시줄
-  아이콘 정도인데 대가가 Rust 툴체인과 플랫폼별 빌드다. [docs/parity.md](./docs/parity.md) §6.
+- **iOS 앱** — Tauri가 지원하지만 기기에 설치하려면 유료 Apple 개발자 계정이 필요하다. iOS에서는
+  PWA가 경로다. (데스크톱·Android 셸은 2026-09-29에 범위로 들어왔다: ADR-0010.)
 - **WYSIWYG(편집 중 서식 표시)** — contenteditable이 필요해서 한글 IME를 반납하게 된다.

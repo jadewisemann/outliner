@@ -99,7 +99,17 @@ export function useSync(options: {
         // Nothing of ours is unpushed and the remote has a version, so a push
         // would only echo back what it already holds. On GitHub every push is
         // a commit — an idle device must not leave a trail of empty ones.
-        if (edits.current === pushed.current && stored.version !== null) break;
+        // Two exceptions, both from backends without compare-and-swap: the
+        // remote asked to be rewritten, or it no longer holds everything this
+        // device does (something replaced our last write without asking).
+        if (
+          edits.current === pushed.current &&
+          stored.version !== null &&
+          !stored.rewrite &&
+          !(backend.unguarded && lacks(stored.payload, payloadOf(live.current!)))
+        ) {
+          break;
+        }
 
         // Captured before the request: anything typed during the round trip
         // must stay pending rather than be marked as sent.
@@ -204,6 +214,15 @@ export function useSync(options: {
     files: backend?.files ?? null,
     noteEdit
   };
+}
+
+/**
+ * Whether `remote` is missing anything `local` holds. Merging local into the
+ * remote hands back the remote's own objects when there is nothing to bring
+ * in (principle 4), so identity answers it without serialising anything.
+ */
+function lacks(remote: SyncPayload, local: SyncPayload): boolean {
+  return changedBy(remote, mergeWorkspace(remote, local));
 }
 
 function payloadOf(workspace: Workspace): SyncPayload {

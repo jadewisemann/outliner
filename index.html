@@ -8,12 +8,14 @@
       `style-src-attr` is the one hole, and it is one this app digs itself — the
       row indent and the virtualisation padding are style attributes.
       `connect-src` cannot be narrowed honestly: the endpoint is whatever the
-      person configured. `frame-ancestors` is ignored in a meta tag; a host that
+      person configured. `ipc:` is the native shell's command channel on macOS
+      and Linux (`*` does not cover a custom scheme); in a browser nothing
+      answers on it. `frame-ancestors` is ignored in a meta tag; a host that
       can send headers should add it there.
     -->
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' blob:; font-src 'self'; manifest-src 'self'; connect-src *; base-uri 'none'; form-action 'none'"
+      content="default-src 'none'; script-src 'self'; worker-src 'self'; style-src 'self'; style-src-attr 'unsafe-inline'; img-src 'self' blob:; font-src 'self'; manifest-src 'self'; connect-src * ipc:; base-uri 'none'; form-action 'none'"
     />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Outliner</title>

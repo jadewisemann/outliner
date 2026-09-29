@@ -1,7 +1,8 @@
 # Outliner
 
 Dynalist을 대신하는 로컬 우선(local-first) 아웃라이너. 브라우저에서 열고, 키보드만으로 쓰고,
-데이터는 내 기기에 남고, 내 기기끼리는 알아서 합쳐진다.
+데이터는 내 기기에 남고, 내 기기끼리는 알아서 합쳐진다. macOS·Windows·Linux·Android에 설치되는
+앱도 같은 빌드에서 나온다.
 
 > 이 README는 **실행법·기능·배포**만 담는다. 설계·불변식의 정본은 [DESIGN.md](./DESIGN.md),
 > 에이전트 작업 방식은 [AGENTS.md](./AGENTS.md), Git 규칙은 [CONTRIBUTING.md](./CONTRIBUTING.md).
@@ -31,7 +32,9 @@ npm run typecheck
 - **팔레트**(⌘P / ⌘⇧P) — 문서·항목으로 이동하고 앱의 모든 명령을 실행한다
 - **제자리 필터**(⌘F)와 워크스페이스 전체 검색(⌘⇧F), 둘 다 같은 연산자
   (`is:`·`has:`·`edited:`·`created:`·`parent:`·`ancestor:`·`"구절"`·`-제외`·`#태그`·`@태그`)
-- **기기 간 동기화** — 오프라인 편집도 잃지 않고 병합. 백엔드는 아무 JSON `GET`/`PUT` 서버 또는 **GitHub 저장소** (문서당 파일 하나, 커밋 히스토리 = 버전 백업)
+- **설치되는 앱** — macOS·Windows·Linux·Android (Tauri 2). 아래 「네이티브 앱」
+- **기기 간 동기화** — 오프라인 편집도 잃지 않고 병합. 백엔드는 **GitHub 저장소**(문서당 파일 하나, 커밋 히스토리 = 버전 백업), **동기화 서비스 폴더의 파일 하나**(데스크톱 앱), 아무 JSON `GET`/`PUT` 서버(무료 Cloudflare Worker·직접 띄우는 서버). 아래 「동기화 선택지」
+- 데스크톱 앱에서는 **⌘⌥O / Ctrl+Alt+O**가 어디서든 창을 불러온다
 - **GitHub으로 로그인** — 배포에 OAuth function이 있으면 토큰 붙여넣기 대신 버튼 하나. 없으면 PAT 경로가 그대로 동작
 - **종단 간 암호화(선택)** — 암호를 넣으면 기기를 떠나기 전에 암호화된다. 저장소를 가진 쪽은 크기와 시각만 본다
 - **문서 히스토리** — 커밋 목록에서 미리보고 그 시점으로 되돌린다 (GitHub 백엔드)
@@ -52,6 +55,72 @@ npm run typecheck
 - 터치: 편집 중일 때 키보드 위에 들여쓰기·이동 바, **좌우 스와이프로 들여쓰기** (폰에는 Tab 키가 없다)
 - 폰 공유 시트에서 바로 캡처 (Web Share Target) — **인박스로 지정한 문서**로 들어가고 거기가
   열린다. 인박스는 팔레트에서 바꾸고, 사이드바의 `↓` 가 어느 문서인지 알려준다
+
+## 동기화 선택지
+
+동기화는 선택이다. 켜지 않으면 각 기기에서 로컬로만 쓴다. 켜면 병합은 언제나 기기에서 일어나고,
+원격은 바이트를 보관할 뿐이다. 셋 다 무료이고, 셋 다 암호를 걸 수 있다.
+
+| 선택지 | 어디서 되나 | 좋은 점 | 대가 |
+|---|---|---|---|
+| **GitHub 저장소** (권장 기본값) | 모든 기기 | 커밋 히스토리가 곧 버전 백업이고, 문서 히스토리·첨부가 된다. 서버 운영이 없다 | 푸시가 10초 간격이다. PAT 하나를 만들어야 한다 |
+| **이 컴퓨터의 폴더** | 데스크톱 앱 | 파일 하나(`outliner.json`)가 정본이다. iCloud Drive·Dropbox·Google Drive·OneDrive·Syncthing 폴더를 고르면 그 서비스가 옮겨 준다. 계정이 따로 필요 없다 | 폰에서는 못 쓴다. 폴더는 앱 전용이어야 한다 |
+| **내 서버 / URL** | 모든 기기 | 가장 빠르다(1.5초). `server/cloudflare/`를 Workers Free에 올리거나 `server/outliner-server.mjs`를 직접 띄운다 | 서버를 한 번 배포해야 한다. 히스토리·첨부가 없다 |
+
+**데스크톱과 폰을 함께 쓴다면 GitHub이나 서버를 고른다.** 폴더 방식은 폰이 참여할 수 없기 때문이다.
+컴퓨터끼리만 쓴다면 폴더 방식이 가장 손이 덜 간다. 한 기기는 한 번에 원격 하나에만 붙는다.
+
+## 네이티브 앱
+
+`src-tauri/`가 같은 정적 빌드를 시스템 웹뷰에 띄우는 셸이다. 셸은 파일을 읽고 쓰고 링크를 열 뿐,
+노트를 판정하지 않는다 ([ADR-0010](./docs/adr/0010-native-shell.md)).
+
+### 설치 파일 받기
+
+`v*` 태그를 push하면 `.github/workflows/native.yml`이 GitHub의 무료 러너에서 모두 빌드해서 **초안
+릴리스**에 올린다. PR과 수동 실행(Actions → Native apps → Run workflow)은 결과를 워크플로 아티팩트로
+남긴다.
+
+| 플랫폼 | 파일 | 처음 열 때 |
+|---|---|---|
+| macOS (Apple Silicon·Intel 공용) | `.dmg` | 서명이 없어서 한 번 우클릭 → 열기. 또는 `xattr -dr com.apple.quarantine /Applications/Outliner.app` |
+| Windows | `-setup.exe` 또는 `.msi` | SmartScreen에서 「추가 정보 → 실행」 |
+| Linux | `.AppImage`·`.deb`·`.rpm` | — |
+| Android | `outliner-android.apk` | 「출처를 알 수 없는 앱」 설치 허용 |
+
+### Android 서명 키 (한 번만)
+
+키가 없으면 빌드마다 임시 키로 서명되어, 다음 버전이 기존 앱 위에 설치되지 않는다. 한 번 만들어
+저장소 Settings → Secrets and variables → Actions에 넣는다.
+
+```bash
+keytool -genkeypair -keystore outliner.jks -alias outliner -keyalg RSA -keysize 2048 -validity 10000
+base64 -w0 outliner.jks   # macOS는 base64 -i outliner.jks
+```
+
+| 비밀값 | 값 |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | 위 base64 출력 |
+| `ANDROID_KEYSTORE_PASSWORD` | 키스토어 암호 |
+| `ANDROID_KEY_ALIAS` | `outliner` |
+| `ANDROID_KEY_PASSWORD` | 키 암호 (키스토어 암호와 같으면 비워도 된다) |
+
+키 파일은 저장소에 커밋하지 말고 따로 보관한다. 잃으면 다음 버전은 기존 앱을 지우고 새로 설치해야 한다.
+
+### 직접 빌드하기
+
+Rust와 플랫폼별 준비물([Tauri 사전 요구사항](https://v2.tauri.app/start/prerequisites/))이 필요하다.
+CLI는 `devDependencies`에 없고 `npm run tauri`가 받아 온다.
+
+```bash
+npm run tauri -- icon public/icon.svg   # 아이콘 생성 (처음 한 번, 커밋하지 않는다)
+npm run tauri -- dev                     # 데스크톱 창으로 개발
+npm run tauri -- build                   # 이 플랫폼의 설치 파일
+npm run tauri -- android init            # Android 프로젝트 생성 (처음 한 번)
+npm run tauri -- android dev             # 연결된 폰이나 에뮬레이터에서
+```
+
+폴더 백엔드의 디스크 쪽은 Tauri 없이 테스트된다: `rustc --edition 2021 --test src-tauri/src/folder.rs -o /tmp/folder && /tmp/folder`.
 
 ## 문서 지도
 
@@ -122,6 +191,13 @@ serverless function이 없으므로 **GitHub 로그인 버튼은 뜨지 않는�
 
 OAuth의 `repo` scope는 계정의 저장소 전체 권한이라는 걸 기억할 것. 노트 저장소 하나로 좁히고
 싶으면 fine-grained PAT 경로를 쓰는 게 낫다.
+
+### 무료 서버: Cloudflare Worker (`server/cloudflare/`)
+
+컴퓨터를 켜 두지 않아도 되는 무료 서버다. 레퍼런스 서버와 같은 계약을 Workers Free 플랜의 Durable
+Object 위에 올렸고, 결제 수단 없이 배포된다. 배포 방법은
+[server/cloudflare/README.md](./server/cloudflare/README.md)에 있다. 앱에는 **내 서버 / URL**로
+`https://outliner-sync.<계정>.workers.dev/workspace`와 토큰을 넣는다.
 
 ### 직접 띄우는 서버 (`server/outliner-server.mjs`)
 
