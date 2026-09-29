@@ -24,6 +24,8 @@ npm run typecheck
 - **마크다운 서식이 키보드에서 나온다** — ⌘B/I/E, ⌘⇧X/H, ⌘K 링크(선택 영역을 감싸고 다시 누르면
   벗긴다), `# `·`[] `·`1. ` 를 치면 그 자리에서 변환(직후 Backspace 하나로 되돌림),
   `[[`·`#`·`@` 자동 완성
+- **날짜** — Dynalist 표기 `!(2026-09-29)`가 「오늘」「내일」「10월 2일 (금)」으로 보이고, 지난 날짜는 다른
+  색이다. 단어 시작에서 `!!`를 치면 오늘 날짜가 들어간다. `date:today`·`date:overdue`·`date:7d`로 찾는다
 - 메모(Shift+Enter), 체크리스트·번호 목록(⌘⇧L / ⌘⇧7, 목록 단위), 색 라벨 6종(⌘⇧1~6,
   지우기 ⌘⇧0), 제목 수준, 인라인 마크다운, `#태그`·`@태그`, `[[문서 링크]]`
 - 문서와 **폴더**, **저장된 검색**, 즐겨찾기, **휴지통**(삭제해도 30일은 되살릴 수 있다)
@@ -31,8 +33,9 @@ npm run typecheck
 - 항목을 **다른 문서로 이동**, bullet 우클릭 **항목 메뉴**
 - **팔레트**(⌘P / ⌘⇧P) — 문서·항목으로 이동하고 앱의 모든 명령을 실행한다
 - **제자리 필터**(⌘F)와 워크스페이스 전체 검색(⌘⇧F), 둘 다 같은 연산자
-  (`is:`·`has:`·`edited:`·`created:`·`parent:`·`ancestor:`·`"구절"`·`-제외`·`#태그`·`@태그`)
-- **설치되는 앱** — macOS·Windows·Linux·Android (Tauri 2). 아래 「네이티브 앱」
+  (`is:`·`has:`·`date:`·`edited:`·`created:`·`parent:`·`ancestor:`·`"구절"`·`-제외`·`#태그`·`@태그`)
+- **설치되는 앱** — macOS·Windows·Linux·Android (Tauri 2). 저장할 때마다 앱 데이터 폴더에 파일로도 남아서,
+  웹뷰 저장소가 비워져도 노트가 돌아온다. 아래 「네이티브 앱」
 - **기기 간 동기화** — 오프라인 편집도 잃지 않고 병합. 백엔드는 **GitHub 저장소**(문서당 파일 하나, 커밋 히스토리 = 버전 백업), **동기화 서비스 폴더의 파일 하나**(데스크톱 앱), 아무 JSON `GET`/`PUT` 서버(무료 Cloudflare Worker·직접 띄우는 서버). 아래 「동기화 선택지」
 - 데스크톱 앱에서는 **⌘⌥O / Ctrl+Alt+O**가 어디서든 창을 불러온다
 - **GitHub으로 로그인** — 배포에 OAuth function이 있으면 토큰 붙여넣기 대신 버튼 하나. 없으면 PAT 경로가 그대로 동작
@@ -64,7 +67,7 @@ npm run typecheck
 | 선택지 | 어디서 되나 | 좋은 점 | 대가 |
 |---|---|---|---|
 | **GitHub 저장소** (권장 기본값) | 모든 기기 | 커밋 히스토리가 곧 버전 백업이고, 문서 히스토리·첨부가 된다. 서버 운영이 없다 | 푸시가 10초 간격이다. PAT 하나를 만들어야 한다 |
-| **이 컴퓨터의 폴더** | 데스크톱 앱 | 파일 하나(`outliner.json`)가 정본이다. iCloud Drive·Dropbox·Google Drive·OneDrive·Syncthing 폴더를 고르면 그 서비스가 옮겨 준다. 계정이 따로 필요 없다 | 폰에서는 못 쓴다. 폴더는 앱 전용이어야 한다 |
+| **이 컴퓨터의 폴더** | 데스크톱 앱 | 파일 하나(`outliner.json`)가 정본이다. iCloud Drive·Dropbox·Google Drive·OneDrive·Syncthing 폴더를 고르면 그 서비스가 옮겨 준다. 계정이 따로 필요 없다. 충돌 사본은 합친 뒤 `.outliner-merged/`로 옮기고, 무엇도 지우지 않는다 | 폰에서는 못 쓴다. 폴더는 앱 전용이어야 한다 |
 | **내 서버 / URL** | 모든 기기 | 가장 빠르다(1.5초). `server/cloudflare/`를 Workers Free에 올리거나 `server/outliner-server.mjs`를 직접 띄운다 | 서버를 한 번 배포해야 한다. 히스토리·첨부가 없다 |
 
 **데스크톱과 폰을 함께 쓴다면 GitHub이나 서버를 고른다.** 폴더 방식은 폰이 참여할 수 없기 때문이다.
@@ -127,7 +130,9 @@ npm run tauri -- android dev             # 연결된 폰이나 에뮬레이터�
 | 알고 싶은 것 | 문서 |
 |---|---|
 | 아키텍처·핵심 불변식·코드 구조·알려진 한계 | [DESIGN.md](./DESIGN.md) |
+| 전체 구조와 선택의 이유 (한 장 요약) | [docs/overview.md](./docs/overview.md) |
 | 동기화(병합·전송 계약·GitHub 배치·E2EE) | [docs/design/sync.md](./docs/design/sync.md) |
+| 네이티브 셸(명령·로컬 사본·빌드·스모크 검증) | [docs/design/native.md](./docs/design/native.md) |
 | 편집기(행 모델·가상화·터치 바·undo) | [docs/design/editing.md](./docs/design/editing.md) |
 | 신뢰 경계(검증·CSP·실패 처리) | [docs/design/trust-boundary.md](./docs/design/trust-boundary.md) |
 | 실측값·함정·실패한 대안 | [docs/design/code-rationale.md](./docs/design/code-rationale.md) |

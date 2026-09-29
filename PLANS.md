@@ -5,36 +5,38 @@ DESIGN.md(및 하위 문서)에 반영한다.
 
 ## 네이티브 앱과 무료 동기화 선택지
 
-> **상태: 코드와 파이프라인 작성 완료 (2026-09-29). CI에서 첫 빌드가 통과하는지 확인하는 단계가
-> 남았다.** 이 환경에서는 npm 레지스트리와 crates.io에 닿지 못해서 Tauri 셸을 컴파일하지 못했다.
-> 검증한 것과 못 한 것은 [IMPLEMENTATION_NOTES.md](./IMPLEMENTATION_NOTES.md) 2026-09-29 항목에 있다.
+> **상태: 코드·파이프라인·자동 검증 완료 (2026-09-29).** 데스크톱 셋과 Android가 CI에서 빌드되고, Linux 앱과
+> Android APK는 실제로 구동하는 스모크 테스트를 통과한다. 남은 것은 사용자가 해야 하는 일(서명 키)과
+> 실물 서비스로만 확인되는 관찰(충돌 사본 이름) 둘이다. 검증 기록은
+> [IMPLEMENTATION_NOTES.md](./IMPLEMENTATION_NOTES.md) 2026-09-29 항목들.
 
 **목표.** 데스크톱(macOS·Windows·Linux)과 Android에 설치되는 앱을 만들고, 각 플랫폼에서 로컬로만
 쓰거나 무료 원격과 연결할 수 있게 한다. 원격은 GitHub, 동기화 서비스 폴더의 파일 하나, 무료 서버를
 모두 열어 둔다.
 
-**원칙.** 셸은 판정하지 않는다(DESIGN.md 원칙 20). 새 백엔드는 기존 계약 안에 들어가고, 계약이
-지켜지지 않는 부분은 백엔드가 밝히고 루프가 보정한다(원칙 21). 웹 배포는 바뀌지 않는다.
+**원칙.** 셸은 판정하지 않는다(원칙 20). 새 백엔드는 기존 계약 안에 들어가고, 계약이 지켜지지 않는
+부분은 백엔드가 밝히고 루프가 보정하며, 그 보정은 남의 바이트를 지우지 않는다(원칙 21).
 
 **단계별 체크리스트.**
 
-- [x] **1. 결정** — [ADR-0010](./docs/adr/0010-native-shell.md)(Tauri 2 셸),
-      [ADR-0011](./docs/adr/0011-folder-backend.md)(폴더 백엔드).
-- [x] **2. 셸** — `src-tauri/`. 명령 다섯 개(`native_info`·`open_external`·`folder_pick`·
-      `folder_read`·`folder_write`)와 전역 단축키 ⌘⌥O / Ctrl+Alt+O. 웹 쪽 다리는 `shared/native.ts`.
-- [x] **3. 폴더 백엔드** — `remote/file.ts` + `folder.rs`, 루프의 `unguarded`·`rewrite` 보정, 설정
-      패널의 「이 컴퓨터의 폴더」.
+- [x] **1. 결정** — ADR-0010(셸), ADR-0011(폴더 백엔드), ADR-0012(날짜).
+- [x] **2. 셸** — `src-tauri/`. 명령 열 개, 폴더 허용 목록, 로컬 사본, 전역 단축키 ⌘⌥O / Ctrl+Alt+O,
+      Android 창 인셋. 상세는 [native.md](./docs/design/native.md).
+- [x] **3. 폴더 백엔드** — `remote/file.ts` + `folder.rs`, `shouldPush`의 `unguarded`·`rewrite` 보정, 설정 패널.
 - [x] **4. 무료 서버** — `server/cloudflare/` (Durable Object, 1MB 조각 저장).
-- [x] **5. 파이프라인** — `native.yml`(데스크톱 셋 + Android APK + 태그 시 초안 릴리스), `check.yml`(PR 검사).
-- [ ] **6. CI 첫 통과** — `native.yml`의 모든 잡이 green이 되고, 받은 설치 파일이 macOS와 Android에서
-      실제로 열리는지 확인한다. 여기서 나오는 수정은 이 계획 안에서 처리한다.
-- [ ] **7. Android 서명 키** — 사용자가 키스토어를 한 번 만들어 저장소 비밀값에 넣는다(README
-      「네이티브 앱」). 넣기 전까지는 빌드마다 키가 달라 업데이트 설치가 안 된다.
-- [ ] **8. 실사용 확인** — iCloud Drive·Dropbox 중 하나로 두 컴퓨터를 붙여 충돌 사본이 실제로 어떤
-      이름으로 생기는지 관찰한다. 이름 규칙(ADR-0011 결정 5)의 1차 자료가 된다.
+- [x] **5. 파이프라인** — `native.yml`(빌드 → 서명 분리 → 스모크 → 증거 → 초안 릴리스), `check.yml`(브랜치 검사).
+- [x] **6. CI 통과와 실제 구동** — 데스크톱 셋·Android 빌드 green, Linux·Android 스모크 green.
+- [x] **7. 독립 리뷰와 반영** — 데이터 손실 경로 셋(읽지 못한 파일 덮어쓰기, 사본 삭제, 로컬 사본 병합)과
+      멈춤 경로 둘을 고쳤다. ADR-0011 「리뷰 후기」.
+- [x] **8. Dynalist 날짜** — 렌더·검색·`!!` 입력·팔레트 명령.
+- [ ] **9. Android 서명 키** — 사용자가 키스토어를 한 번 만들어 저장소 비밀값에 넣는다(README
+      「Android 서명 키」). 넣기 전까지는 빌드마다 키가 달라 업데이트 설치가 안 된다.
+- [ ] **10. 실사용 관찰** — iCloud Drive·Dropbox 중 하나로 두 컴퓨터를 붙여 충돌 사본이 실제로 어떤 이름으로
+      생기는지, macOS·Windows 앱이 첫 실행에서 문제없는지 본다. 자동 검증이 닿지 않는 곳이다.
 
-**완료 기준.** 태그 하나로 macOS·Windows·Linux 설치 파일과 Android APK가 초안 릴리스에 올라오고,
-폴더 백엔드로 붙인 두 컴퓨터와 GitHub으로 붙인 폰이 같은 워크스페이스로 수렴한다.
+**완료 기준.** 태그 하나로 macOS·Windows·Linux 설치 파일과 Android APK가 초안 릴리스에 올라오고, 폴더
+백엔드로 붙인 두 컴퓨터와 GitHub으로 붙인 폰이 같은 워크스페이스로 수렴한다. 앞의 것은 CI로 확인했고,
+뒤의 것은 10번이 확인한다.
 
 ---
 
