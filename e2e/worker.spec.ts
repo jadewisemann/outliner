@@ -92,6 +92,12 @@ test("two devices reach the same outline through the Worker", async ({ browser, 
 
   const one = await openSynced(laptop, baseURL!);
   await one.keyboard.type("Worker를 거쳐 간 줄");
+  // The second device adopts the remote only on its very first sync. Joining
+  // before the first device's push lands would keep its own starter document
+  // next to the other one, and the row would be in a document not on screen.
+  await expect
+    .poll(async () => (await fetch(URL_, { headers: auth })).text(), { timeout: 20_000 })
+    .toContain("Worker를 거쳐 간 줄");
   const two = await openSynced(phone, baseURL!);
   await expect(two.getByText("Worker를 거쳐 간 줄")).toBeVisible({ timeout: 20_000 });
 
