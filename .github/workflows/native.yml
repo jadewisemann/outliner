@@ -19,12 +19,7 @@ name: Native apps
 on:
   push:
     tags: ["v*"]
-  pull_request:
-    paths:
-      - "src-tauri/**"
-      - ".github/workflows/native.yml"
-      - "src/shared/native.ts"
-      - "src/sync/api/remote/file.ts"
+    branches-ignore: [main]
   workflow_dispatch:
 
 permissions:

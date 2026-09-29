@@ -1,0 +1,29 @@
+# Packs the installed dev toolchain (node_modules and the Playwright browser)
+# for a development machine that cannot reach the package registry itself.
+# Manual only; nothing in the product depends on it.
+name: Toolchain export
+
+on:
+  workflow_dispatch:
+  push:
+    branches-ignore: [main]
+    paths: ["package-lock.json", ".github/workflows/toolchain.yml"]
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci
+      - run: tar czf node_modules.tgz node_modules
+      - uses: actions/upload-artifact@v4
+        with:
+          name: node-modules
+          path: node_modules.tgz
+          retention-days: 3
