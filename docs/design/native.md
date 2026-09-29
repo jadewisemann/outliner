@@ -81,6 +81,7 @@ Android 15부터 앱은 화면 끝까지 그려진다. 그대로 두면 머리�
 | 외부 링크 | 웹뷰는 `target="_blank"`를 무시하거나(데스크톱) 앱 자체를 그 페이지로 옮긴다(Android) | 셸 안에서만 클릭을 가로채 `open_external`로 넘긴다. 같은 origin 판정은 문자열 접두사가 아니라 `URL.origin` 비교다 |
 | service worker | macOS의 커스텀 스킴은 worker를 받지 않고, 셸에서는 필요도 없다 | 셸 안에서는 등록하지 않는다 |
 | IPC 스킴 | macOS·Linux는 `ipc:`를 쓰고, CSP의 `*`는 커스텀 스킴을 포함하지 않는다 | `connect-src`에 `ipc:`를 더했다 |
+| 터치 바 | Android 에뮬레이터의 웹뷰가 `pointer: coarse`가 아니라고 답했다. 그러면 폰에서 Tab 대신 쓰는 막대가 뜨지 않는다 | Android·iOS 셸 안에서는 포인터 보고와 무관하게 터치 기기로 본다(`useTouchBar`). 스모크가 편집 중 막대를 확인한다 |
 | `!!` 날짜 입력 | Android 소프트 키보드는 키 이벤트에 문자를 싣지 않는다 | 팔레트의 「오늘 날짜 붙이기」·「내일 날짜 붙이기」 |
 | GitHub 로그인 | OAuth 콜백이 웹 origin으로 돌아와야 한다 | 셸 안에서는 버튼이 없고 PAT 붙여넣기만 쓴다 |
 | 폴더 백엔드 | Android는 경로가 아니라 content URI를 준다 | 데스크톱에서만 제공한다 |
@@ -112,7 +113,7 @@ shell-tests ─┬─ desktop (macOS universal · Windows · Linux) ──┬─
 | `folder.rs` 단독 테스트 | CAS, 사본 이름 규칙, 바뀐 사본은 옮기지 않음, 읽지 못한 파일 비켜 두기, 로컬 사본, 허용 목록 | `rustc --test`, CI의 `shell-tests` |
 | `src/sync/__tests__/file.test.ts` | 웹 쪽 폴더 백엔드와 `shouldPush` — 덮어쓰인 파일 복구, 사본 병합, 암호 걸린 사본 건너뛰기, 캐시 | Vitest |
 | `e2e/native/smoke.mjs` | **실제 Linux 앱**을 tauri-driver로 구동. IPC, 입력, 로컬 사본 파일, 허용되지 않은 폴더 거절, `outliner.json` 쓰기, 충돌 사본 병합과 이동 | CI `desktop (linux)` |
-| `e2e/native/android.sh` | **에뮬레이터에 설치한 APK**. 실행, 입력, 머리말이 상태 표시줄 밑에 있지 않은지, 앱 충돌과 페이지 오류 | CI `android-smoke` |
+| `e2e/native/android.sh` | **에뮬레이터에 설치한 APK**. 실행, 입력, 편집 중 터치 바, 머리말이 상태 표시줄 밑에 있지 않은지, 앱 충돌과 페이지 오류 | CI `android-smoke` |
 
 스모크 테스트의 스크린샷과 결과는 `ci-evidence/<이름>` 브랜치에 남는다. 아티팩트 저장소에 닿지 못하는
 환경에서도 git만으로 읽을 수 있게 하기 위해서다.
