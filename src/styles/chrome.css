@@ -1,7 +1,7 @@
 /*
  * App chrome: layout shell, topbar, sidebar.
  * Load order is part of the cascade — tokens → chrome → outline → panels,
- * the order the old single global.css had.
+ * as main.tsx imports them.
  *
  * The shape is a macOS document window: a source-list sidebar in a recessed,
  * slightly translucent material, a toolbar of the same material floating over

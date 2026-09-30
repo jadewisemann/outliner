@@ -1,5 +1,15 @@
 /*
- * The outline itself: rows, markers, gutter, completion list, drop indicators.
+ * The outline itself: rows, markers, gutter, completion list, drop indicators
+ * — and, closing the file, what renders in and around a row: links between
+ * rows (with the backlinks list), quotes and code, the item menu, then
+ * highlighting, math and attachments.
+ *
+ * That closing block was written after the panels in the old single
+ * global.css and keeps its order here, below everything else. It wins
+ * specificity ties against rules above it — `.row-complete button` is flex,
+ * not block; `.row-quote .row-text` beats `.row-cN .row-text`;
+ * `.row-note-rendered` beats `.row-note` — so it stays last: moving it up or
+ * merging it into the sections above would flip those winners.
  */
 /* ------------------------------------------------------------------ */
 /* outline                                                             */
@@ -550,3 +560,279 @@
   border-radius: var(--r-sm);
 }
 
+/* ------------------------------------------------------------------ */
+/* links between rows                                                  */
+/* ------------------------------------------------------------------ */
+
+.inline-itemlink {
+  padding: 0;
+  color: var(--accent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* A target that has gone stays visible and stays obviously broken. */
+.inline-itemlink-broken {
+  color: var(--muted);
+  border-bottom-style: dashed;
+  cursor: default;
+}
+
+.inline-image {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 4px 0;
+  border-radius: 6px;
+}
+
+.row-complete button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.row-complete-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-complete-hint {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.backlinks {
+  max-width: var(--measure, 780px);
+  margin: 0 auto;
+  padding: 0 20px 30vh;
+}
+
+.backlinks h2 {
+  margin: 0 0 6px;
+  padding-left: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.backlinks h2 em {
+  font-style: normal;
+  opacity: 0.7;
+}
+
+.backlinks ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 0.5px solid var(--line);
+}
+
+.backlinks button {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.backlinks button:hover {
+  background: var(--hover);
+}
+
+.backlink-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backlink-where {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* quotes and code                                                     */
+/* ------------------------------------------------------------------ */
+
+.row-quote > .row-body > .row-line {
+  padding-left: 12px;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.row-quote .row-text {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* The rendered note has to share metrics with the textarea it replaces, or
+   the swap moves the text under the pointer that asked for it. */
+.row-note-rendered {
+  cursor: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.row-note-rendered p,
+.row-note-rendered blockquote {
+  margin: 0;
+}
+
+.row-note-rendered blockquote {
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+}
+
+.note-code {
+  position: relative;
+  margin: 5px 0;
+  padding: 9px 11px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.83em;
+  line-height: 1.55;
+  background: var(--fill);
+  border-radius: var(--r-md);
+}
+
+.note-code code {
+  white-space: pre;
+}
+
+/* Names the language without a highlighter. Out of the flow and top-right,
+   so one line of code stays a one-line block. */
+.note-code[data-language]::before {
+  content: attr(data-language);
+  position: absolute;
+  top: 5px;
+  right: 9px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* item menu                                                           */
+/* ------------------------------------------------------------------ */
+
+.row-menu {
+  position: fixed;
+  z-index: 30;
+  width: 200px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  background: var(--material-thick);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  animation: panel-in 0.16s var(--ease);
+}
+
+.row-menu button {
+  padding: 5px 10px;
+  border-radius: 5px;
+  text-align: left;
+  font-size: 13px;
+}
+
+/* The macOS menu highlight: the whole item fills with the accent. */
+.row-menu button:not(.row-menu-color):hover {
+  color: var(--on-accent);
+  background: var(--accent-fill);
+}
+
+.row-menu hr {
+  margin: 5px 10px;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+.row-menu .row-menu-danger {
+  color: var(--danger);
+}
+
+.row-menu button.row-menu-danger:hover {
+  color: #fff;
+  background: var(--danger);
+}
+
+.row-menu-colors {
+  display: flex;
+  gap: 4px;
+  padding: 2px 4px 6px;
+}
+
+/* Letters in the ink, not blocks of it: the label tints a row's *text*, and a
+   saturated 18px fill promised something the feature does not do. */
+.row-menu-color {
+  flex: 1;
+  height: 22px;
+  padding: 0 !important;
+  border-radius: var(--r-sm) !important;
+  background: none !important;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center !important;
+  line-height: 1;
+}
+
+.row-menu-color:hover {
+  background: var(--hover) !important;
+}
+
+.row-menu-color-on {
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+.row-menu-color-none {
+  color: var(--mark);
+}
+
+/* ------------------------------------------------------------------ */
+/* highlighting, math, attachments                                     */
+/* ------------------------------------------------------------------ */
+
+/* Approximate, language-agnostic highlighting — see highlight.tsx.
+   Xcode's default theme colours. */
+.tok-string { color: #c41a16; }
+.tok-comment { color: var(--muted); font-style: italic; }
+.tok-number { color: #1c00cf; }
+.tok-keyword { color: #9b2393; }
+
+:root[data-theme="dark"] .tok-string { color: #fc6a5d; }
+:root[data-theme="dark"] .tok-number { color: #d0bf69; }
+:root[data-theme="dark"] .tok-keyword { color: #fc5fa3; }
+
+/* Loaded on demand; until it arrives the source shows as written. */
+.math-source {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: var(--muted);
+}
+
+.math-block {
+  margin: 6px 0;
+  overflow-x: auto;
+}
+
+.attachment-loading,
+.attachment-missing {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.attachment-missing {
+  text-decoration: line-through;
+}
