@@ -1,9 +1,11 @@
 //! The folder backend's disk side: read `outliner.json` and its conflict
 //! copies, replace it only if it still holds what was read, and retire copies
-//! whose content has been merged. Plus the app's own replica of the workspace.
+//! whose content has been merged. Plus the app's own replica of the workspace,
+//! and the allow list of folders the backend may touch.
 //!
 //! Plain `std` on purpose, so this file compiles and tests on its own
-//! (`rustc --edition 2021 --test src/folder.rs`) without the Tauri crates.
+//! (`rustc --edition 2021 --test src-tauri/src/folder.rs`) without the Tauri
+//! crates.
 //!
 //! Nothing here looks inside a file. Parsing, validation and the merge all
 //! happen in the web code (`src/sync/api/remote/file.ts`), the same code a
@@ -18,7 +20,7 @@
 use std::fs;
 use std::io::{ErrorKind, Write};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
+use std::sync::{Mutex, MutexGuard};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// The one file the backend owns.
@@ -32,10 +34,26 @@ pub const RETIRED: &str = ".outliner-merged";
 const MAX_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Read–compare–write on the synced folder is one step for every writer in
-/// this process. The replica has its own lock: a slow network folder must not
-/// hold up a local save.
-static FOLDER: Mutex<()> = Mutex::new(());
-static REPLICA_LOCK: Mutex<()> = Mutex::new(());
+/// this process.
+static FOLDER_LOCK: Mutex<()> = Mutex::new(());
+
+/// The app's data folder has its own lock, held while the replica is written
+/// and while the allow list changes: a slow network folder must not hold up a
+/// local save.
+static DATA_LOCK: Mutex<()> = Mutex::new(());
+
+/// Takes a lock even if a command panicked while holding it. The locks guard
+/// `()`, so a poisoned one protects no half-changed state, and one panicked
+/// command must not make every later folder command panic too.
+fn hold(lock: &'static Mutex<()>) -> MutexGuard<'static, ()> {
+    lock.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
+/// Nanoseconds since the epoch, for names that must not collide; 0 if the
+/// clock reads earlier than 1970.
+fn nanos() -> u128 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0)
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Entry {
@@ -88,10 +106,10 @@ pub fn is_copy(name: &str) -> bool {
     let Some(middle) = rest.strip_suffix(".json") else {
         return false;
     };
-    if middle.is_empty() || !matches!(middle.chars().next(), Some(' ' | '.' | '-' | '(' | '_')) {
+    if !matches!(middle.chars().next(), Some(' ' | '.' | '-' | '(' | '_')) {
         return false;
     }
-    let finder = middle.strip_prefix(" copy").map(|tail| tail.is_empty() || tail.trim_start().chars().all(|c| c.is_ascii_digit()));
+    let finder = middle.strip_prefix(" copy").map(|tail| tail.trim_start().chars().all(|c| c.is_ascii_digit()));
     finder != Some(true)
 }
 
@@ -137,8 +155,11 @@ pub fn read(dir: &Path) -> Result<Read, String> {
             copies.push(entry);
         }
     }
-    // Directory order is arbitrary; the merge does not care, but a stable
-    // order keeps the behaviour reproducible.
+    // The order is part of the answer: `src/sync/api/remote/file.ts` keys its
+    // "folder unchanged" cache on the copies in this order. Directory order is
+    // arbitrary, so without the sort an unchanged folder could miss that cache
+    // on every poll and hand the merge a fresh object each time — the idle
+    // re-render trap in docs/design/code-rationale.md.
     copies.sort_by(|a, b| a.name.cmp(&b.name));
     Ok(Read { canonical, copies })
 }
@@ -150,6 +171,12 @@ fn current_stamp(path: &Path, name: &str) -> Result<Option<String>, String> {
 /// Moves each copy into `.outliner-merged/`, but only if it still holds the
 /// bytes that were read and merged — a sync service may have delivered a new
 /// version under the same name since. Returns the names it could not move.
+pub fn retire(dir: &Path, copies: &[Seen]) -> Vec<String> {
+    let _held = hold(&FOLDER_LOCK);
+    retire_locked(dir, copies)
+}
+
+/// `retire`, for a caller that already holds `FOLDER_LOCK`.
 fn retire_locked(dir: &Path, copies: &[Seen]) -> Vec<String> {
     let mut failed = Vec::new();
     let target = dir.join(RETIRED);
@@ -164,21 +191,12 @@ fn retire_locked(dir: &Path, copies: &[Seen]) -> Vec<String> {
             // merged on the next pull.
             _ => continue,
         }
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-        let moved = fs::create_dir_all(&target).and_then(|_| {
-            let destination = target.join(format!("{nanos}-{}", copy.name));
-            fs::rename(&source, destination)
-        });
-        if moved.is_err() {
+        let destination = target.join(format!("{}-{}", nanos(), copy.name));
+        if fs::create_dir_all(&target).and_then(|_| fs::rename(&source, destination)).is_err() {
             failed.push(copy.name.clone());
         }
     }
     failed
-}
-
-pub fn retire(dir: &Path, copies: &[Seen]) -> Vec<String> {
-    let _held = FOLDER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
-    retire_locked(dir, copies)
 }
 
 /// Replaces the canonical file with `text` if it still has the stamp
@@ -187,13 +205,13 @@ pub fn retire(dir: &Path, copies: &[Seen]) -> Vec<String> {
 ///
 /// After a successful write, retires the listed conflict copies: their
 /// content is in `text`, since the caller merged them before writing.
-pub fn write(dir: &Path, text: &str, expect: Option<&str>, retired: &[Seen]) -> Result<Option<String>, String> {
-    let _held = FOLDER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+pub fn write(dir: &Path, text: &str, expect: Option<&str>, retire: &[Seen]) -> Result<Option<String>, String> {
+    let _held = hold(&FOLDER_LOCK);
     if current_stamp(&dir.join(CANONICAL), CANONICAL)?.as_deref() != expect {
         return Ok(None);
     }
     replace(dir, CANONICAL, text)?;
-    retire_locked(dir, retired);
+    retire_locked(dir, retire);
     Ok(Some(stamp(text.as_bytes())))
 }
 
@@ -202,13 +220,12 @@ pub fn write(dir: &Path, text: &str, expect: Option<&str>, retired: &[Seen]) -> 
 /// From then on it is an unreadable copy: never merged, never moved, there for
 /// a person to look at. Returns whether it was set aside.
 pub fn set_aside(dir: &Path, expect: &str) -> Result<bool, String> {
-    let _held = FOLDER.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _held = hold(&FOLDER_LOCK);
     let source = dir.join(CANONICAL);
     if current_stamp(&source, CANONICAL)?.as_deref() != Some(expect) {
         return Ok(false);
     }
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    fs::rename(&source, dir.join(format!("outliner.unreadable-{nanos}.json")))
+    fs::rename(&source, dir.join(format!("outliner.unreadable-{}.json", nanos())))
         .map(|_| true)
         .map_err(|error| format!("cannot set {CANONICAL} aside: {error}"))
 }
@@ -216,21 +233,23 @@ pub fn set_aside(dir: &Path, expect: &str) -> Result<bool, String> {
 /// Writes `name` in `dir` atomically: beside, then rename. A reader (or a
 /// sync service) never sees half a workspace, and a crash mid-write leaves
 /// the previous file intact. The leading dot keeps most sync services from
-/// uploading the temporary.
+/// uploading the temporary, and `is_copy` from reading it as a copy.
 fn replace(dir: &Path, name: &str, text: &str) -> Result<(), String> {
     fs::create_dir_all(dir).map_err(|error| format!("cannot create {}: {error}", dir.display()))?;
-    let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or(0);
-    let temporary: PathBuf = dir.join(format!(".{name}.{}.{nanos}.tmp", std::process::id()));
-    let result = (|| -> std::io::Result<()> {
-        let mut file = fs::File::create(&temporary)?;
-        file.write_all(text.as_bytes())?;
-        file.sync_all()?;
-        fs::rename(&temporary, dir.join(name))
-    })();
-    result.map_err(|error| {
+    let temporary = dir.join(format!(".{name}.{}.{}.tmp", std::process::id(), nanos()));
+    write_then_rename(&temporary, &dir.join(name), text.as_bytes()).map_err(|error| {
         let _ = fs::remove_file(&temporary);
         format!("cannot write {name}: {error}")
     })
+}
+
+/// The part of `replace` that can leave a temporary behind, so that one error
+/// path removes it. Every byte is on disk before the target name points at it.
+fn write_then_rename(temporary: &Path, target: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    let mut file = fs::File::create(temporary)?;
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    fs::rename(temporary, target)
 }
 
 /// The app's own copy of the workspace, in its data folder: written after
@@ -239,7 +258,7 @@ fn replace(dir: &Path, name: &str, text: &str) -> Result<(), String> {
 pub const REPLICA: &str = "workspace.json";
 
 pub fn replica_write(dir: &Path, text: &str) -> Result<(), String> {
-    let _held = REPLICA_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    let _held = hold(&DATA_LOCK);
     replace(dir, REPLICA, text)
 }
 
@@ -258,8 +277,12 @@ pub fn allowed(data: &Path) -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// Puts `dir` on the allow list. Refuses a name that would not stay one line
+/// here, whatever `absolute` already did: one folder per line is this list's
+/// own format.
 pub fn allow(data: &Path, dir: &str) -> Result<(), String> {
-    let _held = REPLICA_LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    one_line(dir)?;
+    let _held = hold(&DATA_LOCK);
     let mut list = allowed(data);
     if !list.iter().any(|known| known == dir) {
         list.push(dir.to_string());
@@ -267,19 +290,67 @@ pub fn allow(data: &Path, dir: &str) -> Result<(), String> {
     replace(data, ALLOWED, &(list.join("\n") + "\n"))
 }
 
+/// Whether `dir` is on the allow list, spelled exactly as it was allowed:
+/// `/a/` is not `/a`, and neither is a folder inside `/a`.
+pub fn is_allowed(data: &Path, dir: &str) -> bool {
+    allowed(data).iter().any(|known| known == dir)
+}
+
+/// The folder a command was handed, if it is a name the allow list could
+/// hold: an absolute path, on one line. Checked before anything else, so a
+/// refused name never reaches a confirmation dialog.
+pub fn absolute(dir: &str) -> Result<PathBuf, String> {
+    let path = PathBuf::from(dir);
+    if !path.is_absolute() {
+        return Err("the folder must be an absolute path".into());
+    }
+    one_line(dir)?;
+    Ok(path)
+}
+
+/// The gate in front of every folder command: the folder, if the person
+/// allowed it. The page names a folder; only the shell's picker or its
+/// confirmation dialog can allow one, so a script in the page cannot aim the
+/// folder commands at an arbitrary place.
+pub fn permitted(data: &Path, dir: &str) -> Result<PathBuf, String> {
+    let path = absolute(dir)?;
+    if !is_allowed(data, dir) {
+        return Err("this folder has not been allowed".into());
+    }
+    Ok(path)
+}
+
+/// The allow list is one folder per line, read back with `lines()`. A `\n` in
+/// a name would save it as two entries, so one confirmation would allow two
+/// folders; `lines()` also drops a `\r` at a line's end, so a `\r` could change
+/// which folder was saved. No real path holds a NUL.
+fn one_line(dir: &str) -> Result<(), String> {
+    if dir.contains(|c: char| matches!(c, '\n' | '\r' | '\0')) {
+        return Err("the folder path must not contain a line break or a NUL byte".into());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn scratch(tag: &str) -> PathBuf {
-        let nanos = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        let dir = std::env::temp_dir().join(format!("outliner-folder-{tag}-{nanos}"));
+        let dir = std::env::temp_dir().join(format!("outliner-folder-{tag}-{}", nanos()));
         fs::create_dir_all(&dir).unwrap();
         dir
     }
 
     fn seen(dir: &Path, name: &str) -> Seen {
         Seen { name: name.to_string(), stamp: stamp(&fs::read(dir.join(name)).unwrap()) }
+    }
+
+    /// The names in `dir`, sorted.
+    fn names(dir: &Path) -> Vec<String> {
+        let mut names: Vec<_> =
+            fs::read_dir(dir).unwrap().flatten().map(|e| e.file_name().into_string().unwrap()).collect();
+        names.sort();
+        names
     }
 
     #[test]
@@ -348,15 +419,40 @@ mod tests {
         write(&dir, "{}", None, &[one, two, not_copy]).unwrap().unwrap();
 
         assert!(!dir.join("outliner (1).json").exists());
-        let moved: Vec<_> = fs::read_dir(dir.join(RETIRED)).unwrap().flatten().map(|e| e.file_name().into_string().unwrap()).collect();
+        let moved = names(&dir.join(RETIRED));
         assert_eq!(moved.len(), 1);
         assert!(moved[0].ends_with("outliner (1).json"));
         assert!(dir.join("outliner (2).json").exists(), "changed copy stays for the next pull");
         assert!(dir.join("keep.json").exists());
         // The retired folder is not read as a copy, and no temporary is left behind.
-        assert_eq!(read(&dir).unwrap().copies.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["outliner (2).json"]);
-        let leftovers: Vec<_> = fs::read_dir(&dir).unwrap().flatten().filter(|e| e.file_name().to_string_lossy().ends_with(".tmp")).collect();
-        assert!(leftovers.is_empty());
+        assert_eq!(
+            read(&dir).unwrap().copies.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(),
+            ["outliner (2).json"]
+        );
+        assert!(names(&dir).iter().all(|name| !name.ends_with(".tmp")));
+    }
+
+    #[test]
+    fn retires_a_covered_copy_without_writing_and_keeps_one_that_changed() {
+        let dir = scratch("retire");
+        fs::write(dir.join(CANONICAL), "{\"a\":1}").unwrap();
+        // Already in the canonical file: moved straight away, no write needed.
+        fs::write(dir.join("outliner (1).json"), "{\"a\":1}").unwrap();
+        fs::write(dir.join("outliner 2.json"), "{\"old\":1}").unwrap();
+        let covered = seen(&dir, "outliner (1).json");
+        let changed = seen(&dir, "outliner 2.json");
+        // A sync service delivers a new version under the same name after the read.
+        fs::write(dir.join("outliner 2.json"), "{\"new\":1}").unwrap();
+
+        assert!(retire(&dir, &[covered, changed]).is_empty(), "nothing failed to move");
+
+        let moved = names(&dir.join(RETIRED));
+        assert_eq!(moved.len(), 1);
+        assert!(moved[0].ends_with("-outliner (1).json"), "{}", moved[0]);
+        assert_eq!(fs::read_to_string(dir.join("outliner 2.json")).unwrap(), "{\"new\":1}");
+        // Nothing was written: the canonical file is as it was, and no temporary appeared.
+        assert_eq!(fs::read_to_string(dir.join(CANONICAL)).unwrap(), "{\"a\":1}");
+        assert_eq!(names(&dir), [RETIRED, "outliner 2.json", CANONICAL]);
     }
 
     #[test]
@@ -387,5 +483,42 @@ mod tests {
         allow(&dir, "/b").unwrap();
         allow(&dir, "/a").unwrap();
         assert_eq!(allowed(&dir), ["/a", "/b"]);
+    }
+
+    #[test]
+    fn permits_only_an_absolute_folder_allowed_exactly_as_named() {
+        let data = scratch("gate");
+        let folder = scratch("gate-folder");
+        let dir = folder.to_str().unwrap();
+        let unlisted = "this folder has not been allowed";
+
+        assert_eq!(permitted(&data, "notes/outliner").unwrap_err(), "the folder must be an absolute path");
+        assert_eq!(permitted(&data, dir).unwrap_err(), unlisted);
+        allow(&data, dir).unwrap();
+        assert_eq!(permitted(&data, dir).unwrap(), folder);
+        // Matched as the string that was allowed, not as a place on disk.
+        for other in [format!("{dir}/"), format!("{dir}/inner")] {
+            assert_eq!(permitted(&data, &other).unwrap_err(), unlisted, "{other}");
+        }
+        // Absolute first: a relative name is refused even if it is on the list.
+        allow(&data, "notes/outliner").unwrap();
+        assert_eq!(permitted(&data, "notes/outliner").unwrap_err(), "the folder must be an absolute path");
+    }
+
+    #[test]
+    fn a_line_break_cannot_carry_a_second_folder_onto_the_allow_list() {
+        let data = scratch("smuggle");
+        let first = scratch("smuggle-folder");
+        let second = std::env::temp_dir();
+        let refused = "the folder path must not contain a line break or a NUL byte";
+        for glue in ["\n", "\r\n", "\r", "\0"] {
+            let dir = format!("{}{glue}{}", first.display(), second.display());
+            assert_eq!(absolute(&dir).unwrap_err(), refused, "{dir:?}");
+            assert_eq!(permitted(&data, &dir).unwrap_err(), refused, "{dir:?}");
+            // `allow` refuses it on its own too, whoever calls it.
+            assert_eq!(allow(&data, &dir).unwrap_err(), refused, "{dir:?}");
+        }
+        assert!(!data.join(ALLOWED).exists());
+        assert!(!is_allowed(&data, second.to_str().unwrap()));
     }
 }

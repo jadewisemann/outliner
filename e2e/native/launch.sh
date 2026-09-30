@@ -10,6 +10,9 @@
 # page loaded, its CSP let the IPC channel through, and the Rust side wrote to
 # disk.
 #
+# Meant for a CI runner: it deletes the app data dir it is given (the app's real
+# one, with the replica and the allow list), so the file it waits for is this run's.
+#
 #   launch.sh <app binary> <app data dir> <evidence dir>
 set -uo pipefail
 app="$1"

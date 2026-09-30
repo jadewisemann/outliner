@@ -9,8 +9,8 @@
 
 mod folder;
 
-use serde::Serialize;
-use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+use std::path::{Path, PathBuf};
 
 #[derive(Serialize)]
 struct NativeInfo {
@@ -34,6 +34,27 @@ struct FolderRead {
 impl From<folder::Entry> for Entry {
     fn from(entry: folder::Entry) -> Self {
         Entry { name: entry.name, text: entry.text, stamp: entry.stamp }
+    }
+}
+
+impl From<folder::Read> for FolderRead {
+    fn from(read: folder::Read) -> Self {
+        FolderRead {
+            canonical: read.canonical.map(Entry::from),
+            copies: read.copies.into_iter().map(Entry::from).collect(),
+        }
+    }
+}
+
+#[derive(Deserialize)]
+struct Seen {
+    name: String,
+    stamp: String,
+}
+
+impl From<Seen> for folder::Seen {
+    fn from(copy: Seen) -> Self {
+        folder::Seen { name: copy.name, stamp: copy.stamp }
     }
 }
 
@@ -66,38 +87,28 @@ async fn blocking<T: Send + 'static>(work: impl FnOnce() -> Result<T, String> + 
     tauri::async_runtime::spawn_blocking(work).await.map_err(|error| error.to_string())?
 }
 
-/// The folder, if the person allowed it. The page names a folder; only the
-/// shell's picker or its confirmation dialog can allow one (`folder_allow`),
-/// so a script in the page cannot aim these commands at an arbitrary place.
-fn permitted(app: &tauri::AppHandle, dir: &str) -> Result<PathBuf, String> {
-    let path = PathBuf::from(dir);
-    if !path.is_absolute() {
-        return Err("the folder must be an absolute path".into());
-    }
-    if !folder::allowed(&data_dir(app)?).iter().any(|known| known == dir) {
-        return Err("this folder has not been allowed".into());
-    }
-    Ok(path)
-}
-
-#[derive(serde::Deserialize)]
-struct Seen {
-    name: String,
-    stamp: String,
-}
-
-fn seen(copies: Vec<Seen>) -> Vec<folder::Seen> {
-    copies.into_iter().map(|copy| folder::Seen { name: copy.name, stamp: copy.stamp }).collect()
+/// Runs `work` on the folder the page named, if the person allowed it: the
+/// gate is `folder::permitted`, and only `folder_pick` and `folder_allow` can
+/// allow a folder. Reading the allow list is disk work too, so it runs on the
+/// blocking pool along with `work`.
+async fn in_folder<T: Send + 'static>(
+    app: tauri::AppHandle,
+    dir: String,
+    work: impl FnOnce(&Path) -> Result<T, String> + Send + 'static,
+) -> Result<T, String> {
+    // A name that can never be allowed is refused before anything is looked up.
+    folder::absolute(&dir)?;
+    let data = data_dir(&app)?;
+    blocking(move || {
+        let path = folder::permitted(&data, &dir)?;
+        work(&path)
+    })
+    .await
 }
 
 #[tauri::command]
 async fn folder_read(app: tauri::AppHandle, dir: String) -> Result<FolderRead, String> {
-    let path = permitted(&app, &dir)?;
-    let read = blocking(move || folder::read(&path)).await?;
-    Ok(FolderRead {
-        canonical: read.canonical.map(Entry::from),
-        copies: read.copies.into_iter().map(Entry::from).collect(),
-    })
+    in_folder(app, dir, |path| folder::read(path).map(FolderRead::from)).await
 }
 
 #[tauri::command]
@@ -108,26 +119,25 @@ async fn folder_write(
     expect: Option<String>,
     retire: Vec<Seen>,
 ) -> Result<Option<String>, String> {
-    let path = permitted(&app, &dir)?;
-    let retire = seen(retire);
-    blocking(move || folder::write(&path, &text, expect.as_deref(), &retire)).await
+    let retire: Vec<folder::Seen> = retire.into_iter().map(folder::Seen::from).collect();
+    in_folder(app, dir, move |path| folder::write(path, &text, expect.as_deref(), &retire)).await
 }
 
 /// Moves copies whose content the canonical file already holds; returns the
 /// names it could not move.
 #[tauri::command]
 async fn folder_retire(app: tauri::AppHandle, dir: String, copies: Vec<Seen>) -> Result<Vec<String>, String> {
-    let path = permitted(&app, &dir)?;
-    let copies = seen(copies);
-    blocking(move || Ok(folder::retire(&path, &copies))).await
+    let copies: Vec<folder::Seen> = copies.into_iter().map(folder::Seen::from).collect();
+    in_folder(app, dir, move |path| Ok(folder::retire(path, &copies))).await
 }
 
 #[tauri::command]
 async fn folder_set_aside(app: tauri::AppHandle, dir: String, expect: String) -> Result<bool, String> {
-    let path = permitted(&app, &dir)?;
-    blocking(move || folder::set_aside(&path, &expect)).await
+    in_folder(app, dir, move |path| folder::set_aside(path, &expect)).await
 }
 
+/// Async like every command that waits: a command without `async` runs on the
+/// main thread, and a blocking dialog there waits on the event loop it blocks.
 #[cfg(desktop)]
 #[tauri::command]
 async fn folder_pick(app: tauri::AppHandle) -> Result<Option<String>, String> {
@@ -135,9 +145,13 @@ async fn folder_pick(app: tauri::AppHandle) -> Result<Option<String>, String> {
     let picked = app.dialog().file().set_title("동기화할 폴더").blocking_pick_folder();
     let Some(path) = picked else { return Ok(None) };
     let dir = path.into_path().map_err(|error| error.to_string())?.to_string_lossy().into_owned();
+    let data = data_dir(&app)?;
     // Picking is the person's say-so.
-    folder::allow(&data_dir(&app)?, &dir)?;
-    Ok(Some(dir))
+    blocking(move || {
+        folder::allow(&data, &dir)?;
+        Ok(Some(dir))
+    })
+    .await
 }
 
 /// A phone hands out content URIs, not paths, so there is no folder to pick.
@@ -153,11 +167,10 @@ async fn folder_pick() -> Result<Option<String>, String> {
 #[tauri::command]
 async fn folder_allow(app: tauri::AppHandle, dir: String) -> Result<bool, String> {
     use tauri_plugin_dialog::{DialogExt, MessageDialogButtons};
-    if !PathBuf::from(&dir).is_absolute() {
-        return Err("the folder must be an absolute path".into());
-    }
+    folder::absolute(&dir)?;
     let data = data_dir(&app)?;
-    if folder::allowed(&data).iter().any(|known| known == &dir) {
+    let (known_data, known_dir) = (data.clone(), dir.clone());
+    if blocking(move || Ok(folder::is_allowed(&known_data, &known_dir))).await? {
         return Ok(true);
     }
     let yes = app
@@ -167,7 +180,7 @@ async fn folder_allow(app: tauri::AppHandle, dir: String) -> Result<bool, String
         .buttons(MessageDialogButtons::OkCancel)
         .blocking_show();
     if yes {
-        folder::allow(&data, &dir)?;
+        blocking(move || folder::allow(&data, &dir)).await?;
     }
     Ok(yes)
 }

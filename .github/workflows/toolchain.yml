@@ -2,16 +2,20 @@
 # orphan branch `toolchain-cache`, for a development sandbox that can reach
 # git but neither the package registry nor artifact storage. Nothing in the
 # product depends on it; the branch can be deleted at any time.
+#
+# Two jobs, for the same reason as in native.yml: `npm ci` runs third-party
+# install scripts, so the job that runs it holds a read-only token, and the
+# one that can write to the repository runs nothing but git.
 name: Toolchain export
 
 on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
-  export:
+  pack:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -25,12 +29,35 @@ jobs:
           tar czf - node_modules | split -b 45m - /tmp/pack/node_modules.tgz.part-
           sha256sum package-lock.json > /tmp/pack/lock.sha256
           ls -la /tmp/pack
+      # Only the hand-off to the publish job: the parts are gzip already, and
+      # the branch is where they are kept.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: toolchain-pack
+          path: /tmp/pack
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 1
+
+  publish:
+    needs: pack
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: toolchain-pack
+          path: pack
       - name: Publish to toolchain-cache
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          cd /tmp/pack
+          cd pack
+          ls -la
           git init -q -b toolchain-cache
           git config user.name "toolchain-bot"
           git config user.email "toolchain-bot@users.noreply.github.com"
           git add -A
           git commit -qm "toolchain for $(cut -c1-12 lock.sha256)"
-          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" toolchain-cache
+          git push -f "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" toolchain-cache

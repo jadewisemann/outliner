@@ -13,4 +13,8 @@ tag = "v1"
 new_sqlite_classes = ["Workspace"]
 
 [vars]
+# The sync URL's path, and the code's default. It is also the Durable Object's
+# name (`idFromName(path)` in worker.mjs): changing it on a live deployment
+# silently points the Worker at a new, empty object, and the notes stay in the
+# old one.
 OUTLINER_PATH = "/workspace"
