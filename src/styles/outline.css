@@ -52,9 +52,12 @@
   display: flex;
   gap: 4px;
   padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
-  background: var(--surface);
-  /* A shadow this faint is invisible in dark; the hairline is not. */
-  border-top: 1px solid var(--line);
+  /* The iOS keyboard accessory: the keyboard's own material, one hairline.
+     A shadow this faint is invisible in dark; the hairline is not. */
+  background: var(--material-thick);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border-top: 0.5px solid var(--line);
 }
 
 .touch-bar button {
@@ -64,9 +67,9 @@
   display: grid;
   place-items: center;
   border: 0;
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   background: none;
-  color: var(--muted);
+  color: var(--accent);
   /* No double-tap zoom, no lingering blue wash, no selecting the icon. */
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
@@ -165,8 +168,11 @@
 
 .row-bullet::after {
   content: "";
-  width: 6.5px;
-  height: 6.5px;
+  /* A flex item: without `flex: none` the slot could squeeze the dot into a
+     lozenge. */
+  flex: none;
+  width: 6px;
+  height: 6px;
   border-radius: 50%;
   background: var(--mark);
 }
@@ -201,13 +207,14 @@
 .row-bullet-collapsed::before {
   content: "";
   position: absolute;
-  right: 0.5px;
+  /* Centre = padding-right 4.5px + half the 6px dot = 7.5px from the edge. */
+  right: -0.5px;
   top: 50%;
   transform: translateY(-50%);
-  width: 15px;
-  height: 15px;
+  width: 16px;
+  height: 16px;
   border-radius: 50%;
-  background: var(--fill);
+  background: var(--selection);
 }
 
 .row-body {
@@ -231,15 +238,22 @@
  */
 .row-check {
   flex: none;
-  width: 15px;
-  min-height: 15px;
+  width: 17px;
+  height: 17px;
+  /* Centred on the first line box, whatever the text size. */
+  margin-top: max(0px, calc(var(--lead) / 2 - 9.5px));
   appearance: none;
   -webkit-appearance: none;
+  /* Round, like Reminders: a to-do is a circle to fill in, not a form field. */
   border: 1.5px solid var(--mark);
-  border-radius: 4.5px;
+  border-radius: 50%;
   background: transparent;
   cursor: pointer;
-  transition: background-color 0.12s ease, border-color 0.12s ease;
+  transition: background-color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.row-check:hover {
+  border-color: var(--muted);
 }
 
 .row-check:checked {
@@ -252,8 +266,8 @@
   display: block;
   width: 4px;
   height: 8px;
-  margin: -1px 0 0 4px;
-  border: solid var(--surface);
+  margin: 1.5px 0 0 5px;
+  border: solid var(--on-accent);
   border-width: 0 1.8px 1.8px 0;
   transform: rotate(43deg);
 }
@@ -264,19 +278,12 @@
 
 /* Colour labels tint the row's text, not its background: a page of six
    highlighter colours is unreadable, a page of six inks is a legend. */
-.row-c1 .row-text { color: #c1543c; }
-.row-c2 .row-text { color: #c08a2e; }
-.row-c3 .row-text { color: #4f8f3f; }
-.row-c4 .row-text { color: #2f7fa8; }
-.row-c5 .row-text { color: #7a5bb5; }
-.row-c6 .row-text { color: var(--muted); }
-
-:root[data-theme="dark"] .row-c1 .row-text { color: #e8836a; }
-:root[data-theme="dark"] .row-c2 .row-text { color: #dcb05a; }
-:root[data-theme="dark"] .row-c3 .row-text { color: #83c46f; }
-:root[data-theme="dark"] .row-c4 .row-text { color: #6cb6d9; }
-:root[data-theme="dark"] .row-c5 .row-text { color: #a891e0; }
-:root[data-theme="dark"] .row-c6 .row-text { color: var(--muted); }
+.row-c1 .row-text { color: var(--ink-1); }
+.row-c2 .row-text { color: var(--ink-2); }
+.row-c3 .row-text { color: var(--ink-3); }
+.row-c4 .row-text { color: var(--ink-4); }
+.row-c5 .row-text { color: var(--ink-5); }
+.row-c6 .row-text { color: var(--ink-6); }
 
 .row-bookmarked > .row-bullet::after {
   box-shadow: 0 0 0 3px var(--accent-soft);
@@ -297,10 +304,11 @@
   margin: 2px 0 0;
   padding: 4px;
   list-style: none;
-  min-width: 180px;
+  min-width: 200px;
   max-width: 320px;
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--material-thick);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
   border-radius: var(--r-md);
   box-shadow: var(--shadow-pop);
 }
@@ -318,7 +326,13 @@
 }
 
 .row-complete-active {
-  background: var(--selection);
+  color: var(--on-accent);
+  background: var(--accent-fill);
+}
+
+.row-complete-active .row-complete-hint {
+  color: inherit;
+  opacity: 0.8;
 }
 
 /*
@@ -372,21 +386,21 @@
  */
 .row-h1 .row-text {
   font-size: 1.5em;
-  font-weight: 660;
+  font-weight: 700;
   line-height: 1.28;
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
 }
 
 .row-h2 .row-text {
   font-size: 1.25em;
-  font-weight: 640;
+  font-weight: 650;
   line-height: 1.32;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.014em;
 }
 
 .row-h3 .row-text {
   font-size: 1.0625em;
-  font-weight: 640;
+  font-weight: 600;
   line-height: 1.4;
 }
 
@@ -413,8 +427,10 @@
 .row-count {
   align-self: center;
   margin-left: 6px;
-  padding: 0 6px;
-  font-size: 0.75em;
+  padding: 0 7px;
+  font-size: 0.72em;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
   color: var(--muted);
   background: var(--fill);
   border-radius: 999px;
@@ -458,13 +474,13 @@
 }
 
 .row-text mark {
-  background: #fbe7a1;
+  background: #ffe98a;
   color: inherit;
   border-radius: 3px;
 }
 
 :root[data-theme="dark"] .row-text mark {
-  background: #6a5a24;
+  background: #6b5716;
 }
 
 .row-text a {
@@ -516,6 +532,7 @@
   left: calc(var(--depth) * var(--row-indent) + var(--gutter));
   right: 0;
   height: 2px;
+  border-radius: 1px;
   background: var(--accent);
 }
 
@@ -528,7 +545,8 @@
 }
 
 .row-drop-child {
+  background-color: var(--accent-soft);
   box-shadow: inset 0 0 0 2px var(--accent);
-  border-radius: 5px;
+  border-radius: var(--r-sm);
 }
 

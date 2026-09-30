@@ -8,6 +8,23 @@
 
 ---
 
+## 2026-09-30 - 화면을 Apple 앱의 모양으로
+
+- **사용자 요청으로 팔레트와 컨트롤 모양을 macOS·iOS의 것으로 바꿨다.** 중립색은 system gray, 강조색은
+  초록(`#3d7f6e`)에서 systemBlue로 바뀌었다. 도구 막대·메뉴·자동완성은 반투명 재질(`--material`,
+  `backdrop-filter`)이고, 선택지는 segmented control, 켜고 끄는 설정은 스위치, 할 일 체크박스는
+  미리 알림처럼 원형이다. 문서 제목은 large title 크기(본문의 2배)다.
+- **명암비:** 색 라벨 잉크는 Apple이 고대비용으로 내놓은 변형을 썼고, 초록만 4.4:1이어서 한 단계 더
+  어둡게 했다. `--muted`는 흰 바탕에서 5.07:1이다. 강조색 채움 위의 글자(`--accent-fill`)와 라벨
+  잉크 토큰(`--ink-N`)의 근거는 code-rationale.md로 승격했다.
+- **기본 글꼴 스택이 Inter를 먼저 찾고 있었다**(`appearance.ts`). San Francisco를 먼저 찾게 바꿨다.
+  Windows에서는 Segoe UI Variable, 한글은 Apple SD Gothic Neo가 받는다.
+- **앱 아이콘도 새 강조색으로 바꿨다.** 정본 `public/icon.svg`는 위에서 빛을 받는 파란 그라디언트이고,
+  PWA용 PNG 셋은 그 SVG를 Chromium으로 래스터화해 다시 만들었다. 이름이 고정된 파일이 바뀌었으므로
+  `sw.js`의 캐시 이름을 v2로 올렸다. 네이티브 앱 아이콘은 CI가 같은 SVG에서 매번 생성한다.
+- **검증:** typecheck·유닛 263건·build green, e2e 전체 78건 green(5건은 Worker 런타임이 없어 건너뜀).
+  밝은 테마·어두운 테마 스크린샷으로 개요·행 메뉴·팔레트·동기화 패널을 직접 확인했다.
+
 ## 2026-09-29 - 네이티브 앱: 검증 환경, 리뷰, 발견한 것
 
 - **작업 환경은 npm 레지스트리·crates.io·Actions 아티팩트 저장소에 닿지 못했고, git과 GitHub API에는

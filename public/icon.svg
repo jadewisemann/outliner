@@ -2,10 +2,17 @@
   <!--
     The source the PNGs are rasterised from. Full bleed, and the mark sits well
     inside the middle 80% so a maskable icon can crop to a circle without
-    clipping it.
+    clipping it. The blue is the app's accent (systemBlue), lit from above the
+    way Apple's own app icons are.
   -->
-  <rect width="512" height="512" fill="#3d7f6e" />
-  <g fill="#f7f7f5">
+  <defs>
+    <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#3a9bff" />
+      <stop offset="1" stop-color="#0062db" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#fill)" />
+  <g fill="#ffffff">
     <circle cx="152" cy="160" r="20" />
     <rect x="196" y="146" width="164" height="28" rx="14" />
     <circle cx="216" cy="256" r="20" />

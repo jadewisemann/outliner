@@ -13,7 +13,9 @@
  * network or fail honestly.
  */
 
-const CACHE = "outliner-shell-v1";
+// Bump when a file in `public/` changes: those names carry no content hash, so
+// a cached copy would otherwise be served for ever (code-rationale.md).
+const CACHE = "outliner-shell-v2";
 const SHELL = new URL("./", self.location).pathname;
 
 self.addEventListener("install", () => {
