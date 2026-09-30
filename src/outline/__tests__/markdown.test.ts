@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyCompletion, autoFormat, completionAt, fuzzy, isUrl, linkTo, toggleLink, toggleWrap } from "../markdown";
+import { applyCompletion, autoFormat, completionAt, isUrl, linkTo, toggleLink, toggleWrap } from "../markdown";
 
 const wrap = (text: string, start: number, end: number, kind: Parameters<typeof toggleWrap>[3]) =>
   toggleWrap(text, start, end, kind);
@@ -111,23 +111,5 @@ describe("completionAt", () => {
 
     const result = applyCompletion("see [[pro", 9, trigger, "[[Projects]]");
     expect(result.start).toBe(result.text.length);
-  });
-});
-
-describe("fuzzy", () => {
-  it("matches characters in order, anywhere", () => {
-    expect(fuzzy("tree.ts", "tre")).not.toBeNull();
-    expect(fuzzy("tree.ts", "tts")).not.toBeNull();
-    expect(fuzzy("tree.ts", "xyz")).toBeNull();
-  });
-
-  it("scores an adjacent run above scattered letters", () => {
-    const tight = fuzzy("project plan", "plan")!.score;
-    const loose = fuzzy("please label a number", "plan")!.score;
-    expect(tight).toBeGreaterThan(loose);
-  });
-
-  it("reports where it matched, for highlighting", () => {
-    expect(fuzzy("alpha", "ah")!.hits).toEqual([0, 3]);
   });
 });

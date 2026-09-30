@@ -2,7 +2,8 @@ import { useCallback, useMemo, useRef, useState, type KeyboardEvent } from "reac
 import { allTags } from "../search/search";
 import { docList, type Id, type Row as RowModel } from "../types";
 import type { RowApi } from "./components/Row";
-import { applyCompletion, completionAt, fuzzy, type Selection, type Trigger } from "./markdown";
+import { fuzzy } from "../shared/fuzzy";
+import { applyCompletion, completionAt, type Selection, type Trigger } from "./markdown";
 import type { LiveRef } from "./useLive";
 
 /** One offer from `[[`, `#` or `@`: what it reads as, and what it writes. */

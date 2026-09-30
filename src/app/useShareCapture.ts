@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import type { Store } from "../store";
-import { forgetShare, sharedText } from "./appearance";
+import { forgetShare, sharedText } from "./share";
 
 /**
  * Launched from a phone's share sheet: file what was shared into the inbox,

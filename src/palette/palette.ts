@@ -1,4 +1,4 @@
-import { fuzzy } from "../outline/markdown";
+import { fuzzy } from "../shared/fuzzy";
 import { ancestors } from "../outline/tree";
 import { allTags } from "../search/search";
 import { docList, realDocs, type Id, type Workspace } from "../types";

@@ -5,9 +5,6 @@ import { beginGithubLogin } from "../api/githubAuth";
 import type { OauthPrefill } from "../syncForm";
 import { useSyncForm } from "../useSyncForm";
 
-// Defined beside the form it prefills; exported here too, where the app imports it from.
-export type { OauthPrefill };
-
 const STATUS_LABEL: Record<SyncStatus, string> = {
   off: "동기화 꺼짐",
   idle: "동기화됨",
