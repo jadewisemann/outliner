@@ -47,14 +47,16 @@ Markdown 미러는 `transfer/`의 내보내기 함수를 썼으며, `shared/keym
 | 층 | 슬라이스 | 가진 것 |
 | --- | --- | --- |
 | app | (슬라이스 없음) | 진입점(`main.tsx`), `App`과 `ErrorBoundary`, 창 전체 단축키, 공유 캡처, OAuth 복귀, 전역 스타일 |
-| widgets | `editor` | 아웃라인 편집기: 행 렌더링, 행 키 처리, 선택, 끌어서 옮기기, 자동 서식, 자동완성, 가상화, 터치 바 |
+| widgets | `editor` | 아웃라인 편집기: 문서 제목, 행 렌더링, 행 키 처리, 선택, 끌어서 옮기기, 자동 서식, 자동완성, 가상화, 터치 바 |
+| widgets | `topbar` | 도구 막대: 사이드바 토글, 브레드크럼, 동기화 배지, 팔레트·검색 버튼, 메뉴 |
 | widgets | `sidebar` | 문서 목록, 폴더, 즐겨찾기, 태그, 휴지통 |
 | widgets | `backlinks` | 이 항목을 가리키는 곳 |
 | features | `palette` | 명령 팔레트: 접두사 모드, 제안, 명령 목록 |
 | features | `search` | 전체 검색 패널 |
+| features | `filter` | 문서 안 필터 막대 |
 | features | `sync-settings` | 동기화 설정 패널, 동기화 배지, GitHub 로그인 |
 | features | `history` | 문서 히스토리 패널 |
-| features | `transfer` | 가져오기와 내보내기 동작, 폴더 가져오기의 경로 처리 |
+| features | `transfer` | 가져오기와 내보내기 동작, 숨은 파일·폴더 선택기, 폴더 가져오기의 경로 처리 |
 | features | `appearance` | 표시 설정 패널, 표시 설정 값, 테마 |
 | features | `shortcuts` | 단축키 도움말, 재바인딩 패널, 적용 중인 단축키 표 |
 | entities | `outline` | 데이터 모델(`types.ts`), 트리 연산, 문서 연산, undo 기록, 스키마 검증과 이전, 가져오기·내보내기 형식, 이 기기의 사본(IndexedDB와 셸 파일) |
@@ -62,7 +64,7 @@ Markdown 미러는 `transfer/`의 내보내기 함수를 썼으며, `shared/keym
 | entities | `text` | 행 텍스트: 인라인 마크다운 렌더링, 태그·날짜·항목 링크 토큰, 서식 문자열 조작, 수식·코드·첨부 표시 |
 | entities | `search` | 질의 언어, 전체 검색, 태그 목록, 항목 링크와 백링크, 즐겨찾기 목록 |
 | entities | `sync` | 병합 규칙, 푸시 판정, 동기화 루프(`useSync`), 원격 백엔드, 암호화, 첨부 전송 |
-| entities | `workspace` | 열린 워크스페이스: `useStore`, 저장 훅, 최근 문서 |
+| entities | `workspace` | 열린 워크스페이스: `useStore`, 저장 훅, 최근 문서, 저장이 위험할 때의 경고 |
 | shared | `lib` · `api` · `ui` | 정렬 키, 논리 시계, 퍼지 매칭, 내려받기, 날짜 경계 / 네이티브 셸 연결 / `Panel`, `Icon` |
 
 이 구조에 맞추면서 제자리를 찾은 코드가 있다. 퍼지 매칭은 `outline/markdown.ts`에서 `shared/lib/fuzzy.ts`로,

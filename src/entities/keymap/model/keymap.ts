@@ -311,6 +311,12 @@ export function chordOf(spec: string): string | undefined {
   return spec === UNBOUND ? undefined : describe(spec);
 }
 
+/** A control's label with its chord, "팔레트 (⌘P)", or just the label when the action has no key. */
+export function withChord(label: string, spec: string): string {
+  const chord = chordOf(spec);
+  return chord ? `${label} (${chord})` : label;
+}
+
 function isMac(): boolean {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 }

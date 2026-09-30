@@ -5,3 +5,4 @@
 export { recentDocs } from "./model/recent";
 export { useStore } from "./model/store";
 export type { Store } from "./model/store";
+export { StorageWarnings } from "./ui/StorageWarnings";

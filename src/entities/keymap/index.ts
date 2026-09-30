@@ -16,6 +16,7 @@ export {
   saveKeymap,
   specOf,
   storedKeymap,
-  UNBOUND
+  UNBOUND,
+  withChord
 } from "./model/keymap";
 export type { Action, Keymap, PresetName } from "./model/keymap";

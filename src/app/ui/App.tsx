@@ -1,19 +1,18 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { Backlinks } from "@/widgets/backlinks";
-import { Outline } from "@/widgets/editor";
+import { DocTitle, Outline } from "@/widgets/editor";
 import { Sidebar } from "@/widgets/sidebar";
+import { Topbar } from "@/widgets/topbar";
 import { Settings, useAppearance, useTheme } from "@/features/appearance";
+import { FilterBar } from "@/features/filter";
 import { HistoryPanel } from "@/features/history";
 import { buildCommands, Palette } from "@/features/palette";
 import { SearchPanel } from "@/features/search";
 import { Keys, Shortcuts, useKeymapSetting } from "@/features/shortcuts";
-import { SyncBadge, SyncSettings, type OauthPrefill } from "@/features/sync-settings";
-import { useTransfer } from "@/features/transfer";
-import { chordOf } from "@/entities/keymap";
-import { ancestors, hasContent, IMPORT_ACCEPT } from "@/entities/outline";
-import { useStore } from "@/entities/workspace";
+import { SyncSettings, type OauthPrefill } from "@/features/sync-settings";
+import { ImportPickers, useTransfer } from "@/features/transfer";
+import { StorageWarnings, useStore } from "@/entities/workspace";
 import { useDay } from "@/shared/lib/useDay";
-import { Icon } from "@/shared/ui/Icon";
 import { jumpToNode, openDocByTitle } from "../model/navigate";
 import { useOauthReturn } from "../model/useOauthReturn";
 import { useShareCapture } from "../model/useShareCapture";
@@ -29,6 +28,11 @@ type Overlay =
   | { kind: "sync"; oauth?: OauthPrefill }
   | null;
 
+/**
+ * The one screen: the sidebar, the page (toolbar, filter, title, outline,
+ * backlinks) and whichever panel is open over it. Everything here is
+ * composition; what each part does lives in its slice (docs/adr/0013-fsd-light.md).
+ */
 export function App() {
   const store = useStore();
   const day = useDay();
@@ -55,19 +59,23 @@ export function App() {
   const commands = useMemo(
     () =>
       store.ready
-        ? buildCommands(store, {
-            openPalette,
-            exportAs: transfer.exportAs,
-            importFile: () => fileInput.current?.click(),
-            importFolder: () => folderInput.current?.click(),
-            toggleTheme,
-            toggleSidebar: () => setSidebarOpen((open) => !open),
-            openSync: () => setOverlay({ kind: "sync" }),
-            openHistory: () => setOverlay({ kind: "history" }),
-            openSettings: () => setOverlay({ kind: "settings" }),
-            openKeys: () => setOverlay({ kind: "keys" }),
-            openShortcuts: () => setOverlay({ kind: "shortcuts" })
-          }, keymap)
+        ? buildCommands(
+            store,
+            {
+              openPalette,
+              exportAs: transfer.exportAs,
+              importFile: () => fileInput.current?.click(),
+              importFolder: () => folderInput.current?.click(),
+              toggleTheme,
+              toggleSidebar: () => setSidebarOpen((open) => !open),
+              openSync: () => setOverlay({ kind: "sync" }),
+              openHistory: () => setOverlay({ kind: "history" }),
+              openSettings: () => setOverlay({ kind: "settings" }),
+              openKeys: () => setOverlay({ kind: "keys" }),
+              openShortcuts: () => setOverlay({ kind: "shortcuts" })
+            },
+            keymap
+          )
         : [],
     [store, transfer.exportAs, openPalette, toggleTheme, keymap]
   );
@@ -77,141 +85,30 @@ export function App() {
   useWindowKeys({ keymap, openPalette, openSearch, setOverlay, setSidebarOpen, filterInput, storeRef });
 
   if (!store.ready) return <div className="booting">불러오는 중…</div>;
-
-  const { doc, view } = store;
-  const trail = ancestors(doc, view.zoomId).concat(view.zoomId).filter((id) => id !== doc.rootId);
-  const zoomed = view.zoomId !== doc.rootId;
+  const close = () => setOverlay(null);
 
   return (
     <div className={`app${sidebarOpen ? " app-with-sidebar" : ""}`}>
       {sidebarOpen ? <Sidebar store={store} onTagClick={openSearch} onSearch={openSearch} /> : null}
 
       <main className="main" ref={scroller}>
-        {store.saveFailed ? (
-          <p className="save-warning" role="alert">
-            이 기기에 저장하지 못하고 있습니다. 저장 공간이 가득 찼을 수 있습니다 — 백업을 내려받아 두세요.
-          </p>
-        ) : null}
-        {/*
-          Local-first means the only copy is here, and `best-effort` storage
-          means the browser may delete it — under storage pressure, or after
-          iOS Safari counts enough unopened days. Saying nothing would be
-          claiming a guarantee the browser never gave. The three conditions are
-          the loss itself: refused, no second copy, and something to lose.
-        */}
-        {store.storage.grade === "best-effort" && store.sync.status === "off" && hasContent(store.workspace) ? (
-          <p className="save-warning" role="alert">
-            이 브라우저가 저장을 보장하지 않습니다 — 저장 공간이 부족해지면 노트가 지워질 수 있습니다. 기기 간
-            동기화를 켜거나 백업을 내려받아 두세요.
-          </p>
-        ) : null}
-        <header className="topbar">
-          <button type="button" className="ghost" title={withKey("사이드바", keymap.sidebar)} onClick={() => setSidebarOpen((open) => !open)}>
-            <Icon name="menu" />
-          </button>
-
-          <nav className="breadcrumb">
-            <button type="button" onClick={() => store.setView({ zoomId: doc.rootId })}>
-              {doc.title}
-            </button>
-            {trail.map((id) => (
-              <span key={id}>
-                <span className="breadcrumb-sep">›</span>
-                <button type="button" onClick={() => store.setView({ zoomId: id })}>
-                  {doc.nodes[id]?.text || "(빈 항목)"}
-                </button>
-              </span>
-            ))}
-          </nav>
-
-          <div className="topbar-actions">
-            <SyncBadge store={store} onClick={() => setOverlay({ kind: "sync" })} />
-            {/*
-              Undo, redo, fold and unfold used to sit here too. In an app where
-              the palette reaches every command, a permanent seat in the chrome
-              is not what makes a feature available — it is only what makes the
-              bar look like a toolbar from another decade.
-            */}
-            <button type="button" className="ghost" title={withKey("팔레트", keymap.palette)} onClick={() => openPalette()}>
-              <Icon name="command" />
-            </button>
-            <button type="button" className="ghost" title={withKey("검색", keymap.search)} onClick={() => openSearch()}>
-              <Icon name="search" />
-            </button>
-
-            <details className="menu">
-              <summary className="ghost">
-                <Icon name="more" />
-              </summary>
-              <div className="menu-body">
-                <button type="button" onClick={() => transfer.exportAs("markdown")}>
-                  Markdown 내보내기
-                </button>
-                <button type="button" onClick={() => transfer.exportAs("opml")}>
-                  OPML 내보내기
-                </button>
-                <button type="button" onClick={() => transfer.exportAs("text")}>
-                  텍스트 내보내기
-                </button>
-                <button type="button" onClick={() => transfer.exportAs("backup")}>
-                  전체 백업 (JSON)
-                </button>
-                <hr />
-                <button type="button" onClick={() => fileInput.current?.click()}>
-                  파일 가져오기
-                </button>
-                <button type="button" onClick={() => folderInput.current?.click()}>
-                  폴더 가져오기
-                </button>
-                <hr />
-                <button type="button" onClick={toggleTheme}>
-                  {theme === "dark" ? "밝은 테마" : "어두운 테마"}
-                </button>
-                <button type="button" onClick={() => setOverlay({ kind: "sync" })}>
-                  동기화 설정
-                </button>
-                <button type="button" onClick={() => setOverlay({ kind: "shortcuts" })}>
-                  {withKey("단축키", keymap.help)}
-                </button>
-              </div>
-            </details>
-          </div>
-        </header>
-
-        <div className={`filter-bar${view.filter !== "" ? " filter-bar-on" : ""}`}>
-          <input
-            ref={filterInput}
-            className="filter-input"
-            placeholder={`${withKey("이 문서 안에서 거르기", keymap.filter)} — is:incomplete, date:today, #태그, -제외`}
-            value={view.filter}
-            onChange={(event) => store.setView({ filter: event.target.value })}
-            onKeyDown={(event) => {
-              if (event.key !== "Escape") return;
-              event.preventDefault();
-              store.setView({ filter: "" });
-              event.currentTarget.blur();
-            }}
-          />
-          {view.filter !== "" ? (
-            <>
-              <span className="filter-count">{store.rows.length}행</span>
-              <button type="button" className="ghost" onClick={() => store.setView({ filter: "" })}>
-                ×
-              </button>
-            </>
-          ) : null}
-          {view.hideCompleted ? (
-            <button type="button" className="filter-flag" onClick={() => store.setView({ hideCompleted: false })}>
-              완료 숨김 ×
-            </button>
-          ) : null}
-        </div>
-
-        {/* The page's own name, always — not a 13px crumb in the chrome. */}
-        <div className={`doc-title${zoomed ? " doc-title-zoomed" : ""}`}>
-          <h1>{zoomed ? doc.nodes[view.zoomId]?.text || "(빈 항목)" : doc.title}</h1>
-        </div>
-
+        <StorageWarnings store={store} />
+        <Topbar
+          store={store}
+          keymap={keymap}
+          theme={theme}
+          onToggleSidebar={() => setSidebarOpen((open) => !open)}
+          onToggleTheme={toggleTheme}
+          onOpenPalette={() => openPalette()}
+          onOpenSearch={() => openSearch()}
+          onOpenSync={() => setOverlay({ kind: "sync" })}
+          onOpenShortcuts={() => setOverlay({ kind: "shortcuts" })}
+          onExport={transfer.exportAs}
+          onImportFile={() => fileInput.current?.click()}
+          onImportFolder={() => folderInput.current?.click()}
+        />
+        <FilterBar store={store} keymap={keymap} inputRef={filterInput} />
+        <DocTitle store={store} />
         {/* Keyed by the day: relative dates ("오늘") are words about today,
             and a new day re-renders every row that says one. */}
         <Outline
@@ -227,73 +124,17 @@ export function App() {
         <Backlinks store={store} onOpen={openItem} />
       </main>
 
-      <input
-        ref={fileInput}
-        type="file"
-        accept={IMPORT_ACCEPT}
-        multiple
-        hidden
-        onChange={(event) => {
-          const files = [...(event.target.files ?? [])];
-          if (files.length > 0) void transfer.importFiles(files);
-          event.target.value = "";
-        }}
-      />
-
-      {/*
-        A second input rather than a flag on the first: `webkitdirectory` turns
-        a file picker into a directory picker outright, so one input cannot
-        offer both. It has no React prop and no `accept` the browser honours —
-        `importFiles` does that filtering itself.
-      */}
-      <input
-        ref={(element) => {
-          folderInput.current = element;
-          element?.setAttribute("webkitdirectory", "");
-        }}
-        type="file"
-        multiple
-        hidden
-        onChange={(event) => {
-          const files = [...(event.target.files ?? [])];
-          if (files.length > 0) void transfer.importFiles(files);
-          event.target.value = "";
-        }}
-      />
+      <ImportPickers fileRef={fileInput} folderRef={folderInput} onFiles={(files) => void transfer.importFiles(files)} />
 
       {overlay?.kind === "palette" ? (
-        <Palette
-          store={store}
-          commands={commands}
-          initialQuery={overlay.query}
-          onClose={() => setOverlay(null)}
-          onSearch={openSearch}
-        />
+        <Palette store={store} commands={commands} initialQuery={overlay.query} onClose={close} onSearch={openSearch} />
       ) : null}
-      {overlay?.kind === "search" ? (
-        <SearchPanel store={store} initialQuery={overlay.query} onClose={() => setOverlay(null)} />
-      ) : null}
-      {overlay?.kind === "shortcuts" ? <Shortcuts keymap={keymap} onClose={() => setOverlay(null)} /> : null}
-      {overlay?.kind === "history" ? <HistoryPanel store={store} onClose={() => setOverlay(null)} /> : null}
-      {overlay?.kind === "settings" ? (
-        <Settings appearance={appearance} onChange={setAppearance} onClose={() => setOverlay(null)} />
-      ) : null}
-      {overlay?.kind === "keys" ? (
-        <Keys keymap={keymap} onChange={setKeymap} onClose={() => setOverlay(null)} />
-      ) : null}
-      {overlay?.kind === "sync" ? (
-        <SyncSettings store={store} oauth={overlay.oauth} onClose={() => setOverlay(null)} />
-      ) : null}
+      {overlay?.kind === "search" ? <SearchPanel store={store} initialQuery={overlay.query} onClose={close} /> : null}
+      {overlay?.kind === "shortcuts" ? <Shortcuts keymap={keymap} onClose={close} /> : null}
+      {overlay?.kind === "history" ? <HistoryPanel store={store} onClose={close} /> : null}
+      {overlay?.kind === "settings" ? <Settings appearance={appearance} onChange={setAppearance} onClose={close} /> : null}
+      {overlay?.kind === "keys" ? <Keys keymap={keymap} onChange={setKeymap} onClose={close} /> : null}
+      {overlay?.kind === "sync" ? <SyncSettings store={store} oauth={overlay.oauth} onClose={close} /> : null}
     </div>
   );
-}
-
-/**
- * A control's label with the chord that does the same thing, read from the
- * active table like the help panel's: "팔레트 (⌘P)", or just "팔레트" when the
- * table leaves the action without a key.
- */
-function withKey(label: string, spec: string): string {
-  const chord = chordOf(spec);
-  return chord ? `${label} (${chord})` : label;
 }
