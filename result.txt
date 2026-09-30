@@ -1,0 +1,2 @@
+ok   the app is running
+ok   the page loaded and saved through IPC (/Users/runner/Library/Application Support/io.github.jadewisemann.outliner/workspace.json)
