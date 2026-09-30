@@ -1,6 +1,6 @@
 import { useDeferredValue, useMemo, useState } from "react";
 import { reveal } from "../outline/tree";
-import { bookmarks } from "../palette/commands";
+import { bookmarks } from "../bookmarks";
 import { allTags } from "../search/search";
 import type { Store } from "../store";
 import { docTree, trashed, type Id } from "../types";

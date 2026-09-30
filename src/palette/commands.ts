@@ -1,6 +1,6 @@
 import { patchNode, setCollapsedDeep } from "../outline/tree";
 import type { Store } from "../store";
-import type { Color, Id, Node, Workspace } from "../types";
+import type { Color, Node } from "../types";
 import type { Command } from "./palette";
 import { dateToken } from "../outline/dates";
 import { chordOf, type Keymap } from "../shared/keymap";
@@ -166,19 +166,4 @@ export function buildCommands(store: Store, actions: AppActions, keymap: Keymap)
     { id: "edit.undo", label: "실행 취소", hint: chordOf(keymap.undo), run: store.undo },
     { id: "edit.redo", label: "다시 실행", hint: chordOf(keymap.redo), run: store.redo }
   ];
-}
-
-/**
- * The bookmarked documents and rows, for the sidebar. Walks every node of
- * every document, so the sidebar runs it on a deferred workspace, like its tags.
- */
-export function bookmarks(workspace: Workspace): { docId: Id; nodeId: Id | null; label: string }[] {
-  const out: { docId: Id; nodeId: Id | null; label: string }[] = [];
-  for (const doc of Object.values(workspace.docs)) {
-    if (doc.bookmarked) out.push({ docId: doc.id, nodeId: null, label: doc.title });
-    for (const node of Object.values(doc.nodes)) {
-      if (node.bookmarked && node.id !== doc.rootId) out.push({ docId: doc.id, nodeId: node.id, label: node.text });
-    }
-  }
-  return out;
 }

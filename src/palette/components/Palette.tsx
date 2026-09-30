@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { reveal } from "../../outline/tree";
 import { Panel } from "../../shared/components/Panel";
 import type { Store } from "../../store";
-import { modeOf, recentDocs, suggest, termOf, type Command, type Mode, type Suggestion } from "../palette";
+import { modeOf, suggest, termOf, type Command, type Mode, type Suggestion } from "../palette";
+import { recentDocs } from "../../recent";
 
 type Props = {
   store: Store;

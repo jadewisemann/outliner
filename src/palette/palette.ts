@@ -162,29 +162,3 @@ function rank(entries: Suggestion[], term: string): Suggestion[] {
     .slice(0, LIMIT)
     .map((scored) => ({ ...scored.entry, hits: scored.match!.hits }));
 }
-
-/* ------------------------------------------------------------------ */
-/* recently opened                                                     */
-/* ------------------------------------------------------------------ */
-
-const RECENT_KEY = "outliner:recent";
-const RECENT_MAX = 8;
-
-/** Device-local on purpose: which document *this* machine was last in. */
-export function recentDocs(): Id[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(RECENT_KEY) ?? "[]");
-    return Array.isArray(raw) ? raw.filter((id): id is Id => typeof id === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-export function rememberDoc(id: Id): void {
-  try {
-    const next = [id, ...recentDocs().filter((known) => known !== id)].slice(0, RECENT_MAX);
-    localStorage.setItem(RECENT_KEY, JSON.stringify(next));
-  } catch {
-    /* private mode — the palette just opens on the full list */
-  }
-}

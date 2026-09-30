@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import * as documents from "./documents";
 import { createHistory } from "./history";
-import { rememberDoc } from "./palette/palette";
+import { rememberDoc } from "./recent";
 import { useSync } from "./sync/useSync";
 import { keyBetween } from "./shared/order";
 import { usePersistence } from "./storage/usePersistence";
