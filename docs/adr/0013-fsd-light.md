@@ -19,7 +19,7 @@ Markdown 미러는 `transfer/`의 내보내기 함수를 썼으며, `shared/keym
 1. **층은 다섯이다.** 위에서부터 `app` → `widgets` → `features` → `entities` → `shared`이고, 파일은
    자기보다 아래층만 import한다. 화면이 하나이므로 `pages` 층은 두지 않고, `app`이 widgets와
    features를 직접 조립한다.
-2. **슬라이스는 공개 API로만 만난다.** `widgets`·`features`·`entities`는 슬라이스로 나뉘고, 슬라이스의
+2. **슬라이스는 공개 API로만 서로 접근한다.** `widgets`·`features`·`entities`는 슬라이스로 나뉘고, 슬라이스의
    `index.ts`가 그 슬라이스의 공개 API다. 다른 슬라이스는 `@/층/슬라이스` 경로로만 접근하고, 안쪽
    파일을 직접 import하지 않는다. `shared`에는 슬라이스가 없으므로 모듈 경로(`@/shared/lib/order`)로
    import한다. 슬라이스 안에서는 상대 경로를 쓰고, 상대 경로는 슬라이스 밖으로 나가지 않는다.
@@ -37,10 +37,10 @@ Markdown 미러는 `transfer/`의 내보내기 함수를 썼으며, `shared/keym
   모른다.
 - **전역 스타일은 `app/styles/`에 네 파일 그대로 둔다.** 이 앱에서는 CSS 규칙의 순서가 곧 동작이다
   ([refactor-plan.md](../design/refactor-plan.md) 「R6」). 스타일을 슬라이스마다 흩으면 import 순서가
-  바뀌고, 그러면 명시도가 같은 규칙 사이의 승자가 바뀐다.
+  바뀌고, 그러면 명시도가 같은 규칙 사이에서 어느 규칙이 적용되는지가 바뀐다.
 - **테스트도 같은 규칙을 따른다.** 테스트는 모듈 옆 `__tests__/`에 두고, 두 슬라이스의 상호작용을
-  시험하는 테스트는 위쪽 슬라이스로 옮겼다. 예를 들어 undo와 병합이 만나는 경우는 `entities/sync`에
-  있다.
+  시험하는 테스트는 위쪽 슬라이스로 옮겼다. 예를 들어 undo와 병합이 함께 작용하는 경우를 시험하는 테스트는
+  `entities/sync`에 있다.
 
 ## 슬라이스가 가진 것
 
@@ -67,14 +67,14 @@ Markdown 미러는 `transfer/`의 내보내기 함수를 썼으며, `shared/keym
 | entities | `workspace` | 열린 워크스페이스: `useStore`, 저장 훅, 최근 문서, 저장이 위험할 때의 경고 |
 | shared | `lib` · `api` · `ui` | 정렬 키, 논리 시계, 퍼지 매칭, 내려받기, 날짜 경계 / 네이티브 셸 연결 / `Panel`, `Icon` |
 
-이 구조에 맞추면서 제자리를 찾은 코드가 있다. 퍼지 매칭은 `outline/markdown.ts`에서 `shared/lib/fuzzy.ts`로,
+이 구조에 맞추면서 알맞은 위치로 옮긴 코드가 있다. 퍼지 매칭은 `outline/markdown.ts`에서 `shared/lib/fuzzy.ts`로,
 최근 문서와 즐겨찾기 목록은 팔레트 모듈에서 `entities/workspace`와 `entities/search`로, 공유 캡처는 표시
 설정 모듈에서 `app/model/share.ts`로 옮겼다.
 
 ## 옛 경로에서 새 경로로
 
 이전 ADR, 조사 문서, `IMPLEMENTATION_NOTES.md`의 옛 기록은 당시의 경로를 그대로 쓴다. 그 경로는 이
-표로 읽는다. 파일은 `git mv`로 옮겼으므로 `git log --follow`로 이력을 이어서 볼 수 있다.
+표에 따라 새 경로로 바꿔 읽는다. 파일은 `git mv`로 옮겼으므로 `git log --follow`로 이력을 이어서 볼 수 있다.
 
 | 옛 경로 (`src/…`) | 새 경로 (`src/…`) |
 | --- | --- |
@@ -108,7 +108,7 @@ Markdown 미러는 `transfer/`의 내보내기 함수를 썼으며, `shared/keym
 ## 검토한 대안
 
 - **도메인 폴더를 두고 의존 규칙만 더한다.** 이름과 책임이 어긋난 곳이 그대로 남는다. 예를 들어
-  `shared/`에 도메인 타입을 아는 키맵이 있고, 동기화가 `transfer/`에 기대는 구조가 유지된다.
+  `shared/`에 도메인 타입을 아는 키맵이 있고, 동기화가 `transfer/`에 의존하는 구조가 유지된다.
 - **정통 FSD를 그대로 적용한다.** `pages` 층, `@x` 교차 표기, 슬라이스별 스타일을 모두 들이는
   방식이다. 화면이 하나이고 엔티티끼리 참조가 많은 이 앱에서는 규칙을 지키는 비용이 얻는 것보다
   크고, 스타일을 흩으면 cascade 순서가 바뀐다.
@@ -117,11 +117,11 @@ Markdown 미러는 `transfer/`의 내보내기 함수를 썼으며, `shared/keym
 
 ## 결과
 
-- 새 코드의 자리는 그 코드가 **무엇을 아는가**로 정한다. 데이터만 알면 `entities`, 사용자의 한 가지
-  동작이면 `features`, 여러 feature를 한 화면 조각으로 묶으면 `widgets`, 앱 전체의 연결이면 `app`이다.
-  도메인을 전혀 모르면 `shared`다.
+- 새 코드를 둘 위치는 그 코드가 **무엇을 아는가**에 따라 정한다. 데이터만 알면 `entities`에, 사용자의
+  한 가지 동작이면 `features`에, 여러 feature를 한 화면 조각으로 묶으면 `widgets`에, 앱 전체의 연결을
+  맡으면 `app`에 둔다. 도메인을 전혀 모르면 `shared`에 둔다.
 - 슬라이스의 `index.ts`가 공개 API이므로, 슬라이스 안의 파일을 나누거나 이름을 바꿔도 다른 슬라이스는
   영향을 받지 않는다.
 - 살아 있는 문서(DESIGN.md, AGENTS.md, README.md, PLANS.md, `docs/overview.md`, `docs/design/*`)는 새
   경로로 고쳤다. 기록으로 남는 문서(ADR, `docs/research/*`, `docs/parity.md`의 날짜 붙은 실사 기록,
-  refactor-plan.md의 R1~R6, `IMPLEMENTATION_NOTES.md`의 지난 항목)는 고치지 않고 위 표로 읽는다.
+  refactor-plan.md의 R1~R6, `IMPLEMENTATION_NOTES.md`의 지난 항목)는 고치지 않고 위 표에 따라 바꿔 읽는다.
