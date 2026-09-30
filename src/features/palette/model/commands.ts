@@ -1,0 +1,168 @@
+import { chordOf, type Keymap } from "@/entities/keymap";
+import { patchNode, setCollapsedDeep, type Color, type Node } from "@/entities/outline";
+import { dateToken } from "@/entities/text";
+import type { Store } from "@/entities/workspace";
+import type { Command } from "./palette";
+
+export type AppActions = {
+  /** Reopens the palette on a given prefix, for commands that need a target. */
+  openPalette(query: string): void;
+  exportAs(format: "markdown" | "opml" | "text" | "backup"): void;
+  importFile(): void;
+  /** A whole directory, folders and all — a separate picker, not a flag on one. */
+  importFolder(): void;
+  toggleTheme(): void;
+  toggleSidebar(): void;
+  openSync(): void;
+  openHistory(): void;
+  openSettings(): void;
+  openKeys(): void;
+  openShortcuts(): void;
+};
+
+const COLORS: [Color, string][] = [
+  [1, "빨강"],
+  [2, "노랑"],
+  [3, "초록"],
+  [4, "파랑"],
+  [5, "보라"],
+  [6, "회색"]
+];
+
+/**
+ * Everything the app can do, as a flat list the palette can search.
+ *
+ * The point is coverage rather than convenience: anything reachable only from
+ * a menu is unreachable from the keyboard, and one such gap is enough to send
+ * a hand back to the trackpad.
+ */
+export function buildCommands(store: Store, actions: AppActions, keymap: Keymap): Command[] {
+  const { doc, view } = store;
+  const focusId = view.focusId && doc.nodes[view.focusId] ? view.focusId : null;
+  const focused = focusId ? doc.nodes[focusId] : null;
+  const parentId = focused?.parent ?? null;
+  const parent = parentId ? doc.nodes[parentId] : null;
+
+  /** Edits the focused row; absent a focused row the command is not offered. */
+  const onRow = (label: string, id: string, patch: Partial<Node>, hint?: string): Command[] =>
+    focusId ? [{ id, label, hint, run: () => store.edit((current) => patchNode(current, focusId, patch)) }] : [];
+
+  /** Edits the list the focused row belongs to. */
+  const onList = (label: string, id: string, patch: Partial<Node>): Command[] =>
+    parentId ? [{ id, label, run: () => store.edit((current) => patchNode(current, parentId, patch)) }] : [];
+
+  /**
+   * Appends a date to the focused row. The keyboard way is `!!`; this is the
+   * way for a phone, whose soft keyboard does not report the keys `!!` reads.
+   */
+  const addDate = (label: string, id: string, days: number): Command[] =>
+    focusId
+      ? [
+          {
+            id,
+            label,
+            hint: "!!",
+            run: () =>
+              store.edit((current) => {
+                const text = current.nodes[focusId]?.text ?? "";
+                const gap = text === "" || text.endsWith(" ") ? "" : " ";
+                return patchNode(current, focusId, { text: `${text}${gap}${dateToken(Date.now(), days)}` });
+              })
+          }
+        ]
+      : [];
+
+  return [
+    /* structure */
+    { id: "doc.new", label: "새 문서", run: () => store.docs.create() },
+    { id: "doc.folder", label: "새 폴더", run: () => store.docs.createFolder() },
+    {
+      id: "doc.inbox",
+      label: doc.inbox ? "이 문서를 인박스에서 해제" : "이 문서를 인박스로",
+      hint: "공유 캡처가 도착하는 곳",
+      run: () => store.docs.setInbox(doc.inbox ? null : doc.id)
+    },
+    {
+      id: "doc.bookmark",
+      label: doc.bookmarked ? "이 문서 즐겨찾기 해제" : "이 문서 즐겨찾기",
+      hint: doc.title,
+      run: () => store.docs.toggleBookmark(doc.id)
+    },
+
+    /* the focused row */
+    ...onRow("제목 1", "row.h1", { heading: 1 }),
+    ...onRow("제목 2", "row.h2", { heading: 2 }),
+    ...onRow("제목 3", "row.h3", { heading: 3 }),
+    ...onRow("본문으로", "row.h0", { heading: 0 }),
+    ...COLORS.flatMap(([color, name]) => onRow(`색 — ${name}`, `row.color${color}`, { color })),
+    ...onRow("색 지우기", "row.color0", { color: 0 }),
+    ...(focused ? onRow(focused.done ? "완료 해제" : "완료 표시", "row.done", { done: !focused.done }) : []),
+    ...(focused
+      ? onRow(focused.bookmarked ? "항목 즐겨찾기 해제" : "항목 즐겨찾기", "row.bookmark", {
+          bookmarked: !focused.bookmarked
+        })
+      : []),
+
+    ...(focusId
+      ? [
+          {
+            id: "row.move",
+            label: "다른 문서로 이동…",
+            hint: ">>",
+            run: () => actions.openPalette(">>")
+          }
+        ]
+      : []),
+
+    /* the list the row is in */
+    ...(parent ? onList(parent.checklist ? "체크리스트 끄기" : "체크리스트로", "list.checklist", {
+      checklist: !parent.checklist
+    }) : []),
+    ...(parent ? onList(parent.numbered ? "번호 목록 끄기" : "번호 목록으로", "list.numbered", {
+      numbered: !parent.numbered
+    }) : []),
+
+    /* the view */
+    {
+      id: "view.fold",
+      label: "모두 접기",
+      run: () => store.edit((current) => setCollapsedDeep(current, view.zoomId, true), { transient: true })
+    },
+    {
+      id: "view.unfold",
+      label: "모두 펼치기",
+      run: () => store.edit((current) => setCollapsedDeep(current, view.zoomId, false), { transient: true })
+    },
+    {
+      id: "view.completed",
+      label: view.hideCompleted ? "완료 항목 보이기" : "완료 항목 숨기기",
+      run: () => store.setView({ hideCompleted: !view.hideCompleted })
+    },
+    {
+      id: "view.notes",
+      label: view.hideNotes ? "메모 보이기" : "메모 숨기기",
+      run: () => store.setView({ hideNotes: !view.hideNotes })
+    },
+    { id: "view.sidebar", label: "사이드바 열고 닫기", hint: chordOf(keymap.sidebar), run: actions.toggleSidebar },
+    { id: "view.theme", label: "테마 전환", run: actions.toggleTheme },
+    { id: "view.settings", label: "표시 설정 — 글꼴·간격·너비", run: actions.openSettings },
+
+    /* files and settings */
+    ...addDate("오늘 날짜 붙이기", "row.today", 0),
+    ...addDate("내일 날짜 붙이기", "row.tomorrow", 1),
+    { id: "file.md", label: "Markdown 내보내기", run: () => actions.exportAs("markdown") },
+    { id: "file.opml", label: "OPML 내보내기", run: () => actions.exportAs("opml") },
+    { id: "file.txt", label: "텍스트 내보내기", run: () => actions.exportAs("text") },
+    { id: "file.backup", label: "전체 백업 (JSON)", run: () => actions.exportAs("backup") },
+    { id: "file.import", label: "파일 가져오기", run: actions.importFile },
+    { id: "file.importFolder", label: "폴더 가져오기 — 폴더 구조까지", run: actions.importFolder },
+    { id: "app.sync", label: "동기화 설정", run: actions.openSync },
+    { id: "app.history", label: "문서 히스토리", hint: doc.title, run: actions.openHistory },
+    { id: "app.shortcuts", label: "단축키", hint: chordOf(keymap.help), run: actions.openShortcuts },
+    { id: "app.keys", label: "단축키 바꾸기", run: actions.openKeys },
+
+    /* undo lives here too, so the palette is a complete answer to "how do I…" */
+    { id: "edit.undo", label: "실행 취소", hint: chordOf(keymap.undo), run: store.undo },
+    { id: "edit.redo", label: "다시 실행", hint: chordOf(keymap.redo), run: store.redo }
+  ];
+}
