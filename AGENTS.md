@@ -1,40 +1,40 @@
 # AGENTS.md — 에이전트 작업 방식의 정본
 
-이 문서가 이 저장소에서 일하는 방식의 정본이다. `CLAUDE.md`는 여기로 오는 포인터일 뿐이다.
-Git 협업 상세의 SSOT는 [CONTRIBUTING.md](./CONTRIBUTING.md)이고 아래 Git 절은 에이전트용
-요약이다 — 충돌하면 CONTRIBUTING.md가 우선한다.
+이 문서가 이 저장소에서 일하는 방식의 정본이다. `CLAUDE.md`는 이 문서를 가리키는 포인터일
+뿐이다. Git 협업의 세부 사항은 [CONTRIBUTING.md](./CONTRIBUTING.md)가 SSOT이고, 아래 Git 절은
+그 문서를 에이전트용으로 요약한 것이다. 둘이 충돌하면 CONTRIBUTING.md가 우선한다.
 
 ## 저장소 정보
 
-- Dynalist를 대신하는 로컬 우선(local-first) 아웃라이너. 단일 패키지 — 작업 디렉터리는 루트 하나다.
+- Dynalist를 대신하는 로컬 우선(local-first) 아웃라이너. 단일 패키지이므로 작업 디렉터리는 루트 하나다.
 - 스택: Vite + React 18 + TypeScript. **런타임 의존성은 react/react-dom, 그리고 수식이 있을
-  때만 지연 로드되는 katex 뿐**이고 이것은 의도된 제약이다 (DESIGN.md 원칙 12, ADR-0004).
-  새 런타임 의존성 추가는 ADR을 요구한다.
-- 실행법·기능 목록·배포는 [README.md](./README.md), 설계·불변식은 [DESIGN.md](./DESIGN.md).
+  때만 지연 로드되는 katex뿐**이고, 이것은 의도된 제약이다 (DESIGN.md 원칙 12, ADR-0004).
+  새 런타임 의존성을 추가하려면 ADR이 필요하다.
+- 실행법·기능 목록·배포는 [README.md](./README.md)에, 설계·불변식은 [DESIGN.md](./DESIGN.md)에 있다.
 
 ## 절대 규칙
 
 - `main`에 직접 커밋·push하지 않는다.
 - 사용자가 명시적으로 요청하지 않는 한 push·PR 생성은 먼저 확인받는다.
-- 문서와 코드가 충돌하면 **조용히 코드를 따르지 않는다** — 아래 판정 규칙대로 판정한다.
+- 문서와 코드가 충돌하면 **조용히 코드를 따르지 않는다.** 대신 아래 판정 규칙대로 판정한다.
 - 바깥에서 오는 데이터(동기화 응답, 가져오기 파일, 저장소에 남아 있던 값)는 반드시
-  `src/storage/validate.ts`를 통과시킨다.
-- **한국어를 출력할 때는 [docs/korean-output.md](./docs/korean-output.md)를 준수한다.** 작업
-  종류와 무관하게 항상 적용되므로, 「필요한 것만 연다」는 하위 문서 규칙의 예외다. 그 문서는
-  요약하지 않고 전문을 읽는다(이유가 문서 안에 서술되어 있다). 코드 주석·커밋 메시지·로그
-  문자열처럼 코드에 속하는 텍스트는 이 지침의 적용 대상이 아니고 기존 관례를 따른다.
-- 동작 차이(버그 포함)를 발견하면 조용히 "개선"하지 않는다 — `IMPLEMENTATION_NOTES.md`에
-  기록하고 재현/수정 여부를 명시적으로 결정한다.
+  `src/entities/outline/model/validate.ts`를 통과시킨다.
+- **한국어를 출력할 때는 [docs/korean-output.md](./docs/korean-output.md)를 준수한다.** 이
+  지침은 작업 종류와 무관하게 항상 적용되므로, 하위 문서에 관한 「필요한 것만 연다」 규칙의
+  예외다. 그 문서는 요약하지 않고 전문을 읽는다(이유가 문서 안에 서술되어 있다). 코드 주석·커밋
+  메시지·로그 문자열처럼 코드에 속하는 텍스트는 이 지침의 적용 대상이 아니고 기존 관례를 따른다.
+- 동작 차이(버그 포함)를 발견하면 조용히 "개선"하지 않는다. 대신 `IMPLEMENTATION_NOTES.md`에
+  기록하고, 재현/수정 여부를 명시적으로 결정한다.
 
 ## 출력 지침이 겹칠 때의 우선순위
 
-이 저장소에는 출력의 형태를 규정하는 지침이 둘 있다. 둘은 **다른 층위를 규정하기 때문에 함께
-지킬 수 있고**, 어느 하나를 버리는 방식으로 해소하지 않는다.
+이 저장소에는 출력의 형태를 규정하는 지침이 둘 있다. 두 지침은 **다른 층위를 규정하기 때문에 함께
+지킬 수 있고**, 겹치는 부분은 어느 하나를 버리는 방식으로 해소하지 않는다.
 
 | 지침 | 규정하는 것 | 언제 적용되나 |
 |---|---|---|
-| [docs/korean-output.md](./docs/korean-output.md) | **문장을 어떻게 구성하는가** — 조사·어미·문장 성분·어휘 선택 | 한국어를 출력할 때 항상 |
-| `i-have-adhd` 플러그인 스킬 | **무엇을 어떤 순서로 얼마나 쓰는가** — 행동 우선, 번호 매기기, 분량 | `/i-have-adhd`로 켰을 때만 |
+| [docs/korean-output.md](./docs/korean-output.md) | **문장을 어떻게 구성하는가**: 조사·어미·문장 성분·어휘 선택 | 한국어를 출력할 때 항상 |
+| `i-have-adhd` 플러그인 스킬 | **무엇을 어떤 순서로 얼마나 쓰는가**: 행동 우선, 번호 매기기, 분량 | `/i-have-adhd`로 켰을 때만 |
 
 `.claude/settings.json`이 마켓플레이스(`ayghri/i-have-adhd`)와 `enabledPlugins`를 선언하고
 있으므로, 플러그인이 설치된 기기에서는 이 저장소의 세션에서 스킬을 쓸 수 있다. 다만 **선언이
@@ -64,34 +64,34 @@ user < project < local이다).
 - ADHD 모드에서는 **그 자리를 두지 않는다.** 조항을 어기는 것이 아니라 해당 문장을 아예 쓰지
   않는 것이므로, 두 지침이 동시에 만족된다.
 
-이 판정의 근거는 스킬 자신에게도 있다. 스킬의 「When to break the rules」 6번이 에이전트 harness
-안에서는 system prompt가 자기보다 우선한다고 밝히고 있고, korean-output.md는 이 저장소의 절대
-규칙이다. 나머지 조항들은 오히려 같은 방향을 가리킨다 — 비유적 어휘를 피하라는 korean-output.md
-「구 단위」 3번과, 관용구를 삭제하라는 스킬의 pre-send check 5번이 그렇다.
+이 판정의 근거는 스킬 자체에도 있다. 스킬의 「When to break the rules」 6번 항목이 에이전트 harness
+안에서는 system prompt가 스킬보다 우선한다고 밝히고 있고, korean-output.md는 이 저장소의 절대
+규칙이다. 나머지 조항들은 오히려 같은 방향을 가리킨다. 예를 들어 비유적 어휘를 피하라는
+korean-output.md의 「구 단위」 3번 조항과, 관용구를 삭제하라는 스킬의 pre-send check 5번이 그렇다.
 
 ## Source of truth
 
 | 무엇 | 정본 |
 |---|---|
 | 설계·불변식 (What / Why / Invariant) | [`DESIGN.md`](./DESIGN.md) |
-| 하위 시스템 상세 설계 | `docs/design/*.md` — DESIGN.md의 지도에서 **필요한 것만** 연다 |
+| 하위 시스템 상세 설계 | `docs/design/*.md` (DESIGN.md의 지도에서 **필요한 것만** 연다) |
 | 결정의 이유 ("왜 이렇게 안 했는가") | `docs/adr/NNNN-*.md` |
 | 진행 중 변경의 계획 | [`PLANS.md`](./PLANS.md) |
 | 작업 중 발견 (휘발성 working memory) | [`IMPLEMENTATION_NOTES.md`](./IMPLEMENTATION_NOTES.md) |
 | 함정·실측값·실패한 대안 | [`docs/design/code-rationale.md`](./docs/design/code-rationale.md) |
 | Git 협업 규칙 | [`CONTRIBUTING.md`](./CONTRIBUTING.md) |
-| 한국어 출력 방식 | [`docs/korean-output.md`](./docs/korean-output.md) — **항상 적용된다** |
+| 한국어 출력 방식 | [`docs/korean-output.md`](./docs/korean-output.md) (**항상 적용된다**) |
 | 실행법·기능 목록·배포 | [`README.md`](./README.md) |
-| 기계가 소비하는 계약 (모델 타입, CSP 값, 매니페스트 …) | **코드** — DESIGN.md의 「코드가 정본인 것들」 목록 |
+| 기계가 소비하는 계약 (모델 타입, CSP 값, 매니페스트 …) | **코드** (DESIGN.md의 「코드가 정본인 것들」 목록 참고) |
 
 ## 문서-코드 충돌 판정 규칙
 
-1. 코드가 DESIGN.md의 원칙·불변식이나 하위 문서의 서술과 어긋나면, 구현이 틀렸는지 설계
-   의도가 바뀐 것인지 **판정**한다.
+1. 코드가 DESIGN.md의 원칙·불변식이나 하위 문서의 서술과 어긋나면, 구현이 틀린 것인지 설계
+   의도가 바뀐 것인지를 **판정**한다.
 2. 의도가 바뀐 것이면 DESIGN.md(또는 해당 하위 문서)를 고치고, 구현이 틀린 것이면 구현을
    고친다. 판정 근거는 `IMPLEMENTATION_NOTES.md`에 남긴다.
-3. 예외: DESIGN.md의 「코드가 정본인 것들」에 오른 파일은 계속 코드가 정본이다 — 문서는
-   이들을 서술만 하고, 어긋나면 문서를 고친다.
+3. 예외: DESIGN.md의 「코드가 정본인 것들」에 오른 파일은 계속 코드가 정본이다. 문서는
+   이 파일들을 서술하기만 하고, 둘이 어긋나면 문서를 고친다.
 
 ## 작업 사이클 — Understand → Implement → Reconcile
 
@@ -108,41 +108,45 @@ user < project < local이다).
 ### 2. Implement — 모델 안에서 구현
 
 5. 구현한다. **설계 위반이 필요해 보이면 구현을 멈추고** DESIGN.md/ADR 쪽 논의로 돌아간다.
-6. 작업 범위에 필요한 만큼만 검증한다(아래 검증 명령·테스트 최소화 원칙).
+6. 작업 범위에 필요한 만큼만 검증한다(아래 검증 명령과 테스트 최소화 원칙 참고).
 7. 작업 중 발견한 숨은 불변식·실측값·edge case·실패한 접근은 즉시 날짜와 함께
    `IMPLEMENTATION_NOTES.md`에 기록한다.
 
 ### 3. Reconcile — 모델을 현실에 맞춘다
 
-8. `git diff`를 DESIGN.md·관련 하위 문서와 대조한다 — 새 숨은 가정이 생기지 않았는가?
-   문서가 서술하는 동작이 바뀌지 않았는가?
+8. `git diff`를 DESIGN.md·관련 하위 문서와 대조하면서 다음을 확인한다. 새 숨은 가정이 생기지
+   않았는가? 문서가 서술하는 동작이 바뀌지 않았는가?
 9. 정신 모델이 바뀌었으면 문서를 갱신한다. 구조적 결정이 새로 내려졌으면 ADR을 추가한다.
-10. IMPLEMENTATION_NOTES.md의 영구 지식은 성격에 따라 **승격**한다 — 설계·불변식은
-    DESIGN.md, 동작 상세는 하위 시스템 문서, 함정·실측값은 code-rationale.md. 승격한 항목은
-    notes에서 지운다.
-11. PLANS.md의 해당 단계 체크리스트를 갱신한다.
+10. IMPLEMENTATION_NOTES.md의 영구 지식은 성격에 따라 **승격**한다. 즉 설계·불변식은
+    DESIGN.md로, 동작 상세는 하위 시스템 문서로, 함정·실측값은 code-rationale.md로 옮긴다.
+    승격한 항목은 notes에서 지운다.
+11. PLANS.md에서 해당 단계의 체크리스트를 갱신한다.
 
-> **강제되는 것은 "문서 수정"이 아니라 "문서와의 일관성 검토"다.** 단순 버그 수정·스타일
-> 변경에 의미 없는 문서 diff를 만들지 않는다.
+> **강제되는 것은 "문서 수정"이 아니라 "문서와의 일관성 검토"다.** 단순 버그 수정이나 스타일
+> 변경을 할 때는 의미 없는 문서 diff를 만들지 않는다.
 
 ## 검증 명령
 
 | 명령 | 무엇을 보나 | 언제 돌리나 |
 |---|---|---|
 | `npm run typecheck` | `tsc --noEmit` | 모든 코드 변경 |
-| `npm test` | 순수 로직 유닛 (Vitest) | 트리·병합·정렬 키·검증·변환 등 순수 로직을 만졌을 때 |
-| `npx vitest run <경로>` | 특정 테스트만 | 변경 범위와 직접 관련된 테스트를 우선 |
-| `npm run build` | `tsc -b` + Vite 빌드 | 번들·CSP·에셋 경로에 닿는 변경. **테스트 파일의 타입 오류는 typecheck가 놓치고 build가 잡는다** — 커밋 전 한 번 |
-| `npm run test:e2e` | 실제 브라우저 시나리오 (Playwright) | UI 동작·동기화·CSP·터치를 만졌을 때 |
+| `npm run check:layers` | 층·슬라이스 import 규칙 (ADR-0013) | `src/`에 파일을 더하거나 옮기거나 import를 바꿨을 때 |
+| `npm test` | 순수 로직 유닛 (Vitest) | 트리·병합·정렬 키·검증·변환 등 순수 로직을 변경했을 때 |
+| `npx vitest run <경로>` | 특정 테스트만 | 변경 범위와 직접 관련된 테스트를 우선한다 |
+| `npm run build` | `tsc -b` + Vite 빌드 | 번들·CSP·에셋 경로에 영향을 주는 변경. **테스트 파일의 타입 오류는 typecheck가 놓치고 build가 잡는다.** 그래서 커밋 전에 한 번 실행한다 |
+| `npm run test:e2e` | 실제 브라우저 시나리오 (Playwright) | UI 동작·동기화·CSP·터치를 변경했을 때 |
+| `rustc --edition 2021 --test src-tauri/src/folder.rs -o <출력> && <출력>` | 셸의 디스크 작업 (Tauri 없이 std만으로) | `folder.rs`를 변경했을 때 |
+| `rustfmt --edition 2021 --check src-tauri/src/*.rs` | Rust 서식 (`src-tauri/rustfmt.toml`) | `src-tauri/src/`를 변경했을 때 |
 
-e2e는 웹 서버를 **둘** 띄운다 — dev(5173)와 `vite preview`(4173). `csp.spec.ts`와
-`install.spec.ts`는 빌드 결과(4173)를 상대로 돈다. GitHub 백엔드 스펙은 동기화 케이던스 때문에
-오래 걸린다(`test.setTimeout(120_000)` 수준).
+e2e는 웹 서버를 **둘** 띄운다. 하나는 dev(5173)이고, 다른 하나는 `vite preview`(4173)이다.
+`csp.spec.ts`와 `install.spec.ts`는 빌드 결과(4173)를 대상으로 실행된다. GitHub 백엔드 스펙은
+동기화 케이던스 때문에 오래 걸린다(`test.setTimeout(120_000)` 수준).
 
-**브라우저는 `playwright.config.ts`가 스스로 찾는다.** Playwright가 핀으로 박은 빌드가 없으면
-`PLAYWRIGHT_BROWSERS_PATH` 아래에 실제로 있는 chromium을 쓴다 — 컨테이너가 미리 넣어둔
-브라우저와 패키지의 핀은 각자 따로 움직이고, 어긋나면 **몇 개가 실패하는 게 아니라 전 스펙이
-launch에서 죽어 e2e 신호가 0이 된다.** 그래서 못 맞추는 브라우저(시스템 Chrome 등)를 가리킬 때만
+**브라우저는 `playwright.config.ts`가 스스로 찾는다.** Playwright가 고정해 둔 빌드가 없으면
+`PLAYWRIGHT_BROWSERS_PATH` 아래에 실제로 있는 chromium을 쓴다. 이렇게 하는 이유는 컨테이너가
+미리 넣어둔 브라우저와 패키지가 고정한 빌드가 각자 따로 갱신되기 때문이다. 둘이 어긋나면
+**스펙 몇 개가 실패하는 것이 아니라 모든 스펙이 launch 단계에서 실패해서 e2e 신호가 0이 된다.**
+그래서 이 설정이 스스로 찾지 못하는 브라우저(시스템 Chrome 등)를 가리킬 때만
 `PLAYWRIGHT_CHROMIUM_PATH=/path/to/chrome`가 필요하다.
 
 ## 테스트 최소화 원칙
@@ -151,35 +155,47 @@ launch에서 죽어 e2e 신호가 0이 된다.** 그래서 못 맞추는 브라�
 - 유닛 테스트는 깨지기 쉬운 **순수 로직만** 본다(정렬 키, 트리 연산, 병합 규칙, 왕복 변환,
   인라인 파싱, 검증). UI 행동은 실제 브라우저 e2e로 확인한다.
 - 테스트는 명확한 회귀 위험이나 완료 조건이 있을 때만 작성·실행한다. 정적 스타일·단순 마크업
-  변경은 typecheck(필요하면 build)까지만.
+  변경은 typecheck(필요하면 build)까지만 실행한다.
 - 미래 요구를 예상한 테스트, **구현을 그대로 옮겨 적는 테스트**, 단순 렌더링 확인 테스트는
   추가하지 않는다.
-- 전체 테스트는 통합·마무리 단계에서. **검증 개수를 작업 품질로 간주하지 않는다 — 작업 위험과
-  완료 조건에 비례해 검증한다.**
+- 전체 테스트는 통합·마무리 단계에서 실행한다. **검증 개수를 작업 품질로 간주하지 않는다. 대신
+  작업 위험과 완료 조건에 비례해 검증한다.**
 
 ## 코드 배치 규칙
 
-- 도메인별 폴더(`outline/`, `palette/`, `sync/`, `storage/`, `search/`, `transfer/`,
-  `shared/`, `app/`). 각 도메인 안에서 로직은 `.ts` 순수 함수와 훅으로, 렌더링은
-  `components/`로 나뉜다.
-- **컴포넌트는 렌더링만 한다.** 동작은 훅(`useOutline.ts` 등)과 순수 함수에 둔다 — 예컨대
-  `Outline.tsx`는 50줄이다.
-- `api/`는 Vercel serverless function 자리이고, client secret을 브라우저에 보내지 않기 위한
+- `src/`는 FSD light 구조다([ADR-0013](./docs/adr/0013-fsd-light.md)). 층은 위에서부터 `app` → `widgets` →
+  `features` → `entities` → `shared`이고, 파일은 자기보다 아래층만 import한다. 층마다 무엇이 있는지는
+  DESIGN.md 「코드 구조와 경계 규칙」에 있다.
+- **새 코드의 자리는 그 코드가 무엇을 아는가로 정한다.** 데이터만 알면 `entities`, 사용자의 한 가지
+  동작이면 `features`, 여러 feature를 한 화면 조각으로 묶으면 `widgets`, 앱 전체의 연결이면 `app`이다.
+  도메인을 전혀 모르면 `shared`다.
+- 다른 슬라이스는 그 슬라이스의 `index.ts`를 통해 `@/층/슬라이스`로만 import한다. 공개할 것이 늘면
+  `index.ts`에 더한다. `shared`는 모듈 경로(`@/shared/lib/order`)로, 슬라이스 안은 상대 경로로 import한다.
+  `entities`끼리는 `outline` → `keymap` → `text` → `search` → `sync` → `workspace` 순서로만 import한다.
+- 슬라이스 안은 쓰는 세그먼트만 둔다. `model`(상태와 순수 로직, 훅), `api`(바깥과의 입출력),
+  `lib`(보조 변환), `ui`(컴포넌트)다. 테스트는 모듈 옆 `__tests__/`에 두고, 두 슬라이스가 만나는 것을
+  시험하는 테스트는 위쪽 슬라이스에 둔다.
+- **컴포넌트는 렌더링만 한다.** 동작은 `model/`의 훅(`useOutline.ts` 등)과 순수 함수에 둔다. 예컨대
+  `App.tsx`는 층들을 조립만 한다.
+- 전역 CSS는 `src/app/styles/`의 네 파일이고, 규칙의 순서가 곧 동작이므로 슬라이스로 흩지 않는다.
+- `api/`는 Vercel serverless function을 두는 폴더이고, client secret을 브라우저에 보내지 않기 위한
   OAuth code↔token 교환 외의 역할을 갖지 않는다.
-- 새 트리 연산은 `outline/__tests__/tree.test.ts`의 `shape()` 자동 검사(파생 캐시 일관성)를
+- 새 트리 연산은 `entities/outline/model/__tests__/tree.test.ts`의 `shape()` 자동 검사(파생 캐시 일관성)를
   통과해야 한다.
 
 ## 커밋 게이트 훅
 
-`.claude/hooks/design-review-gate.mjs`(PreToolUse: Bash)가 커밋을 감시한다. `src/`·`api/`·
-`index.html`의 변경이 설계 문서(DESIGN.md, IMPLEMENTATION_NOTES.md, PLANS.md, `docs/`) 변경
-없이 커밋되려 하면 **딱 한 번** 멈추고 위 Reconcile 검토를 요구한다. 검토 결과 "문서 변경
-불필요"도 정당한 결론이다 — 같은 커밋 명령을 그대로 다시 실행하면 통과된다. 테스트
-(`__tests__`)만 바뀐 커밋은 멈추지 않는다.
+`.claude/hooks/design-review-gate.mjs`(PreToolUse: Bash)가 커밋을 감시한다.
+`src/`·`api/`·`index.html`의 변경이 설계 문서(DESIGN.md, IMPLEMENTATION_NOTES.md, PLANS.md,
+`docs/`) 변경 없이 커밋되려 하면, 훅이 커밋을 **딱 한 번** 멈추고 위 Reconcile 검토를 요구한다.
+검토 결과 "문서 변경 불필요"도 정당한 결론이다. 그 경우에는 같은 커밋 명령을 그대로 다시
+실행하면 통과된다. 테스트(`__tests__`)만 바뀐 커밋은 훅이 멈추지 않는다.
 
 ## Git 요약 (SSOT는 CONTRIBUTING.md)
 
-- `main` 직접 커밋/push 금지. `<type>/<짧은-영문-설명>` 브랜치에서 작업하고 PR로 병합.
-- 커밋: `<type>: <제목>` (feat/fix/docs/style/refactor/test/chore, 50자 내외, 끝 마침표 X).
-- **병합은 언제나 Squash.** PR 제목이 곧 squash 커밋 제목이다.
+- `main`에 직접 커밋/push하는 것을 금지한다. `<type>/<짧은-영문-설명>` 브랜치에서 작업하고 PR로
+  병합한다.
+- 커밋: `<type>: <제목>` (type은 feat/fix/docs/style/refactor/test/chore 중 하나, 제목은 50자
+  내외, 끝에 마침표를 찍지 않음).
+- **병합은 언제나 Squash로 한다.** PR 제목이 곧 squash 커밋의 제목이다.
 - push·PR 생성은 사용자가 명시적으로 요청하지 않는 한 먼저 확인받는다.

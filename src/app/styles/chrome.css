@@ -1,0 +1,362 @@
+/*
+ * App chrome: layout shell, topbar, sidebar.
+ * Load order is part of the cascade — tokens → chrome → outline → panels,
+ * as main.tsx imports them.
+ *
+ * The shape is a macOS document window: a source-list sidebar in a recessed,
+ * slightly translucent material, a toolbar of the same material floating over
+ * the page, and the page title set as a large title rather than as a crumb.
+ */
+/* ------------------------------------------------------------------ */
+/* layout                                                              */
+/* ------------------------------------------------------------------ */
+
+.app {
+  display: grid;
+  grid-template-columns: 1fr;
+  height: 100%;
+}
+
+.app-with-sidebar {
+  grid-template-columns: 244px 1fr;
+}
+
+.main {
+  min-width: 0;
+  overflow-y: auto;
+  background: var(--surface);
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  min-height: 48px;
+  background: var(--material);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  /* A hairline, the way a toolbar meets its content on the Mac. */
+  box-shadow: 0 0.5px 0 var(--line), 0 1px 0 color-mix(in srgb, var(--line) 35%, transparent);
+}
+
+/* Toolbar buttons: borderless until touched, then a rounded wash. */
+.ghost {
+  display: inline-grid;
+  place-items: center;
+  min-width: 30px;
+  min-height: 28px;
+  padding: 5px 7px;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  line-height: 1;
+}
+
+.ghost:hover {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.ghost:active {
+  background: var(--selection);
+}
+
+.breadcrumb {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  overflow: hidden;
+  gap: 2px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+.breadcrumb button {
+  padding: 3px 6px;
+  border-radius: 6px;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.breadcrumb button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+/* The last crumb is where you are: it reads as the window title. */
+.breadcrumb button:last-child {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.breadcrumb-sep {
+  opacity: 0.45;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.menu {
+  position: relative;
+}
+
+.menu summary {
+  list-style: none;
+  display: grid;
+  place-items: center;
+  min-width: 30px;
+  min-height: 28px;
+  padding: 5px 7px;
+  border-radius: var(--r-sm);
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.menu summary:hover,
+.menu[open] summary {
+  background: var(--hover);
+  color: var(--text);
+}
+
+.menu summary::-webkit-details-marker {
+  display: none;
+}
+
+/* A macOS menu: material, hairline edge, rows that fill with the accent. */
+.menu-body {
+  position: absolute;
+  right: 0;
+  top: 34px;
+  width: 210px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  background: var(--material-thick);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  animation: panel-in 0.16s var(--ease);
+  transform-origin: top right;
+}
+
+.menu-body button {
+  padding: 5px 10px;
+  border-radius: 5px;
+  text-align: left;
+  font-size: 13px;
+}
+
+.menu-body button:hover {
+  color: var(--on-accent);
+  background: var(--accent-fill);
+}
+
+.menu-body hr {
+  margin: 5px 10px;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+/* The page's own name, at the top of the text column rather than as a 13px
+   crumb in the chrome — and on the same left edge as the rows it heads.
+   Set as a large title: heavy, tight, and with room above it. */
+.doc-title {
+  max-width: var(--measure, 780px);
+  margin: 0 auto;
+  padding: 44px 20px 4px;
+}
+
+.doc-title h1 {
+  margin: 0;
+  padding-left: var(--gutter);
+  font-size: calc(var(--body-size, 15px) * 2);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.022em;
+}
+
+.doc-title-zoomed h1 {
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------------ */
+/* sidebar                                                             */
+/* ------------------------------------------------------------------ */
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 12px 10px;
+  overflow-y: auto;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  box-shadow: inset -0.5px 0 0 var(--line), inset -1px 0 0 color-mix(in srgb, var(--line) 40%, transparent);
+}
+
+.sidebar-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-left: 10px;
+  min-height: 24px;
+}
+
+.sidebar-head .ghost {
+  min-width: 24px;
+  min-height: 24px;
+  padding: 4px;
+}
+
+/* A source-list section header: small, semibold, secondary. No uppercase and
+   no tracking: `text-transform` is a no-op on Hangul and 0.08em on 문서 / 태그
+   reads as a spacing bug rather than as a label. */
+.sidebar-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.doc-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.doc-item {
+  display: flex;
+  align-items: center;
+  border-radius: var(--r-sm);
+}
+
+.doc-item:hover {
+  background: var(--hover);
+}
+
+.doc-item-active {
+  background: var(--selection);
+}
+
+.doc-item-active .doc-open {
+  font-weight: 500;
+}
+
+.doc-item-active .doc-icon {
+  color: var(--accent);
+}
+
+.doc-open {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 30px;
+  padding: 5px 10px;
+  text-align: left;
+  font-size: 13.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fixed width, so titles line up whether or not the row is a folder. */
+.doc-icon {
+  flex: none;
+  width: 12px;
+  font-size: 11px;
+  text-align: center;
+  color: var(--accent);
+  opacity: 0.85;
+}
+
+.doc-remove,
+.doc-pin {
+  opacity: 0;
+  padding: 2px 6px;
+  color: var(--muted);
+}
+
+.doc-item:hover .doc-remove,
+.doc-item:hover .doc-pin,
+.doc-pin-on {
+  opacity: 1;
+}
+
+.doc-pin-on {
+  color: var(--warn);
+}
+
+/* Dropping *onto* a folder files into it; dropping on a document reorders,
+   so the two need to look different before the mouse is released. */
+.doc-item-into {
+  background: var(--accent-soft);
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.doc-item-before {
+  box-shadow: inset 0 2px 0 -0.5px var(--accent);
+}
+
+.sidebar-empty {
+  margin: 6px 10px;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+.doc-rename {
+  width: 100%;
+  padding: 5px 9px;
+  font: inherit;
+  font-size: 13.5px;
+  color: inherit;
+  background: var(--surface);
+  border: none;
+  border-radius: var(--r-sm);
+  box-shadow: var(--focus);
+  outline: none;
+}
+
+.tag-cloud-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 8px;
+  padding-left: 6px;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  padding: 3px 9px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  border-radius: 999px;
+}
+
+.tag-chip:hover {
+  filter: brightness(0.97);
+}
+
+.tag-chip em {
+  font-style: normal;
+  font-size: 10.5px;
+  opacity: 0.6;
+}

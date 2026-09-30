@@ -8,7 +8,7 @@ name: Worker
 on:
   push:
     branches-ignore: [main]
-    paths: ["server/cloudflare/**", "e2e/worker.spec.ts", "src/sync/**", ".github/workflows/worker.yml"]
+    paths: ["server/cloudflare/**", "e2e/worker.spec.ts", "e2e/two-devices.ts", "src/entities/sync/**", ".github/workflows/worker.yml"]
   workflow_dispatch:
 
 permissions:

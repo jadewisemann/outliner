@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import react from "@vitejs/plugin-react";
 import { defineConfig, type Plugin } from "vite";
 
@@ -21,6 +22,9 @@ export default defineConfig({
   // under a repository path — which is how GitHub Pages serves a project site.
   base: "./",
   plugins: [react(), relaxCspWhileServing()],
+  // `@/…` is `src/…`: how one slice reaches another's public API (tsconfig.json
+  // `paths`, docs/adr/0013-fsd-light.md).
+  resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
   test: {
     environment: "jsdom",
     setupFiles: "./vitest.setup.ts",

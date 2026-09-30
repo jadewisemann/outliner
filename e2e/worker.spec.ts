@@ -1,4 +1,5 @@
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { openSynced, twoDevicesMeet } from "./two-devices";
 
 /**
  * The Cloudflare Worker backend (`server/cloudflare/`), run on the real
@@ -71,49 +72,22 @@ test("a workspace larger than one stored value round-trips byte for byte", async
   expect(await (await fetch(URL_, { headers: auth })).text()).toBe("{}");
 });
 
-async function openSynced(context: BrowserContext, url: string, passphrase?: string): Promise<Page> {
-  const page = await context.newPage();
-  await page.addInitScript(
-    ([endpoint, token, secret]) =>
-      localStorage.setItem(
-        "outliner:sync",
-        JSON.stringify({ kind: "rest", url: endpoint, token, ...(secret ? { passphrase: secret } : {}) })
-      ),
-    [URL_, TOKEN, passphrase ?? ""]
-  );
-  await page.goto(url);
-  await page.locator(".row").first().click();
-  return page;
-}
+/** The sync config a device stores for this Worker. */
+const sync = (passphrase?: string) => ({
+  kind: "rest",
+  url: URL_,
+  token: TOKEN,
+  ...(passphrase ? { passphrase } : {})
+});
 
 test("two devices reach the same outline through the Worker", async ({ browser, baseURL }) => {
-  const laptop = await browser.newContext();
-  const phone = await browser.newContext();
-
-  const one = await openSynced(laptop, baseURL!);
-  await one.keyboard.type("Worker를 거쳐 간 줄");
-  // The second device adopts the remote only on its very first sync. Joining
-  // before the first device's push lands would keep its own starter document
-  // next to the other one, and the row would be in a document not on screen.
-  await expect
-    .poll(async () => (await fetch(URL_, { headers: auth })).text(), { timeout: 20_000 })
-    .toContain("Worker를 거쳐 간 줄");
-  const two = await openSynced(phone, baseURL!);
-  await expect(two.getByText("Worker를 거쳐 간 줄")).toBeVisible({ timeout: 20_000 });
-
-  await two.locator(".row").last().click();
-  await two.keyboard.press("End");
-  await two.keyboard.press("Enter");
-  await two.keyboard.type("폰에서 돌아온 줄");
-  await expect(one.getByText("폰에서 돌아온 줄")).toBeVisible({ timeout: 20_000 });
-
-  await laptop.close();
-  await phone.close();
+  const stored = async () => (await fetch(URL_, { headers: auth })).text();
+  await twoDevicesMeet(browser, baseURL!, sync(), stored, ["Worker를 거쳐 간 줄", "폰에서 돌아온 줄"]);
 });
 
 test("with a passphrase the Worker stores only ciphertext", async ({ browser, baseURL }) => {
   const context = await browser.newContext();
-  const page = await openSynced(context, baseURL!, "워커 암호");
+  const page = await openSynced(context, baseURL!, sync("워커 암호"));
   await page.keyboard.type("서버가 읽으면 안 되는 문장");
 
   await expect
@@ -124,7 +98,7 @@ test("with a passphrase the Worker stores only ciphertext", async ({ browser, ba
 
   // And a second device with the same passphrase reads it back.
   const other = await browser.newContext();
-  const second = await openSynced(other, baseURL!, "워커 암호");
+  const second = await openSynced(other, baseURL!, sync("워커 암호"));
   await expect(second.getByText("서버가 읽으면 안 되는 문장")).toBeVisible({ timeout: 20_000 });
   await context.close();
   await other.close();

@@ -1,0 +1,4 @@
+# The shell's own style: lines up to 120 columns, and a struct literal, chain
+# or call that fits on one line stays on one line.
+max_width = 120
+use_small_heuristics = "Max"

@@ -3,7 +3,7 @@
  * of one Durable Object that holds the workspace.
  *
  * Same contract as `server/outliner-server.mjs`, and the app cannot tell the
- * two apart (`src/sync/api/remote/rest.ts`): `GET` returns the stored body
+ * two apart (`src/entities/sync/api/remote/rest.ts`): `GET` returns the stored body
  * with an `ETag`, `PUT` with a matching `If-Match` replaces it, a mismatch is
  * 412, an empty remote is 404. Nothing else — the merge is in the client, so
  * this stores bytes and arbitrates writes.
@@ -47,9 +47,10 @@ function tokenMatches(given, expected) {
 }
 
 /**
- * The storage half, written against the Durable Object storage interface
- * (`get`/`put`/`delete`, each taking a key or a list) so it can be exercised
- * with an in-memory stand-in.
+ * The storage half. All it asks of the Durable Object is its storage
+ * interface (`get`/`put`/`delete`, each taking a key or a list). Exported,
+ * though nothing imports it: e2e/worker.spec.ts holds it to the contract
+ * through the real Workers runtime.
  */
 export async function handleWorkspace(request, storage) {
   if (request.method === "GET" || request.method === "HEAD") {
@@ -116,8 +117,15 @@ export default {
     const given = (request.headers.get("authorization") ?? "").replace(/^Bearer /, "");
     if (!tokenMatches(given, env.OUTLINER_TOKEN)) return reply(401, { "content-type": "text/plain" }, "unauthorized");
 
-    const stub = env.WORKSPACE.get(env.WORKSPACE.idFromName(path));
-    return stub.fetch(request);
+    try {
+      const stub = env.WORKSPACE.get(env.WORKSPACE.idFromName(path));
+      return await stub.fetch(request);
+    } catch {
+      // The call to the object failed (reset, overloaded, not bound). Left
+      // uncaught, the platform answers a 500 without CORS headers, which the
+      // browser reports as a network error instead of a server error.
+      return reply(500, { "content-type": "text/plain" }, "server error");
+    }
   }
 };
 

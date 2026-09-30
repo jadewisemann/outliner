@@ -3,7 +3,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Readable } from "node:stream";
-import { expect, test, type BrowserContext, type Page } from "@playwright/test";
+import { expect, test } from "@playwright/test";
+import { twoDevicesMeet } from "./two-devices";
 
 /**
  * The reference server, run for real.
@@ -51,37 +52,15 @@ test.afterAll(async () => {
   if (directory) await rm(directory, { recursive: true, force: true });
 });
 
-async function openSynced(context: BrowserContext, url: string): Promise<Page> {
-  const page = await context.newPage();
-  await page.addInitScript(
-    ([endpoint, token]) => localStorage.setItem("outliner:sync", JSON.stringify({ url: endpoint, token })),
-    [`${origin}/workspace`, TOKEN]
-  );
-  await page.goto(url);
-  await page.locator(".row").first().click();
-  return page;
-}
-
 test("two devices reach the same outline through the reference server", async ({ browser, baseURL }) => {
-  const laptop = await browser.newContext();
-  const phone = await browser.newContext();
-
-  const one = await openSynced(laptop, baseURL!);
-  await one.keyboard.type("stored by the reference server");
-
-  const two = await openSynced(phone, baseURL!);
-  await expect(two.getByText("stored by the reference server")).toBeVisible({ timeout: 20_000 });
-
-  // The second device's own row has to come back the other way, or the server
-  // took the write and never handed it on.
-  await two.locator(".row").last().click();
-  await two.keyboard.press("End");
-  await two.keyboard.press("Enter");
-  await two.keyboard.type("written on the second device");
-  await expect(one.getByText("written on the second device")).toBeVisible({ timeout: 20_000 });
-
-  await laptop.close();
-  await phone.close();
+  const url = `${origin}/workspace`;
+  // No `kind`: read as REST, like a config saved before backends had one.
+  const sync = { url, token: TOKEN };
+  const stored = async () => (await fetch(url, { headers: { authorization: `Bearer ${TOKEN}` } })).text();
+  await twoDevicesMeet(browser, baseURL!, sync, stored, [
+    "stored by the reference server",
+    "written on the second device"
+  ]);
 });
 
 test("hands a browser on another origin the ETag its compare-and-swap needs", async ({ page, baseURL }) => {

@@ -10,8 +10,16 @@
  *    conflict copy dropped next to it;
  *  - the app renders and takes typing (a screenshot is kept as evidence).
  *
+ * Meant for a CI runner: the app runs on the real app-data folder, and this
+ * overwrites the allow list there, points the app's sync at a scratch folder
+ * that it deletes afterwards, and types into whatever workspace it finds.
+ *
  *     tauri-driver &   # listens on 4444
  *     node e2e/native/smoke.mjs <path to app binary> <evidence dir>
+ *
+ * `WEBDRIVER_URL` points it at a driver elsewhere (default
+ * http://127.0.0.1:4444); only a run by hand needs it, since run-driver.sh
+ * starts the driver on the default.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -79,7 +87,6 @@ try {
   );
   check("native_info answers over IPC", info && info.mobile === false, JSON.stringify(info));
 
-
   // 2. Typing works in the shell's webview.
   const row = await find(".row");
   await call("POST", `${S}/element/${row}/click`, {});
@@ -113,7 +120,8 @@ try {
   await until("outliner.json on disk", () => existsSync(file) && readFileSync(file, "utf8").includes("네이티브에서 쓴 줄"));
   check("folder backend writes outliner.json", true, file);
 
-  // 4. A conflict copy is merged in and then removed.
+  // 5. A conflict copy is merged in and then moved into .outliner-merged/,
+  // never deleted (DESIGN.md principle 21).
   const copy = JSON.parse(readFileSync(file, "utf8"));
   const doc = Object.values(copy.docs)[0];
   const rowId = "native-smoke-copy-row";
@@ -138,7 +146,7 @@ try {
     readFileSync(file, "utf8").includes("충돌 사본에서 온 줄") && existsSync(join(folder, ".outliner-merged"))
   );
 
-  // 5. The sync badge reports success rather than an error.
+  // 6. The sync badge reports success rather than an error.
   const badge = await run("const b = document.querySelector('.sync-badge'); return b ? b.className : ''");
   check("sync badge is not in error", !/sync-(error|locked|offline)/.test(badge), badge);
 

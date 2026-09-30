@@ -107,7 +107,7 @@ fi
 # Insets: the app's first pixels below the status bar must be the app's, and
 # the status bar strip must not contain the header. Read from the accessibility
 # tree when there is one; otherwise the screenshot is the evidence.
-if [ -n "${status_bottom:-}" ] && [ "$a11y" = 1 ]; then
+if [ "$a11y" = 1 ]; then
   header_top="$(grep -o 'text="Inbox"[^>]*bounds="[^"]*"' "$out/start.xml" | grep -o 'bounds="\[[0-9]*,[0-9]*' | grep -o '[0-9]*$' | sort -n | head -1)"
   say "info header top=${header_top:-?} status bar bottom=$status_bottom"
   if [ -n "${header_top:-}" ] && [ "$header_top" -lt "$status_bottom" ]; then

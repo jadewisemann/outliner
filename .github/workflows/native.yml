@@ -84,7 +84,7 @@ jobs:
       - name: Version from tag
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
-        run: node -e 'const f="src-tauri/tauri.conf.json",c=require("./"+f);c.version=process.argv[1];require("fs").writeFileSync(f,JSON.stringify(c,null,2)+"\n")' "${GITHUB_REF_NAME#v}"
+        run: node .github/scripts/version-from-tag.mjs "${GITHUB_REF_NAME#v}"
       # Icons are generated from the one canonical source, never committed.
       - run: npm run tauri -- icon public/icon.svg
       - run: npm run tauri -- build ${{ matrix.args }}
@@ -111,7 +111,7 @@ jobs:
           echo "launching $binary"
           bash e2e/native/launch.sh "$binary" "$HOME/Library/Application Support/io.github.jadewisemann.outliner" evidence
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ !cancelled() }}
         with:
           name: evidence-desktop-${{ matrix.name }}
           path: evidence
@@ -159,7 +159,7 @@ jobs:
       - run: npm ci
       - name: Version from tag
         if: startsWith(github.ref, 'refs/tags/v')
-        run: node -e 'const f="src-tauri/tauri.conf.json",c=require("./"+f);c.version=process.argv[1];require("fs").writeFileSync(f,JSON.stringify(c,null,2)+"\n")' "${GITHUB_REF_NAME#v}"
+        run: node .github/scripts/version-from-tag.mjs "${GITHUB_REF_NAME#v}"
       # The Android project is generated, not committed: it is derived from
       # tauri.conf.json and the Cargo manifest, like the icons.
       - run: npm run tauri -- android init --ci
@@ -248,7 +248,7 @@ jobs:
           disable-animations: true
           script: bash e2e/native/android.sh apk/outliner-android.apk evidence
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: ${{ !cancelled() }}
         with:
           name: evidence-android
           path: evidence
@@ -256,9 +256,11 @@ jobs:
 
   # Screenshots and results onto `ci-evidence/<name>` branches, readable with
   # plain git (.github/scripts/publish-evidence.sh). Runs even when a smoke
-  # test failed — that is when the evidence matters most.
+  # test failed — that is when the evidence matters most — but not when the
+  # run was cancelled: a run superseded by a newer push would otherwise
+  # force-push its partial evidence over the newer run's.
   evidence:
-    if: always()
+    if: ${{ !cancelled() }}
     needs: [desktop, android-smoke]
     runs-on: ubuntu-latest
     permissions:

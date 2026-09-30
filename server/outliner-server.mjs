@@ -2,7 +2,7 @@
 /**
  * The reference self-hosted backend: static files plus one versioned document.
  *
- * The REST backend asks for exactly three things (`src/sync/api/remote/rest.ts`):
+ * The REST backend asks for exactly three things (`src/entities/sync/api/remote/rest.ts`):
  * `GET` returns the stored body with an `ETag`, `PUT` with a matching
  * `If-Match` replaces it, and a mismatch answers 412 so the client re-merges.
  * That is the whole contract, so the whole server fits in one file with no
@@ -27,10 +27,11 @@
  */
 
 import { createHash, timingSafeEqual } from "node:crypto";
-import { createReadStream } from "node:fs";
+import { createReadStream, realpathSync } from "node:fs";
 import { mkdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { extname, join, normalize, resolve, sep } from "node:path";
+import { fileURLToPath } from "node:url";
 
 /** Big enough for a large workspace, small enough that a stray POST cannot fill the disk. */
 const MAX_BODY = 32 * 1024 * 1024;
@@ -231,8 +232,28 @@ export function createOutlinerServer(config) {
   return server;
 }
 
-/** Only when run directly, so a test can import the factory without listening. */
-if (process.argv[1] && import.meta.url === `file://${process.argv[1]}`) {
+/**
+ * Whether this file is the program being run rather than an import. Compared
+ * as real paths, not as a URL built from `process.argv[1]`: `import.meta.url`
+ * is percent-encoded (a space, a Hangul folder name), uses `/` and a drive
+ * letter on Windows, and names the file behind any symlink (macOS `/tmp` is
+ * `/private/tmp`). A false negative here exits 0 without ever listening.
+ */
+function runAsProgram() {
+  if (!process.argv[1]) return false;
+  try {
+    return realpathSync(process.argv[1]) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Listens only when run as a program. Imported, the file just hands out
+ * `createOutlinerServer` and starts nothing — though nothing imports it today:
+ * e2e/server.spec.ts runs it as its own process.
+ */
+if (runAsProgram()) {
   const config = options(process.argv.slice(2));
   const server = createOutlinerServer(config);
   server.listen(config.port, config.host, () => {

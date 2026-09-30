@@ -1,0 +1,838 @@
+/*
+ * The outline itself: rows, markers, gutter, completion list, drop indicators
+ * — and, closing the file, what renders in and around a row: links between
+ * rows (with the backlinks list), quotes and code, the item menu, then
+ * highlighting, math and attachments.
+ *
+ * That closing block was written after the panels in the old single
+ * global.css and keeps its order here, below everything else. It wins
+ * specificity ties against rules above it — `.row-complete button` is flex,
+ * not block; `.row-quote .row-text` beats `.row-cN .row-text`;
+ * `.row-note-rendered` beats `.row-note` — so it stays last: moving it up or
+ * merging it into the sections above would flip those winners.
+ */
+/* ------------------------------------------------------------------ */
+/* outline                                                             */
+/* ------------------------------------------------------------------ */
+
+.outline {
+  max-width: var(--measure, 780px);
+  margin: 0 auto;
+  /* The tail below already supplies the room to click into; a second screenful
+     of padding only pushed the backlinks off the bottom of the world. */
+  padding: 6px 20px 0;
+  outline: none;
+}
+
+/*
+ * The container is focusable so selection mode has somewhere to send the
+ * keyboard, but a ring around it is a ring around the whole document — and
+ * since the tail below is a third of the viewport, that ring was the largest
+ * object on screen. The focused *row* says the same thing in the right place.
+ */
+.outline:focus-visible {
+  outline: none;
+}
+
+.outline:focus-visible .row-active::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.outline-tail {
+  height: 22vh;
+  cursor: text;
+}
+
+/*
+ * Sits on top of the software keyboard; `bottom` is set inline from
+ * `visualViewport`, since `fixed` alone pins it under the keyboard.
+ */
+.touch-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  z-index: 20;
+  display: flex;
+  gap: 4px;
+  padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  /* The iOS keyboard accessory: the keyboard's own material, one hairline.
+     A shadow this faint is invisible in dark; the hairline is not. */
+  background: var(--material-thick);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border-top: 0.5px solid var(--line);
+}
+
+.touch-bar button {
+  flex: 1;
+  /* A comfortable touch target, and the same height as the keys below it. */
+  min-height: 40px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--accent);
+  /* No double-tap zoom, no lingering blue wash, no selecting the icon. */
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+}
+
+.touch-bar button:active {
+  background: var(--selection);
+}
+
+.row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 2px;
+  padding-left: calc(var(--depth) * var(--row-indent));
+  border-radius: var(--r-sm);
+
+  /*
+   * Height of this row's first line box. Every marker in the gutter centres
+   * itself in it instead of sitting at a fixed pixel offset — otherwise a
+   * bullet drifts 6px above the middle of an h1, and every marker moves as
+   * the size slider does.
+   */
+  --lead: calc(var(--body-size, 15px) * var(--body-leading, 1.55) + 4px);
+
+  /* One guide line per ancestor level, aligned with that ancestor's bullet. */
+  background-image: repeating-linear-gradient(
+    to right,
+    color-mix(in srgb, var(--line) 65%, transparent) 0 1px,
+    transparent 1px var(--row-indent)
+  );
+  background-size: calc(var(--depth) * var(--row-indent)) 100%;
+  background-position: var(--guide-x) 0;
+  background-repeat: no-repeat;
+}
+
+.row-selected {
+  background-color: var(--selection);
+}
+
+.row-arrow,
+.row-marker {
+  height: var(--lead);
+  display: flex;
+  align-items: center;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.row-arrow {
+  justify-content: center;
+}
+
+/*
+ * The one marker slot. Fixed width and right-aligned, so `H1`, `12.`, a
+ * checkbox and a dot all end at the same x and the text after them starts on
+ * the same left edge on every row.
+ */
+.row-marker {
+  flex: none;
+  width: var(--marker);
+  justify-content: flex-end;
+  position: relative;
+  cursor: grab;
+}
+
+.row-arrow {
+  width: 16px;
+  font-size: 10px;
+  color: var(--mark);
+  opacity: 0;
+  transition: transform 0.12s ease, opacity 0.1s ease;
+  transform: rotate(90deg);
+}
+
+.row:hover .row-arrow {
+  opacity: 1;
+}
+
+/* There is no hover on a phone, so the disclosure would never exist there. */
+@media (hover: none) {
+  .row-arrow {
+    opacity: 0.55;
+  }
+}
+
+.row-arrow-collapsed {
+  transform: rotate(0deg);
+  opacity: 1 !important;
+}
+
+.row-arrow-empty {
+  visibility: hidden;
+}
+
+.row-bullet::after {
+  content: "";
+  /* A flex item: without `flex: none` the slot could squeeze the dot into a
+     lozenge. */
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mark);
+}
+
+/* The dot is inset from the cell's right edge; the collapsed halo has to be
+   centred on the dot, not on the cell, or it reads as a crescent. */
+.row-marker {
+  padding-right: 4.5px;
+}
+
+/* A labelled marker carries its own glyphs; the dot would be a second one. */
+.row-bullet-labelled::after {
+  display: none;
+}
+
+.row-label {
+  font-family: var(--mono);
+  font-size: 0.68em;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--mark);
+}
+
+.row-label-index {
+  font-family: inherit;
+  font-size: 0.85em;
+  font-weight: inherit;
+  letter-spacing: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.row-bullet-collapsed::before {
+  content: "";
+  position: absolute;
+  /* Centre = padding-right 4.5px + half the 6px dot = 7.5px from the edge. */
+  right: -0.5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: var(--selection);
+}
+
+.row-body {
+  flex: 1;
+  min-width: 0;
+  padding-bottom: 1px;
+}
+
+.row-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+/*
+ * Only lists that asked for checkboxes get them; a ticked row keeps its own.
+ *
+ * Still a real `<input type=checkbox>`, so the keyboard and the accessibility
+ * tree are untouched — only the paint is ours. The browser default rendered as
+ * a grey square in dark mode, which is not a state anyone recognises as "done".
+ */
+.row-check {
+  flex: none;
+  width: 17px;
+  height: 17px;
+  /* Centred on the first line box, whatever the text size. */
+  margin-top: max(0px, calc(var(--lead) / 2 - 9.5px));
+  appearance: none;
+  -webkit-appearance: none;
+  /* Round, like Reminders: a to-do is a circle to fill in, not a form field. */
+  border: 1.5px solid var(--mark);
+  border-radius: 50%;
+  background: transparent;
+  cursor: pointer;
+  transition: background-color 0.15s var(--ease), border-color 0.15s var(--ease);
+}
+
+.row-check:hover {
+  border-color: var(--muted);
+}
+
+.row-check:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.row-check:checked::after {
+  content: "";
+  display: block;
+  width: 4px;
+  height: 8px;
+  margin: 1.5px 0 0 5px;
+  border: solid var(--on-accent);
+  border-width: 0 1.8px 1.8px 0;
+  transform: rotate(43deg);
+}
+
+.row-check {
+  margin-right: 1px;
+}
+
+/* Colour labels tint the row's text, not its background: a page of six
+   highlighter colours is unreadable, a page of six inks is a legend. */
+.row-c1 .row-text { color: var(--ink-1); }
+.row-c2 .row-text { color: var(--ink-2); }
+.row-c3 .row-text { color: var(--ink-3); }
+.row-c4 .row-text { color: var(--ink-4); }
+.row-c5 .row-text { color: var(--ink-5); }
+.row-c6 .row-text { color: var(--ink-6); }
+
+.row-bookmarked > .row-bullet::after {
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+/* The rendered half shrink-wraps so a trailing badge sits beside its row
+   instead of being pushed to the far edge of the measure; the textarea keeps
+   flex: 1 so there is something to type into. */
+.row-rendered {
+  flex: 0 1 auto;
+}
+
+/* Anchored under the row being typed in, so the caret and the list are in the
+   same place the eye already is. */
+.row-complete {
+  position: absolute;
+  z-index: 5;
+  margin: 2px 0 0;
+  padding: 4px;
+  list-style: none;
+  min-width: 200px;
+  max-width: 320px;
+  background: var(--material-thick);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+}
+
+.row-complete button {
+  display: block;
+  width: 100%;
+  padding: 4px 8px;
+  text-align: left;
+  border-radius: 5px;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-complete-active {
+  color: var(--on-accent);
+  background: var(--accent-fill);
+}
+
+.row-complete-active .row-complete-hint {
+  color: inherit;
+  opacity: 0.8;
+}
+
+/*
+ * The editor and its rendered twin must share metrics so swapping is invisible.
+ *
+ * `line-height` reads the variable rather than a constant: hard-coding 1.55
+ * here beat inheritance, so the 줄 간격 slider moved the chrome and left the
+ * document exactly where it was.
+ *
+ * `overflow-wrap: anywhere` used to break Hangul between any two syllables —
+ * Korean has no interword spaces, so the browser split 사용자인터뷰 wherever it
+ * liked. `keep-all` breaks at eojeol boundaries; `break-word` still rescues a
+ * long URL.
+ */
+.row-text {
+  flex: 1;
+  min-width: 0;
+  padding: 2px 2px 2px 0;
+  font: inherit;
+  line-height: var(--body-leading, 1.55);
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
+.row-input {
+  display: block;
+  width: 100%;
+  color: inherit;
+  background: none;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+}
+
+.row-body {
+  cursor: text;
+}
+
+.row-done .row-text {
+  color: var(--muted);
+  text-decoration: line-through;
+}
+
+/*
+ * Relative, so the size slider moves them too — at 24px body the old fixed
+ * 21px h1 was *smaller* than body text. Display type also wants tighter
+ * leading than prose: 1.55 on a heading is why they read as rows rather than
+ * as anchors.
+ */
+.row-h1 .row-text {
+  font-size: 1.5em;
+  font-weight: 700;
+  line-height: 1.28;
+  letter-spacing: -0.02em;
+}
+
+.row-h2 .row-text {
+  font-size: 1.25em;
+  font-weight: 650;
+  line-height: 1.32;
+  letter-spacing: -0.014em;
+}
+
+.row-h3 .row-text {
+  font-size: 1.0625em;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.row-h1 { --lead: calc(var(--body-size, 15px) * 1.5 * 1.28 + 4px); }
+.row-h2 { --lead: calc(var(--body-size, 15px) * 1.25 * 1.32 + 4px); }
+.row-h3 { --lead: calc(var(--body-size, 15px) * 1.0625 * 1.4 + 4px); }
+
+/*
+ * Air above a section, so a heading and its first child are not the same
+ * distance apart as two unrelated sections. Padding rather than margin:
+ * margins collapse and are excluded from `offsetHeight`, which is what the
+ * virtualiser measures.
+ */
+.row-h1 { padding-top: 20px; }
+.row-h2 { padding-top: 15px; }
+.row-h3 { padding-top: 11px; }
+
+.row-h1:first-child,
+.row-h2:first-child,
+.row-h3:first-child {
+  padding-top: 0;
+}
+
+.row-count {
+  align-self: center;
+  margin-left: 6px;
+  padding: 0 7px;
+  font-size: 0.72em;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: var(--fill);
+  border-radius: 999px;
+}
+
+.row-note {
+  display: block;
+  width: 100%;
+  margin-top: 1px;
+  padding: 0;
+  font: inherit;
+  font-size: 0.87em;
+  color: var(--muted);
+  background: none;
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: hidden;
+  line-height: 1.55;
+  overflow-wrap: break-word;
+  word-break: keep-all;
+}
+
+/*
+ * Rendered chips must cost no layout width.
+ *
+ * The textarea shows `#tag` as plain 1em text with no padding. When the chip
+ * added 6px of padding, a row near the wrap boundary reflowed to a different
+ * number of lines the moment you clicked into it — text jumping on focus is
+ * the one thing this whole two-halves design exists to avoid. A spread
+ * box-shadow paints the same inset without occupying space.
+ */
+.row-text code,
+.row-note-rendered code {
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 0.9em;
+  background: var(--fill);
+  box-shadow: 0 0 0 3px var(--fill);
+  border-radius: 4px;
+}
+
+.row-text mark {
+  background: #ffe98a;
+  color: inherit;
+  border-radius: 3px;
+}
+
+:root[data-theme="dark"] .row-text mark {
+  background: #6b5716;
+}
+
+.row-text a {
+  color: var(--accent-ink);
+}
+
+/* Same zero-width trick as inline code, and for the same reason: a tag is far
+   more common in a row than a code span is. */
+.inline-tag,
+.inline-doclink {
+  padding: 0;
+  border-radius: 4px;
+  font-size: inherit;
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 2.5px var(--accent-soft);
+}
+
+/* Dates read like a tag's quieter cousin: tinted by how near they are, so a
+   scan down the outline finds what is overdue without a search. */
+.inline-date {
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 0.92em;
+  white-space: nowrap;
+  color: var(--muted);
+  background: var(--fill);
+}
+.inline-date-today,
+.inline-date-soon {
+  color: var(--accent-ink);
+  background: var(--accent-soft);
+}
+.inline-date-overdue {
+  color: var(--late-ink);
+  background: var(--late-soft);
+}
+
+.inline-doclink {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* drop indicators */
+.row-drop-before::after,
+.row-drop-after::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--depth) * var(--row-indent) + var(--gutter));
+  right: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+.row-drop-before::after {
+  top: -1px;
+}
+
+.row-drop-after::after {
+  bottom: -1px;
+}
+
+.row-drop-child {
+  background-color: var(--accent-soft);
+  box-shadow: inset 0 0 0 2px var(--accent);
+  border-radius: var(--r-sm);
+}
+
+/* ------------------------------------------------------------------ */
+/* links between rows                                                  */
+/* ------------------------------------------------------------------ */
+
+.inline-itemlink {
+  padding: 0;
+  color: var(--accent);
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 40%, transparent);
+}
+
+/* A target that has gone stays visible and stays obviously broken. */
+.inline-itemlink-broken {
+  color: var(--muted);
+  border-bottom-style: dashed;
+  cursor: default;
+}
+
+.inline-image {
+  display: block;
+  max-width: 100%;
+  max-height: 320px;
+  margin: 4px 0;
+  border-radius: 6px;
+}
+
+.row-complete button {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.row-complete-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-complete-hint {
+  flex: none;
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.backlinks {
+  max-width: var(--measure, 780px);
+  margin: 0 auto;
+  padding: 0 20px 30vh;
+}
+
+.backlinks h2 {
+  margin: 0 0 6px;
+  padding-left: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.backlinks h2 em {
+  font-style: normal;
+  opacity: 0.7;
+}
+
+.backlinks ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 0.5px solid var(--line);
+}
+
+.backlinks button {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  width: 100%;
+  padding: 6px 8px;
+  text-align: left;
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.backlinks button:hover {
+  background: var(--hover);
+}
+
+.backlink-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.backlink-where {
+  flex: none;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* quotes and code                                                     */
+/* ------------------------------------------------------------------ */
+
+.row-quote > .row-body > .row-line {
+  padding-left: 12px;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 45%, var(--line));
+}
+
+.row-quote .row-text {
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* The rendered note has to share metrics with the textarea it replaces, or
+   the swap moves the text under the pointer that asked for it. */
+.row-note-rendered {
+  cursor: text;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.row-note-rendered p,
+.row-note-rendered blockquote {
+  margin: 0;
+}
+
+.row-note-rendered blockquote {
+  padding-left: 8px;
+  border-left: 2px solid var(--line);
+}
+
+.note-code {
+  position: relative;
+  margin: 5px 0;
+  padding: 9px 11px;
+  overflow-x: auto;
+  font-family: var(--mono);
+  font-size: 0.83em;
+  line-height: 1.55;
+  background: var(--fill);
+  border-radius: var(--r-md);
+}
+
+.note-code code {
+  white-space: pre;
+}
+
+/* Names the language without a highlighter. Out of the flow and top-right,
+   so one line of code stays a one-line block. */
+.note-code[data-language]::before {
+  content: attr(data-language);
+  position: absolute;
+  top: 5px;
+  right: 9px;
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* item menu                                                           */
+/* ------------------------------------------------------------------ */
+
+.row-menu {
+  position: fixed;
+  z-index: 30;
+  width: 200px;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  background: var(--material-thick);
+  backdrop-filter: var(--blur);
+  -webkit-backdrop-filter: var(--blur);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-pop);
+  animation: panel-in 0.16s var(--ease);
+}
+
+.row-menu button {
+  padding: 5px 10px;
+  border-radius: 5px;
+  text-align: left;
+  font-size: 13px;
+}
+
+/* The macOS menu highlight: the whole item fills with the accent. */
+.row-menu button:not(.row-menu-color):hover {
+  color: var(--on-accent);
+  background: var(--accent-fill);
+}
+
+.row-menu hr {
+  margin: 5px 10px;
+  border: none;
+  border-top: 1px solid var(--line);
+}
+
+.row-menu .row-menu-danger {
+  color: var(--danger);
+}
+
+.row-menu button.row-menu-danger:hover {
+  color: #fff;
+  background: var(--danger);
+}
+
+.row-menu-colors {
+  display: flex;
+  gap: 4px;
+  padding: 2px 4px 6px;
+}
+
+/* Letters in the ink, not blocks of it: the label tints a row's *text*, and a
+   saturated 18px fill promised something the feature does not do. */
+.row-menu-color {
+  flex: 1;
+  height: 22px;
+  padding: 0 !important;
+  border-radius: var(--r-sm) !important;
+  background: none !important;
+  font-size: 13px;
+  font-weight: 650;
+  text-align: center !important;
+  line-height: 1;
+}
+
+.row-menu-color:hover {
+  background: var(--hover) !important;
+}
+
+.row-menu-color-on {
+  box-shadow: inset 0 0 0 1.5px currentColor;
+}
+
+.row-menu-color-none {
+  color: var(--mark);
+}
+
+/* ------------------------------------------------------------------ */
+/* highlighting, math, attachments                                     */
+/* ------------------------------------------------------------------ */
+
+/* Approximate, language-agnostic highlighting — see highlight.tsx.
+   Xcode's default theme colours. */
+.tok-string { color: #c41a16; }
+.tok-comment { color: var(--muted); font-style: italic; }
+.tok-number { color: #1c00cf; }
+.tok-keyword { color: #9b2393; }
+
+:root[data-theme="dark"] .tok-string { color: #fc6a5d; }
+:root[data-theme="dark"] .tok-number { color: #d0bf69; }
+:root[data-theme="dark"] .tok-keyword { color: #fc5fa3; }
+
+/* Loaded on demand; until it arrives the source shows as written. */
+.math-source {
+  font-family: var(--mono);
+  font-size: 0.92em;
+  color: var(--muted);
+}
+
+.math-block {
+  margin: 6px 0;
+  overflow-x: auto;
+}
+
+.attachment-loading,
+.attachment-missing {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.attachment-missing {
+  text-decoration: line-through;
+}
