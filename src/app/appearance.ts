@@ -19,9 +19,11 @@ export const DEFAULT_APPEARANCE: Appearance = { family: "sans", size: 15, lineHe
 const KEY = "outliner:appearance";
 
 const FAMILIES: Record<Appearance["family"], string> = {
-  sans: 'Inter, ui-sans-serif, system-ui, -apple-system, "Apple SD Gothic Neo", Pretendard, "Malgun Gothic", sans-serif',
-  serif: '"Iowan Old Style", Charter, Georgia, "Noto Serif KR", "Apple SD Gothic Neo", serif',
-  mono: 'ui-monospace, SFMono-Regular, "SF Mono", Menlo, "D2Coding", monospace'
+  // San Francisco first (tokens.css `--font` explains the order).
+  sans: '-apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "Apple SD Gothic Neo", Pretendard, "Malgun Gothic", "Noto Sans KR", system-ui, sans-serif',
+  // New York is Apple's serif; `ui-serif` reaches it in Safari.
+  serif: 'ui-serif, "New York", "Iowan Old Style", Charter, Georgia, "Noto Serif KR", "Apple SD Gothic Neo", serif',
+  mono: 'ui-monospace, "SF Mono", SFMono-Regular, Menlo, "D2Coding", monospace'
 };
 
 export function loadAppearance(): Appearance {

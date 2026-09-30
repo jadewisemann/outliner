@@ -4,14 +4,11 @@ import type { RowApi } from "./Row";
 
 export type MenuSpot = { row: RowModel; x: number; y: number };
 
-const COLORS: [Color, string][] = [
-  [1, "#c1543c"],
-  [2, "#c08a2e"],
-  [3, "#4f8f3f"],
-  [4, "#2f7fa8"],
-  [5, "#7a5bb5"],
-  [6, "#8a8a84"]
-];
+// The same ink tokens the rows use (tokens.css `--ink-N`), so a swatch
+// follows the theme and can never drift from the colour it applies.
+const COLORS: [Color, string][] = ([1, 2, 3, 4, 5, 6] as const).map(
+  (color): [Color, string] => [color, `var(--ink-${color})`]
+);
 
 /**
  * Right-click on a bullet.
