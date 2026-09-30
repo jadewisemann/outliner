@@ -1,17 +1,10 @@
 import { patchNode, setCollapsedDeep } from "../outline/tree";
 import type { Store } from "../store";
-import type { Color, Id, Node } from "../types";
+import type { Color, Id, Node, Workspace } from "../types";
 import type { Command } from "./palette";
 import { dateToken } from "../outline/dates";
-import { describe } from "../shared/keymap";
+import { chordOf, type Keymap } from "../shared/keymap";
 
-/**
- * Everything the app can do, as a flat list the palette can search.
- *
- * The point is coverage rather than convenience: anything reachable only from
- * a menu is unreachable from the keyboard, and one such gap is enough to send
- * a hand back to the trackpad.
- */
 export type AppActions = {
   /** Reopens the palette on a given prefix, for commands that need a target. */
   openPalette(query: string): void;
@@ -37,7 +30,14 @@ const COLORS: [Color, string][] = [
   [6, "회색"]
 ];
 
-export function buildCommands(store: Store, actions: AppActions): Command[] {
+/**
+ * Everything the app can do, as a flat list the palette can search.
+ *
+ * The point is coverage rather than convenience: anything reachable only from
+ * a menu is unreachable from the keyboard, and one such gap is enough to send
+ * a hand back to the trackpad.
+ */
+export function buildCommands(store: Store, actions: AppActions, keymap: Keymap): Command[] {
   const { doc, view } = store;
   const focusId = view.focusId && doc.nodes[view.focusId] ? view.focusId : null;
   const focused = focusId ? doc.nodes[focusId] : null;
@@ -144,7 +144,7 @@ export function buildCommands(store: Store, actions: AppActions): Command[] {
       label: view.hideNotes ? "메모 보이기" : "메모 숨기기",
       run: () => store.setView({ hideNotes: !view.hideNotes })
     },
-    { id: "view.sidebar", label: "사이드바 열고 닫기", hint: describe("Mod+\\"), run: actions.toggleSidebar },
+    { id: "view.sidebar", label: "사이드바 열고 닫기", hint: chordOf(keymap.sidebar), run: actions.toggleSidebar },
     { id: "view.theme", label: "테마 전환", run: actions.toggleTheme },
     { id: "view.settings", label: "표시 설정 — 글꼴·간격·너비", run: actions.openSettings },
 
@@ -159,19 +159,22 @@ export function buildCommands(store: Store, actions: AppActions): Command[] {
     { id: "file.importFolder", label: "폴더 가져오기 — 폴더 구조까지", run: actions.importFolder },
     { id: "app.sync", label: "동기화 설정", run: actions.openSync },
     { id: "app.history", label: "문서 히스토리", hint: doc.title, run: actions.openHistory },
-    { id: "app.shortcuts", label: "단축키", hint: describe("Mod+/"), run: actions.openShortcuts },
+    { id: "app.shortcuts", label: "단축키", hint: chordOf(keymap.help), run: actions.openShortcuts },
     { id: "app.keys", label: "단축키 바꾸기", run: actions.openKeys },
 
     /* undo lives here too, so the palette is a complete answer to "how do I…" */
-    { id: "edit.undo", label: "실행 취소", hint: describe("Mod+Z"), run: store.undo },
-    { id: "edit.redo", label: "다시 실행", hint: describe("Mod+Shift+Z"), run: store.redo }
+    { id: "edit.undo", label: "실행 취소", hint: chordOf(keymap.undo), run: store.undo },
+    { id: "edit.redo", label: "다시 실행", hint: chordOf(keymap.redo), run: store.redo }
   ];
 }
 
-/** The bookmarked documents and rows, for the sidebar. */
-export function bookmarks(store: Store): { docId: Id; nodeId: Id | null; label: string }[] {
+/**
+ * The bookmarked documents and rows, for the sidebar. Walks every node of
+ * every document, so the sidebar runs it on a deferred workspace, like its tags.
+ */
+export function bookmarks(workspace: Workspace): { docId: Id; nodeId: Id | null; label: string }[] {
   const out: { docId: Id; nodeId: Id | null; label: string }[] = [];
-  for (const doc of Object.values(store.workspace.docs)) {
+  for (const doc of Object.values(workspace.docs)) {
     if (doc.bookmarked) out.push({ docId: doc.id, nodeId: null, label: doc.title });
     for (const node of Object.values(doc.nodes)) {
       if (node.bookmarked && node.id !== doc.rootId) out.push({ docId: doc.id, nodeId: node.id, label: node.text });

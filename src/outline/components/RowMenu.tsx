@@ -13,9 +13,12 @@ const COLORS: [Color, string][] = ([1, 2, 3, 4, 5, 6] as const).map(
 /**
  * Right-click on a bullet.
  *
- * Everything here is also a palette command — this is the pointer's way in,
- * not a second set of features. It exists because colour and list style are
- * the two things people reach for while their hand is already on the mouse.
+ * Mostly the pointer's way in to what the keyboard already reaches: colour,
+ * list style, bookmarking and moving are palette commands, duplicate and
+ * delete are keys, and a quote is typed as `> `. Two items have no other way
+ * in: taking a quote off once the conversion has stuck, and copying the
+ * item's link. It exists because colour and list style are the two things
+ * people reach for while their hand is already on the mouse.
  */
 export function RowMenu({ spot, api, onClose, onMove }: {
   spot: MenuSpot;
@@ -65,7 +68,7 @@ export function RowMenu({ spot, api, onClose, onMove }: {
             aria-label={`색 ${color}`}
             className={node.color === color ? "row-menu-color row-menu-color-on" : "row-menu-color"}
             // The label tints a row's text, so the swatch is a letter in that
-            // ink (panels.css `.row-menu-color`), not a block of it.
+            // ink (outline.css `.row-menu-color`), not a block of it.
             style={{ color: swatch }}
             onClick={act(() => api.setColor(row.id, color))}
           >

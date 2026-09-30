@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { dateState, dateToken, formatDate, parseDate } from "../dates";
+import { autoDate, dateState, dateToken, formatDate, parseDate } from "../dates";
 import { inlineDates } from "../inline";
 import { parseQuery } from "../../search/query";
 import { makeNode } from "../../types";
@@ -36,6 +36,19 @@ describe("dates", () => {
     expect(dateToken(NOW)).toBe("!(2026-09-29)");
     expect(dateToken(NOW, 3)).toBe("!(2026-10-02)");
     expect(inlineDates("from !(2026-09-01) to !(2026-09-30), not !(2026-13-01)")).toHaveLength(2);
+  });
+
+  it("turns `!!` into today's date only at the start of a word, with the date selected", () => {
+    // Read as the second `!` is typed: the first one is already left of the caret.
+    const typed = autoDate("due ! later", 5, NOW)!;
+    expect(typed.text).toBe("due !(2026-09-29) later");
+    expect(typed.text.slice(typed.start, typed.end)).toBe("2026-09-29");
+    expect(autoDate("!", 1, NOW)).toEqual({ text: "!(2026-09-29)", start: 2, end: 12 });
+    // "감사합니다!!" is punctuation, and so is "!!!".
+    expect(autoDate("감사합니다!", 6, NOW)).toBeNull();
+    expect(autoDate("!!", 2, NOW)).toBeNull();
+    expect(autoDate("no bang", 7, NOW)).toBeNull();
+    expect(autoDate("", 0, NOW)).toBeNull();
   });
 
   it("filters with date: and has:date", () => {

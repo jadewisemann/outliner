@@ -19,7 +19,7 @@ type Props = {
   keymap: Keymap;
 };
 
-/** Pure rendering; every behaviour lives in `useOutline`. */
+/** Pure rendering; the behaviour lives in `useOutline`, plus `useTouchBar` and `useSwipe` for touch. */
 export function Outline({ store, scrollRef, onTagClick, onDocLinkClick, onItemLinkClick, onMoveRequest, keymap }: Props) {
   const outline = useOutline(store, scrollRef, onTagClick, onDocLinkClick, onItemLinkClick, keymap);
   const { rows, window, focus, noteFocus, completion, dropSpot } = outline;

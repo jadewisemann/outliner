@@ -111,9 +111,10 @@ function within(value: string, now: number, stampOf: (node: Node) => number): Pr
 }
 
 /**
- * `date:today`, `date:overdue` (before today), `date:7d` (today through the
- * next seven days), `date:2026-09-29` (that day). Dynalist's rows carry dates
- * in their text, so this reads the first date written in the row.
+ * `date:today`, `date:tomorrow`, `date:overdue` (before today), `date:7d`
+ * (today through the next seven days), `date:2026-09-29` (that day).
+ * Dynalist's rows carry dates in their text, so this reads the first date
+ * written in the row.
  */
 function onDate(value: string, now: number): Predicate | null {
   const first = (node: Node) => inlineDates(node.text)[0] ?? null;

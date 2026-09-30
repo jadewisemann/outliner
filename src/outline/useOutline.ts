@@ -16,8 +16,7 @@ import { type Color, type Id, type Node, type Row as RowModel } from "../types";
 import type { DropPosition, RowApi } from "./components/Row";
 import type { MenuSpot } from "./components/RowMenu";
 import { writeField } from "./components/Editable";
-import { dateToken } from "./dates";
-import { autoFormat, isUrl, linkTo, toggleLink, toggleWrap, type Selection, type WrapKind } from "./markdown";
+import { isUrl, linkTo, toggleLink, toggleWrap, type Selection, type WrapKind } from "./markdown";
 import {
   appendChild,
   bulkRemove,
@@ -33,18 +32,16 @@ import {
   rowBefore,
   splitAt
 } from "./tree";
+import { useAutoFormat } from "./useAutoFormat";
 import { useCompletion, type Completion } from "./useCompletion";
 import { useLive } from "./useLive";
 import { useRowDrag } from "./useRowDrag";
 import { useRowMenu } from "./useRowMenu";
 import { useRowSelection } from "./useRowSelection";
-import { useVirtualRows } from "./useVirtualRows";
+import { useVirtualRows, type RowWindow } from "./useVirtualRows";
 
-// Row.tsx and the palette reach these through here, from before they moved.
-export type { Choice, Completion } from "./useCompletion";
-
-/** Enough to put back a markdown prefix the editor swallowed one keystroke ago. */
-type AutoUndo = { rowId: Id; prefix: string; node?: Partial<Node>; parentId?: Id; parent?: Partial<Node> };
+// Row.tsx reaches `Choice` through here, from before it moved.
+export type { Choice } from "./useCompletion";
 
 const WRAP_ACTIONS: [Action, WrapKind][] = [
   ["bold", "bold"],
@@ -77,7 +74,7 @@ export type OutlineView = {
   containerRef: RefObject<HTMLDivElement>;
   nudge: Nudge;
   rows: RowModel[];
-  window: { start: number; end: number; padTop: number; padBottom: number };
+  window: RowWindow;
   activeId: Id | null;
   swipe: (id: Id, direction: 1 | -1) => void;
   selected: Set<Id>;
@@ -97,12 +94,16 @@ export type OutlineView = {
 };
 
 /**
- * Everything the outline does — selection, keyboard, drag & drop, zoom — as
- * one hook. The component renders what comes out of here and nothing else.
+ * The outline's behaviour, assembled into the one view `Outline` renders.
+ * Selection, drag & drop, the row menu, completion and auto-formatting are
+ * hooks of their own (`useRowSelection`, `useRowDrag`, `useRowMenu`,
+ * `useCompletion`, `useAutoFormat`); the row keyboard, notes, zoom,
+ * attachments, the touch edits and the `api` handed to every row stay here.
  *
  * Handlers live for the lifetime of the component (a new `api` object per
- * keystroke would defeat the memo on every row), so the latest rows, doc and
- * selection are read through refs rather than baked into closures.
+ * keystroke would defeat the memo on every row), so they read the latest rows,
+ * doc, workspace, zoom and focus through `live` (`useLive`), and the keymap
+ * through `keys`, rather than baking them into closures.
  */
 export function useOutline(
   store: Store,
@@ -118,7 +119,6 @@ export function useOutline(
 
   const containerRef = useRef<HTMLDivElement>(null);
   const noteSeq = useRef(0);
-  const autoUndo = useRef<AutoUndo | null>(null);
 
   const live = useLive({ rows, doc, workspace: store.workspace, zoomId: view.zoomId, focus });
   const drag = useRowDrag(live, edit);
@@ -145,6 +145,7 @@ export function useOutline(
   );
 
   const completions = useCompletion(live, applyText);
+  const autoFormat = useAutoFormat(live, edit, completions.clear);
 
   /**
    * Pasting an image uploads it and leaves a reference behind.
@@ -231,23 +232,8 @@ export function useOutline(
       // closes, which is why this runs first.
       if (completions.onKeyDown(event, element, row)) return;
 
-      // One Backspace puts back a prefix the editor swallowed. Without it the
-      // only way out of an unwanted heading is to notice which key did it.
-      const swallowed = autoUndo.current;
-      if (event.key === "Backspace" && noRange && caret === 0 && swallowed?.rowId === row.id) {
-        stop();
-        autoUndo.current = null;
-        const restored = swallowed.prefix + element.value;
-        writeField(element, restored, swallowed.prefix.length);
-        edit((current) => {
-          const reverted = patchNode(current, row.id, { text: restored, ...swallowed.node });
-          return swallowed.parentId && swallowed.parent
-            ? patchNode(reverted, swallowed.parentId, swallowed.parent)
-            : reverted;
-        });
-        return;
-      }
-      if (event.key !== "Backspace") autoUndo.current = null;
+      // Before every binding, since any key but Backspace also makes it forget the prefix.
+      if (autoFormat.undoPrefix(event, element, row)) return;
 
       const bound = (action: Action) => matches(event, keys.current[action]);
 
@@ -297,51 +283,8 @@ export function useOutline(
         return;
       }
 
-      // `!!` writes today's date the way Dynalist does, `!(YYYY-MM-DD)`, with
-      // the date itself selected so typing replaces it and → keeps it. Only
-      // at the start of a word: "감사합니다!!" is punctuation, not a date.
-      if (
-        event.key === "!" &&
-        noRange &&
-        caret > 0 &&
-        element.value[caret - 1] === "!" &&
-        (caret === 1 || /\s/.test(element.value[caret - 2]))
-      ) {
-        stop();
-        const token = dateToken(Date.now());
-        const text = element.value.slice(0, caret - 1) + token + element.value.slice(caret);
-        writeField(element, text, caret + 1, caret + 1 + token.length - 3);
-        edit((current) => patchNode(current, row.id, { text }));
-        completions.clear();
-        return;
-      }
-
-      // Markdown as you type. Fires on the space that completes the prefix,
-      // and the space itself is never inserted — it was punctuation, not text.
-      if (event.key === " " && noRange) {
-        const applied = autoFormat(element.value, caret);
-        if (applied) {
-          stop();
-          const node = live.current.doc.nodes[row.id];
-          const parentId = applied.parent ? node?.parent ?? undefined : undefined;
-          autoUndo.current = {
-            rowId: row.id,
-            prefix: applied.prefix,
-            // Whatever the rule is about to overwrite, not a fixed field: a
-            // prefix can set a heading, a quote, or a flag on the parent.
-            node: applied.node ? pick(node, applied.node) : undefined,
-            parentId,
-            parent: parentId ? pick(live.current.doc.nodes[parentId], applied.parent!) : undefined
-          };
-          writeField(element, applied.text, 0);
-          edit((current) => {
-            const patched = patchNode(current, row.id, { text: applied.text, ...applied.node });
-            return parentId ? patchNode(patched, parentId, applied.parent!) : patched;
-          });
-          completions.clear();
-          return;
-        }
-      }
+      // After the bindings above, so `!!` or Space cannot take a key bound to one of them.
+      if (autoFormat.expand(event, element, row)) return;
 
       if (bound("zoomIn")) {
         stop();
@@ -425,7 +368,17 @@ export function useOutline(
         rowSelection.select(row.id);
       }
     },
-    [edit, requestFocus, focusNote, rowSelection.select, zoom, zoomOut, completions.onKeyDown, completions.clear]
+    [
+      edit,
+      requestFocus,
+      focusNote,
+      rowSelection.select,
+      zoom,
+      zoomOut,
+      completions.onKeyDown,
+      autoFormat.undoPrefix,
+      autoFormat.expand
+    ]
   );
 
   const onNoteKeyDown = useCallback(
@@ -619,11 +572,4 @@ export function useOutline(
       edit((current) => appendChild(current, live.current.zoomId));
     }
   };
-}
-
-/** The values a patch is about to overwrite, so one Backspace can put them back. */
-function pick(node: Node | undefined, patch: Partial<Node>): Partial<Node> {
-  const out: Record<string, unknown> = {};
-  for (const key of Object.keys(patch)) out[key] = node?.[key as keyof Node];
-  return out as Partial<Node>;
 }

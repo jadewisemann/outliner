@@ -1,3 +1,5 @@
+import type { Selection } from "./markdown";
+
 /**
  * Dates, written the way Dynalist writes them: `!(2026-09-29)`, optionally
  * with a time `!(2026-09-29 14:30)`, and anything after that inside the
@@ -84,4 +86,19 @@ export function dateToken(now: number, offsetDays = 0): string {
   const at = new Date(midnight(now) + offsetDays * DAY_MS + DAY_MS / 2);
   const pad = (value: number) => String(value).padStart(2, "0");
   return `!(${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())})`;
+}
+
+/**
+ * `!!` as today's date, `!(YYYY-MM-DD)`, read as the second `!` is typed: the
+ * first one is left of the caret and becomes the token. The date itself comes
+ * back selected, so typing replaces it and → keeps it. Only at the start of a
+ * word: "감사합니다!!" is punctuation, not a date.
+ */
+export function autoDate(text: string, caret: number, now: number): Selection | null {
+  if (caret === 0 || text[caret - 1] !== "!") return null;
+  if (caret > 1 && !/\s/.test(text[caret - 2])) return null;
+  const token = dateToken(now);
+  // The token starts where the first `!` was, so the date starts past its `!(`.
+  const start = caret + 1;
+  return { text: text.slice(0, caret - 1) + token + text.slice(caret), start, end: start + token.length - 3 };
 }

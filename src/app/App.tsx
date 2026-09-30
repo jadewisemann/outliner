@@ -1,26 +1,30 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { useStore } from "../store";
-import { ancestors, reveal, setCollapsedDeep } from "../outline/tree";
-import { findNode } from "../search/links";
-import { docList, hasContent } from "../types";
+import { ancestors } from "../outline/tree";
+import { hasContent } from "../types";
 import { Outline } from "../outline/components/Outline";
 import { Palette } from "../palette/components/Palette";
 import { buildCommands } from "../palette/commands";
 import { SearchPanel } from "../search/components/SearchPanel";
-import { completeGithubLogin, fetchGithubLogin } from "../sync/api/githubAuth";
 import { HistoryPanel } from "../sync/components/HistoryPanel";
 import { SyncBadge, SyncSettings, type OauthPrefill } from "../sync/components/SyncSettings";
 import { useTransfer } from "../transfer/useTransfer";
 import { IMPORT_ACCEPT } from "../transfer/formats";
-import { applyAppearance, forgetShare, loadAppearance, saveAppearance, sharedText, type Appearance } from "./appearance";
 import { Backlinks } from "./Backlinks";
 import { Icon } from "./Icon";
 import { useDay } from "../shared/useDay";
-import { describe, matches, resolveKeymap, saveKeymap, storedKeymap, type Keymap } from "../shared/keymap";
+import { chordOf } from "../shared/keymap";
 import { Keys } from "./Keys";
+import { jumpToNode, openDocByTitle } from "./navigate";
 import { Settings } from "./Settings";
 import { Shortcuts } from "./Shortcuts";
 import { Sidebar } from "./Sidebar";
+import { useAppearance } from "./useAppearance";
+import { useKeymapSetting } from "./useKeymapSetting";
+import { useOauthReturn } from "./useOauthReturn";
+import { useShareCapture } from "./useShareCapture";
+import { useTheme } from "./useTheme";
+import { useWindowKeys } from "./useWindowKeys";
 
 type Overlay =
   | { kind: "palette"; query: string }
@@ -37,47 +41,13 @@ export function App() {
   const day = useDay();
   const [overlay, setOverlay] = useState<Overlay>(null);
   const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth > 900);
-  const [theme, setTheme] = useState<"light" | "dark">(
-    () =>
-      (localStorage.getItem("outliner:theme") as "light" | "dark" | null) ??
-      // A machine in dark mode should not be greeted with a white flash.
-      (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light")
-  );
-  const [appearance, setAppearance] = useState<Appearance>(loadAppearance);
-  // Until the workspace carries a table, whatever this device stored before
-  // the setting started travelling still applies (ADR-0008). Read once: it is
-  // a fallback, not a second source of truth.
-  const [deviceKeymap] = useState<Keymap | null>(storedKeymap);
+  const { theme, toggleTheme } = useTheme();
+  const { appearance, setAppearance } = useAppearance();
+  const { keymap, setKeymap } = useKeymapSetting(store.keymap, store.setKeymap);
   const fileInput = useRef<HTMLInputElement>(null);
   const folderInput = useRef<HTMLInputElement | null>(null);
   const filterInput = useRef<HTMLInputElement>(null);
   const scroller = useRef<HTMLElement>(null);
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    localStorage.setItem("outliner:theme", theme);
-  }, [theme]);
-
-  useEffect(() => {
-    applyAppearance(appearance);
-    saveAppearance(appearance);
-  }, [appearance]);
-
-  // The workspace's table when there is one, this device's old one until then.
-  const keymap = useMemo(
-    () => (store.keymap ? resolveKeymap(store.keymap.keys) : (deviceKeymap ?? resolveKeymap(null))),
-    [store.keymap, deviceKeymap]
-  );
-
-  const setKeymap = useCallback(
-    (next: Keymap) => {
-      // Kept on the device too, so a rebinding made before this workspace has
-      // ever synced still survives a reload.
-      saveKeymap(next);
-      store.setKeymap(next);
-    },
-    [store.setKeymap]
-  );
 
   // Stable identities: these reach every row and the window listener, and a
   // new function each render would defeat the memo on Row.
@@ -97,101 +67,21 @@ export function App() {
             exportAs: transfer.exportAs,
             importFile: () => fileInput.current?.click(),
             importFolder: () => folderInput.current?.click(),
-            toggleTheme: () => setTheme((current) => (current === "dark" ? "light" : "dark")),
+            toggleTheme,
             toggleSidebar: () => setSidebarOpen((open) => !open),
             openSync: () => setOverlay({ kind: "sync" }),
             openHistory: () => setOverlay({ kind: "history" }),
             openSettings: () => setOverlay({ kind: "settings" }),
             openKeys: () => setOverlay({ kind: "keys" }),
             openShortcuts: () => setOverlay({ kind: "shortcuts" })
-          })
+          }, keymap)
         : [],
-    [store, transfer.exportAs, openPalette]
+    [store, transfer.exportAs, openPalette, toggleTheme, keymap]
   );
 
-  // Launched from a phone's share sheet: file what was shared into the inbox,
-  // once the workspace is actually loaded. Where it lands is the store's
-  // decision, not this effect's — a capture has to go somewhere the user can
-  // predict, and "the document that happened to be open" was not that.
-  const captured = useRef(false);
-  useEffect(() => {
-    if (!store.ready || captured.current) return;
-    const shared = sharedText(window.location.search);
-    if (!shared) return;
-    captured.current = true;
-    forgetShare();
-    storeRef.current.docs.capture(shared);
-  }, [store.ready]);
-
-  // Returning from GitHub's consent screen: finish the exchange and land the
-  // user in the sync panel with the token already in place.
-  useEffect(() => {
-    void completeGithubLogin().then(async (token) => {
-      if (!token) return;
-      const login = await fetchGithubLogin(token);
-      setOverlay({ kind: "sync", oauth: { token, login } });
-    });
-  }, []);
-
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      // The IME owns the keyboard while a syllable is being composed.
-      if (event.isComposing) return;
-      const bound = (action: keyof Keymap) => matches(event, keymap[action]);
-
-      // ⌘K belongs to "link" inside a row, the way it does in every markdown
-      // editor, so the palette takes the editor's keys instead.
-      if (bound("palette") || bound("commands")) {
-        event.preventDefault();
-        openPalette(bound("commands") ? ">" : "");
-        return;
-      }
-      if (bound("search")) {
-        event.preventDefault();
-        openSearch();
-        return;
-      }
-      // The filter narrows the document in place rather than opening a result
-      // list: the rows stay where they are and stay editable.
-      if (bound("filter")) {
-        event.preventDefault();
-        filterInput.current?.focus();
-        filterInput.current?.select();
-        return;
-      }
-      if (bound("help")) {
-        event.preventDefault();
-        setOverlay({ kind: "shortcuts" });
-        return;
-      }
-      if (bound("undo") || bound("redo")) {
-        // Plain inputs (search, rename) keep their native undo.
-        if ((event.target as HTMLElement).tagName === "INPUT") return;
-        event.preventDefault();
-        if (bound("redo")) storeRef.current.redo();
-        else storeRef.current.undo();
-        return;
-      }
-      // Folding the whole zoom is a view action, not a row action, so it lives
-      // here next to the other window-wide keys rather than in the row handler.
-      if (bound("collapseAll") || bound("expandAll")) {
-        event.preventDefault();
-        const collapsed = bound("collapseAll");
-        storeRef.current.edit(
-          (doc) => setCollapsedDeep(doc, storeRef.current.view.zoomId, collapsed),
-          { transient: true }
-        );
-        return;
-      }
-      if (bound("sidebar")) {
-        event.preventDefault();
-        setSidebarOpen((open) => !open);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [openSearch, openPalette, keymap]);
+  useShareCapture(store.ready, storeRef);
+  useOauthReturn((oauth) => setOverlay({ kind: "sync", oauth }));
+  useWindowKeys({ keymap, openPalette, openSearch, setOverlay, setSidebarOpen, filterInput, storeRef });
 
   if (!store.ready) return <div className="booting">불러오는 중…</div>;
 
@@ -223,7 +113,7 @@ export function App() {
           </p>
         ) : null}
         <header className="topbar">
-          <button type="button" className="ghost" title={`사이드바 (${describe("Mod+\\")})`} onClick={() => setSidebarOpen((open) => !open)}>
+          <button type="button" className="ghost" title={withKey("사이드바", keymap.sidebar)} onClick={() => setSidebarOpen((open) => !open)}>
             <Icon name="menu" />
           </button>
 
@@ -245,14 +135,14 @@ export function App() {
             <SyncBadge store={store} onClick={() => setOverlay({ kind: "sync" })} />
             {/*
               Undo, redo, fold and unfold used to sit here too. In an app where
-              ⌘P reaches every command, a permanent seat in the chrome is not
-              what makes a feature available — it is only what makes the bar
-              look like a toolbar from another decade.
+              the palette reaches every command, a permanent seat in the chrome
+              is not what makes a feature available — it is only what makes the
+              bar look like a toolbar from another decade.
             */}
-            <button type="button" className="ghost" title={`팔레트 (${describe("Mod+P")})`} onClick={() => openPalette()}>
+            <button type="button" className="ghost" title={withKey("팔레트", keymap.palette)} onClick={() => openPalette()}>
               <Icon name="command" />
             </button>
-            <button type="button" className="ghost" title={`검색 (${describe("Mod+Shift+F")})`} onClick={() => openSearch()}>
+            <button type="button" className="ghost" title={withKey("검색", keymap.search)} onClick={() => openSearch()}>
               <Icon name="search" />
             </button>
 
@@ -281,14 +171,14 @@ export function App() {
                   폴더 가져오기
                 </button>
                 <hr />
-                <button type="button" onClick={() => setTheme(theme === "dark" ? "light" : "dark")}>
+                <button type="button" onClick={toggleTheme}>
                   {theme === "dark" ? "밝은 테마" : "어두운 테마"}
                 </button>
                 <button type="button" onClick={() => setOverlay({ kind: "sync" })}>
                   동기화 설정
                 </button>
                 <button type="button" onClick={() => setOverlay({ kind: "shortcuts" })}>
-                  단축키 ({describe("Mod+/")})
+                  {withKey("단축키", keymap.help)}
                 </button>
               </div>
             </details>
@@ -299,7 +189,7 @@ export function App() {
           <input
             ref={filterInput}
             className="filter-input"
-            placeholder={`이 문서 안에서 거르기 (${describe("Mod+F")}) — is:incomplete, date:today, #태그, -제외`}
+            placeholder={`${withKey("이 문서 안에서 거르기", keymap.filter)} — is:incomplete, date:today, #태그, -제외`}
             value={view.filter}
             onChange={(event) => store.setView({ filter: event.target.value })}
             onKeyDown={(event) => {
@@ -405,18 +295,12 @@ export function App() {
   );
 }
 
-/** `[[Title]]` opens the matching document, creating it when missing. */
-function openDocByTitle(store: ReturnType<typeof useStore>, title: string) {
-  const match = docList(store.workspace).find((doc) => doc.title.toLowerCase() === title.toLowerCase());
-  if (match) store.docs.select(match.id);
-  else store.docs.create(title);
-}
-
-/** `((id))` and backlinks both land the caret on a row wherever it lives. */
-function jumpToNode(store: ReturnType<typeof useStore>, id: string) {
-  const found = findNode(store.workspace, id);
-  if (!found) return;
-  store.docs.select(found.docId, { zoomId: store.workspace.docs[found.docId].rootId });
-  store.edit((doc) => reveal(doc, id), { transient: true });
-  store.requestFocus(id);
+/**
+ * A control's label with the chord that does the same thing, read from the
+ * active table like the help panel's: "팔레트 (⌘P)", or just "팔레트" when the
+ * table leaves the action without a key.
+ */
+function withKey(label: string, spec: string): string {
+  const chord = chordOf(spec);
+  return chord ? `${label} (${chord})` : label;
 }

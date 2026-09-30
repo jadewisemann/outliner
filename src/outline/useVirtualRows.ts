@@ -114,7 +114,6 @@ export function useVirtualRows(
     });
     // Deliberately keyed on the row count: pruning on every keystroke would
     // cost more than the entries it reclaims.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rowCount]);
 
   const onRendered = useCallback(() => {

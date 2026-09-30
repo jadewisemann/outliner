@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 
 /**
- * `$$…$$`, rendered by KaTeX — the one runtime dependency in the project, and
- * the only one loaded on demand.
+ * `$$…$$`, rendered by KaTeX — the project's one runtime dependency besides
+ * react and react-dom, and the only one loaded on demand (ADR-0004).
  *
  * It is roughly four times the size of the whole app, which is why it is
  * behind a dynamic import: a workspace with no formulas in it never fetches

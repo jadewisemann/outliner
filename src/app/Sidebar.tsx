@@ -31,11 +31,11 @@ export function Sidebar({ store, onTagClick, onSearch }: Props) {
   const [open, setOpen] = useState<Set<Id>>(loadOpen);
   const [dropTarget, setDropTarget] = useState<{ id: Id; into: boolean } | null>(null);
 
-  // Scans every node in every document, and `docs` gets a new identity on each
-  // keystroke — deferring keeps that work off the typing path.
+  // Both scan every node in every document, and `workspace` gets a new identity
+  // on each keystroke — deferring keeps that work off the typing path.
   const settled = useDeferredValue(workspace);
   const tags = useMemo(() => allTags(settled).slice(0, 20), [settled]);
-  const pinned = useMemo(() => bookmarks(store), [store]);
+  const pinned = useMemo(() => bookmarks(settled), [settled]);
   const rows = docTree(workspace, (id) => open.has(id));
   const bin = trashed(workspace);
   const [binOpen, setBinOpen] = useState(false);
@@ -105,7 +105,7 @@ export function Sidebar({ store, onTagClick, onSearch }: Props) {
             setDropTarget(null);
           }}
         >
-          {rows.map(({ doc, depth }, index) => {
+          {rows.map(({ doc, depth }) => {
             const id = doc.id;
             const active = id === workspace.activeDocId && doc.kind === "doc";
             const folder = doc.kind === "folder";

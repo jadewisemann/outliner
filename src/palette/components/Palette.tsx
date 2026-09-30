@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { reveal } from "../../outline/tree";
 import { Panel } from "../../shared/components/Panel";
 import type { Store } from "../../store";
-import { modeOf, recentDocs, suggest, termOf, type Command, type Suggestion } from "../palette";
+import { modeOf, recentDocs, suggest, termOf, type Command, type Mode, type Suggestion } from "../palette";
 
 type Props = {
   store: Store;
@@ -13,7 +13,7 @@ type Props = {
   onSearch: (query: string) => void;
 };
 
-const HINTS: Record<ReturnType<typeof modeOf>, string> = {
+const HINTS: Record<Mode, string> = {
   mixed: "문서와 항목 · `>` 명령 · `#` 태그",
   command: "명령",
   tag: "태그",
@@ -22,8 +22,9 @@ const HINTS: Record<ReturnType<typeof modeOf>, string> = {
 
 /**
  * One overlay for going somewhere and for doing something, the way a code
- * editor's palette works. A prefix picks which: `>` for commands, `#` for
- * tags, nothing for documents and items.
+ * editor's palette works. A prefix picks which: `>` for commands, `>>` for the
+ * document to move the focused item into, `#` for tags, nothing for documents
+ * and items.
  */
 export function Palette({ store, commands, initialQuery, onClose, onSearch }: Props) {
   const [query, setQuery] = useState(initialQuery);

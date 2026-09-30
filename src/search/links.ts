@@ -13,7 +13,7 @@ import { docList, type Id, type Workspace } from "../types";
  * the row it points at.
  */
 
-export const ITEM_LINK = /\(\(([\w-]{1,64})\)\)/g;
+const ITEM_LINK = /\(\(([\w-]{1,64})\)\)/g;
 const DOC_LINK = /\[\[([^\]\n]+)\]\]/g;
 
 export type Placed = { docId: Id; docTitle: string; nodeId: Id; text: string };

@@ -1,5 +1,4 @@
-import { migrate } from "../storage/migrate";
-import { readWorkspace } from "../storage/validate";
+import { readStored } from "../storage/migrate";
 import { linkChildren, parseOutlineLines } from "../outline/tree";
 import { keyBetween } from "../shared/order";
 import { makeNode, newId, stamp, type Doc, type Id, type Node, type Workspace } from "../types";
@@ -88,7 +87,7 @@ function escapeXml(value: string): string {
  * image would become a document full of junk, because an unrecognised file
  * falls through to plain text below rather than being refused.
  */
-export const IMPORT_EXTENSIONS = [".md", ".markdown", ".txt", ".opml", ".xml", ".json"];
+const IMPORT_EXTENSIONS = [".md", ".markdown", ".txt", ".opml", ".xml", ".json"];
 
 /** The same list in the spelling a file input wants. */
 export const IMPORT_ACCEPT = IMPORT_EXTENSIONS.join(",");
@@ -234,7 +233,7 @@ export function parseBackup(content: string): Workspace | null {
     const parsed = JSON.parse(content);
     const raw = parsed?.workspace ?? parsed;
     if (!isKnownVersion(raw)) return null;
-    return readWorkspace(migrate(raw));
+    return readStored(raw);
   } catch {
     return null;
   }

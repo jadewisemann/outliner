@@ -302,7 +302,16 @@ export function describe(spec: string): string {
   return arrows(spec.replace("Mod+", "⌘").replace("Shift+", "⇧").replace("Alt+", "⌥").replace("Ctrl+", "⌃"));
 }
 
-export function isMac(): boolean {
+/**
+ * The chord to show beside a control or a command, read from the active
+ * table, or `undefined` when the table leaves that action without a key. A
+ * hard-coded label goes wrong the moment a preset or a rebinding moves the key.
+ */
+export function chordOf(spec: string): string | undefined {
+  return spec === UNBOUND ? undefined : describe(spec);
+}
+
+function isMac(): boolean {
   return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 }
 

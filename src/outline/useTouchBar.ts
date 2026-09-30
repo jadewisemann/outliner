@@ -5,8 +5,9 @@ import { isNative } from "../shared/native";
  * Where to put a bar that has to sit on top of the software keyboard.
  *
  * A phone has no Tab key, so indenting — the one thing an outline is for — is
- * otherwise unreachable. The bar only exists where that is true: a coarse
- * pointer, and a row actually being edited.
+ * otherwise unreachable. The bar only exists where that is true: a touch-first
+ * device (a coarse pointer, or the native phone shell whatever its pointer
+ * reports — see `isTouchFirst`), and a row actually being edited.
  *
  * `position: fixed` pins to the layout viewport, which the keyboard covers, so
  * the offset comes from `visualViewport` — the part of the page still visible.
