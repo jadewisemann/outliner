@@ -25,14 +25,16 @@ DESIGN.md(및 하위 문서)에 반영한다.
 - [x] **3. 폴더 백엔드** — `remote/file.ts` + `folder.rs`, `shouldPush`의 `unguarded`·`rewrite` 보정, 설정 패널.
 - [x] **4. 무료 서버** — `server/cloudflare/` (Durable Object, 1MB 조각 저장).
 - [x] **5. 파이프라인** — `native.yml`(빌드 → 서명 분리 → 스모크 → 증거 → 초안 릴리스), `check.yml`(브랜치 검사).
-- [x] **6. CI 통과와 실제 구동** — 데스크톱 셋·Android 빌드 green, Linux·Android 스모크 green.
+- [x] **6. CI 통과와 실제 구동** — 데스크톱 셋·Android 빌드 green, Linux·Android 구동 스모크와 macOS·Windows
+      실행 스모크 green.
 - [x] **7. 독립 리뷰와 반영** — 데이터 손실 경로 셋(읽지 못한 파일 덮어쓰기, 사본 삭제, 로컬 사본 병합)과
       멈춤 경로 둘을 고쳤다. ADR-0011 「리뷰 후기」.
 - [x] **8. Dynalist 날짜** — 렌더·검색·`!!` 입력·팔레트 명령.
 - [ ] **9. Android 서명 키** — 사용자가 키스토어를 한 번 만들어 저장소 비밀값에 넣는다(README
       「Android 서명 키」). 넣기 전까지는 빌드마다 키가 달라 업데이트 설치가 안 된다.
 - [ ] **10. 실사용 관찰** — iCloud Drive·Dropbox 중 하나로 두 컴퓨터를 붙여 충돌 사본이 실제로 어떤 이름으로
-      생기는지, macOS·Windows 앱이 첫 실행에서 문제없는지 본다. 자동 검증이 닿지 않는 곳이다.
+      생기는지 본다. macOS·Windows 앱의 실행과 IPC·디스크 쓰기는 CI의 실행 스모크가 확인하지만, 입력과
+      서명 없는 설치 경고는 자동 검증이 닿지 않는 곳이다.
 
 **완료 기준.** 태그 하나로 macOS·Windows·Linux 설치 파일과 Android APK가 초안 릴리스에 올라오고, 폴더
 백엔드로 붙인 두 컴퓨터와 GitHub으로 붙인 폰이 같은 워크스페이스로 수렴한다. 앞의 것은 CI로 확인했고,

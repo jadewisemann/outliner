@@ -89,8 +89,8 @@ jobs:
       - run: npm run tauri -- icon public/icon.svg
       - run: npm run tauri -- build ${{ matrix.args }}
       # Run the real app, not just build it (docs/design/native.md 「검증」).
-      # Linux and Windows drive it through tauri-driver; macOS has no WebDriver
-      # for WKWebView, so it launches and checks what the app wrote to disk.
+      # Linux drives it through tauri-driver; macOS and Windows launch it and
+      # check what the app wrote to disk.
       - name: Native smoke test (Linux)
         if: matrix.name == 'linux'
         run: |
@@ -100,14 +100,9 @@ jobs:
       - name: Native smoke test (Windows)
         if: matrix.name == 'windows'
         shell: bash
-        run: |
-          cargo install tauri-driver --locked
-          # The Edge driver has to match the installed WebView2 exactly.
-          cargo install --git https://github.com/chippers/msedgedriver-tool
-          msedgedriver-tool
-          export NATIVE_DRIVER="$PWD/msedgedriver.exe"
-          export OUTLINER_APP_DATA="$APPDATA/io.github.jadewisemann.outliner"
-          bash e2e/native/run-driver.sh src-tauri/target/release/outliner.exe evidence
+        # Launch-and-check like macOS. Driving WebView2 through tauri-driver +
+        # msedgedriver never attached (DevToolsActivePort), see native.md 「검증」.
+        run: bash e2e/native/launch.sh src-tauri/target/release/outliner.exe "$APPDATA/io.github.jadewisemann.outliner" evidence
       - name: Native smoke test (macOS)
         if: matrix.name == 'macos'
         run: |

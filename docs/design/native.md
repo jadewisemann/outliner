@@ -92,7 +92,7 @@ Android 15부터 앱은 화면 끝까지 그려진다. 그대로 두면 머리�
 
 ```
 shell-tests ─┬─ desktop (macOS universal · Windows · Linux) ──┬─ evidence
-             │     └ Linux: 실제 앱 스모크                       │
+             │     └ Linux: 구동 스모크 · macOS·Windows: 실행 스모크 │
              └─ android (서명 전 APK) ─ android-sign ─ android-smoke ┘
                                               └──────── release (v* 태그일 때)
 ```
@@ -113,15 +113,18 @@ shell-tests ─┬─ desktop (macOS universal · Windows · Linux) ──┬─
 | `folder.rs` 단독 테스트 | CAS, 사본 이름 규칙, 바뀐 사본은 옮기지 않음, 읽지 못한 파일 비켜 두기, 로컬 사본, 허용 목록 | `rustc --test`, CI의 `shell-tests` |
 | `src/sync/__tests__/file.test.ts` | 웹 쪽 폴더 백엔드와 `shouldPush` — 덮어쓰인 파일 복구, 사본 병합, 암호 걸린 사본 건너뛰기, 캐시 | Vitest |
 | `e2e/native/smoke.mjs` | **실제 Linux 앱**을 tauri-driver로 구동. IPC, 입력, 로컬 사본 파일, 허용되지 않은 폴더 거절, `outliner.json` 쓰기, 충돌 사본 병합과 이동 | CI `desktop (linux)` |
+| `e2e/native/launch.sh` | **실제 macOS·Windows 앱**을 실행만 한다. 앱이 살아 있고, 페이지가 첫 저장을 IPC로 보내 셸이 로컬 사본(`workspace.json`)을 디스크에 썼는지 | CI `desktop (macos)`·`desktop (windows)` |
 | `e2e/native/android.sh` | **에뮬레이터에 설치한 APK**. 실행, 입력, 편집 중 터치 바, 머리말이 상태 표시줄 밑에 있지 않은지, 앱 충돌과 페이지 오류 | CI `android-smoke` |
 
 스모크 테스트의 스크린샷과 결과는 `ci-evidence/<이름>` 브랜치에 남는다. 아티팩트 저장소에 닿지 못하는
 환경에서도 git만으로 읽을 수 있게 하기 위해서다.
 
-**확인하지 못한 것:** macOS와 Windows 앱은 빌드까지만 확인했다. macOS의 WKWebView에는 WebDriver가 없고,
-Windows는 WebView2 버전에 맞는 드라이버를 러너에서 맞추는 일이 따로 필요하다. 둘 다 웹뷰가 이미 e2e로
-검증된 엔진(Safari 계열, Chromium 계열)이라 위험은 낮다고 판단했다. 처음 실행할 때 문제가 보이면
-여기에 기록한다.
+**macOS와 Windows는 입력까지 구동하지 않는다.** macOS의 WKWebView에는 WebDriver가 없다. Windows는
+tauri-driver와 WebView2 버전에 맞춘 msedgedriver로 시도했지만, 드라이버가 Tauri 웹뷰에 붙지 못하고
+60초 뒤 `DevToolsActivePort file doesn't exist`로 세션 생성에 실패했다(2026-09-29, WebView2 153).
+그래서 두 플랫폼은 `launch.sh`로 실행과 IPC·디스크 쓰기까지만 확인한다. 입력·폴더 백엔드는 같은 웹
+코드를 Linux 스모크와 브라우저 e2e(Safari 계열, Chromium 계열 엔진)가 이미 확인하므로, 남는 위험은
+낮다고 판단했다.
 
 ### Android 스모크가 알아낸 것
 

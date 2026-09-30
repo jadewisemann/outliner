@@ -21,9 +21,8 @@ const [application, evidence = "evidence"] = process.argv.slice(2);
 if (!application) throw new Error("usage: smoke.mjs <app binary> [evidence dir]");
 const DRIVER = process.env.WEBDRIVER_URL ?? "http://127.0.0.1:4444";
 const folder = join(tmpdir(), `outliner-native-${Date.now()}`);
-// Where the shell keeps its data (Tauri's app_data_dir): given by the caller
-// on Windows, Linux's XDG location otherwise.
-const appData = process.env.OUTLINER_APP_DATA ?? join(process.env.HOME ?? "", ".local/share/io.github.jadewisemann.outliner");
+// Where the shell keeps its data (Tauri's app_data_dir): Linux's XDG location.
+const appData = join(process.env.HOME ?? "", ".local/share/io.github.jadewisemann.outliner");
 mkdirSync(evidence, { recursive: true });
 
 async function call(method, path, body) {
