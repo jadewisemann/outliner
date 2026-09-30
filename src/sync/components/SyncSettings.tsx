@@ -1,11 +1,14 @@
-import { useEffect, useState } from "react";
 import type { Store } from "../../store";
 import { Panel } from "../../shared/components/Panel";
-import { allowFolder, pickFolder, type SyncConfig } from "../api/remote";
-import { nativeInfo } from "../../shared/native";
-import { beginGithubLogin, createPrivateRepo, fetchOauthClientId } from "../api/githubAuth";
+import { DEFAULT_FOLDER, type SyncStatus } from "../api/remote";
+import { beginGithubLogin } from "../api/githubAuth";
+import type { OauthPrefill } from "../syncForm";
+import { useSyncForm } from "../useSyncForm";
 
-const STATUS_LABEL: Record<string, string> = {
+// Defined beside the form it prefills; exported here too, where the app imports it from.
+export type { OauthPrefill };
+
+const STATUS_LABEL: Record<SyncStatus, string> = {
   off: "동기화 꺼짐",
   idle: "동기화됨",
   syncing: "동기화 중…",
@@ -13,9 +16,6 @@ const STATUS_LABEL: Record<string, string> = {
   error: "동기화 실패",
   locked: "암호가 맞지 않음"
 };
-
-/** Token and prefill handed over after a completed GitHub login. */
-export type OauthPrefill = { token: string; login: string | null };
 
 export function SyncBadge({ store, onClick }: { store: Store; onClick: () => void }) {
   const { status } = store.sync;
@@ -29,54 +29,20 @@ export function SyncBadge({ store, onClick }: { store: Store; onClick: () => voi
 
 export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: OauthPrefill; onClose: () => void }) {
   const config = store.sync.config;
-  const [mode, setMode] = useState<"rest" | "github" | "file">(oauth ? "github" : config?.kind ?? "rest");
-  const [url, setUrl] = useState(config?.kind === "rest" ? config.url : "");
-  const [repo, setRepo] = useState(
-    config?.kind === "github" ? config.repo : oauth?.login ? `${oauth.login}/outliner` : ""
-  );
-  const [path, setPath] = useState(config?.kind === "github" ? config.path : "outliner");
-  const [token, setToken] = useState(oauth?.token ?? (config && config.kind !== "file" ? config.token : ""));
-  const [dir, setDir] = useState(config?.kind === "file" ? config.dir : "");
-  const [folderNote, setFolderNote] = useState("");
-
-  // The folder option needs a real path on disk: the desktop shell has one to
-  // give, a browser tab and a phone do not.
-  const [folders, setFolders] = useState(config?.kind === "file");
-  useEffect(() => {
-    void nativeInfo().then((info) => {
-      if (info && !info.mobile) setFolders(true);
-    });
-  }, []);
-  const [passphrase, setPassphrase] = useState(config?.passphrase ?? "");
-  const [markdown, setMarkdown] = useState(config?.kind === "github" && config.markdown === true);
-
-  // The login button only appears when this deployment has the OAuth function.
-  const [clientId, setClientId] = useState<string | null>(null);
-  const [repoNote, setRepoNote] = useState("");
-  useEffect(() => {
-    void fetchOauthClientId().then(setClientId);
-  }, []);
-
-  const secret = passphrase === "" ? undefined : passphrase;
-  const built: SyncConfig | null =
-    mode === "file"
-      ? dir.trim() !== ""
-        ? { kind: "file", dir: dir.trim(), passphrase: secret }
-        : null
-      : mode === "github"
-      ? /^[^\s/]+\/[^\s/]+$/.test(repo.trim()) && token.trim() !== ""
-        ? {
-            kind: "github",
-            repo: repo.trim(),
-            path: path.trim() || "outliner",
-            token: token.trim(),
-            passphrase: secret,
-            markdown: markdown && secret === undefined ? true : undefined
-          }
-        : null
-      : url.trim() !== ""
-        ? { kind: "rest", url: url.trim(), token: token.trim(), passphrase: secret }
-        : null;
+  const {
+    form,
+    setField,
+    folders,
+    clientId,
+    folderNote,
+    repoNote,
+    canSave,
+    canCreateRepo,
+    pickFolder,
+    createRepo,
+    save
+  } = useSyncForm(store.sync, oauth);
+  const { mode, url, repo, path, token, dir, passphrase, markdown } = form;
 
   return (
     <Panel className="sync-panel" label="기기 간 동기화" onClose={onClose}>
@@ -93,7 +59,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
             type="button"
             className={mode === "rest" ? "mode-on" : ""}
             aria-pressed={mode === "rest"}
-            onClick={() => setMode("rest")}
+            onClick={() => setField("mode", "rest")}
           >
             내 서버 / URL
           </button>
@@ -101,7 +67,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
             type="button"
             className={mode === "github" ? "mode-on" : ""}
             aria-pressed={mode === "github"}
-            onClick={() => setMode("github")}
+            onClick={() => setField("mode", "github")}
           >
             GitHub 저장소
           </button>
@@ -110,7 +76,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
               type="button"
               className={mode === "file" ? "mode-on" : ""}
               aria-pressed={mode === "file"}
-              onClick={() => setMode("file")}
+              onClick={() => setField("mode", "file")}
             >
               이 컴퓨터의 폴더
             </button>
@@ -122,10 +88,11 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
             <p className="sync-note">
               고른 폴더에 <code>outliner.json</code> 파일 하나를 두고, 그 파일을 정본으로 읽고 씁니다. iCloud
               Drive·Dropbox·Google Drive·OneDrive·Syncthing이 이미 동기화하는 폴더를 고르면 그 서비스가 파일을
-              다른 컴퓨터로 옮겨 주고, 병합은 이 앱이 합니다. 서비스가 충돌 사본(<code>outliner (1).json</code>{" "}
-              같은 파일)을 만들면 그 내용까지 합친 뒤 사본을 지웁니다. 그래서 <strong>이 앱 전용 폴더</strong>를
-              고르세요. 폴더를 공유하지 않으면 이 컴퓨터 안의 백업 사본으로 쓰입니다. 폰에서는 이 방식을 쓸 수
-              없으므로, 폰과 함께 쓰려면 GitHub 저장소나 서버를 고르세요.
+              다른 컴퓨터로 옮겨 주고, 병합은 이 앱이 합니다. 서비스가 충돌 사본(<code>outliner (1).json</code> 같은
+              파일)을 만들면 그 내용까지 합친 뒤, 사본을 지우지 않고 <code>.outliner-merged/</code> 폴더로 옮깁니다.
+              그래서 <strong>이 앱 전용 폴더</strong>를 고르세요. 폴더를 공유하지 않으면 이 컴퓨터 안의 백업
+              사본으로 쓰입니다. 폰에서는 이 방식을 쓸 수 없으므로, 폰과 함께 쓰려면 GitHub 저장소나 서버를
+              고르세요.
             </p>
             <label className="field">
               <span>폴더</span>
@@ -133,22 +100,10 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
                 className="field-input"
                 placeholder="/Users/me/Library/Mobile Documents/com~apple~CloudDocs/Outliner"
                 value={dir}
-                onChange={(event) => setDir(event.target.value)}
+                onChange={(event) => setField("dir", event.target.value)}
               />
             </label>
-            <button
-              type="button"
-              className="ghost repo-create"
-              onClick={() => {
-                void pickFolder()
-                  .then((picked) => {
-                    if (picked) setDir(picked);
-                  })
-                  .catch(() => {
-                    /* the dialog failed to open; the path can still be typed */
-                  });
-              }}
-            >
+            <button type="button" className="ghost repo-create" onClick={pickFolder}>
               폴더 고르기…
             </button>
             {folderNote ? <p className="sync-note">{folderNote}</p> : null}
@@ -168,7 +123,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
                 className="field-input"
                 placeholder="https://example.com/my-outline.json"
                 value={url}
-                onChange={(event) => setUrl(event.target.value)}
+                onChange={(event) => setField("url", event.target.value)}
               />
             </label>
             <label className="field">
@@ -178,7 +133,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
                 type="password"
                 placeholder="Authorization: Bearer 로 전송"
                 value={token}
-                onChange={(event) => setToken(event.target.value)}
+                onChange={(event) => setField("token", event.target.value)}
               />
             </label>
           </>
@@ -201,16 +156,16 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
                 className="field-input"
                 placeholder="owner/repository"
                 value={repo}
-                onChange={(event) => setRepo(event.target.value)}
+                onChange={(event) => setField("repo", event.target.value)}
               />
             </label>
             <label className="field">
               <span>폴더 경로</span>
               <input
                 className="field-input"
-                placeholder="outliner"
+                placeholder={DEFAULT_FOLDER}
                 value={path}
-                onChange={(event) => setPath(event.target.value)}
+                onChange={(event) => setField("path", event.target.value)}
               />
             </label>
             <label className="field">
@@ -220,22 +175,12 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
                 type="password"
                 placeholder="github_pat_…"
                 value={token}
-                onChange={(event) => setToken(event.target.value)}
+                onChange={(event) => setField("token", event.target.value)}
               />
             </label>
 
-            {token && /^[^\s/]+\/[^\s/]+$/.test(repo.trim()) ? (
-              <button
-                type="button"
-                className="ghost repo-create"
-                onClick={() => {
-                  const name = repo.trim().split("/")[1];
-                  setRepoNote("만드는 중…");
-                  void createPrivateRepo(token.trim(), name).then((ok) =>
-                    setRepoNote(ok ? `비공개 저장소 ${repo.trim()} 준비됨` : "저장소를 만들지 못했습니다")
-                  );
-                }}
-              >
+            {canCreateRepo ? (
+              <button type="button" className="ghost repo-create" onClick={createRepo}>
                 이 이름으로 비공개 저장소 만들기
               </button>
             ) : null}
@@ -251,7 +196,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
                 type="checkbox"
                 checked={markdown && passphrase === ""}
                 disabled={passphrase !== ""}
-                onChange={(event) => setMarkdown(event.target.checked)}
+                onChange={(event) => setField("markdown", event.target.checked)}
               />
               <span>읽을 수 있는 Markdown 사본도 함께 두기</span>
             </label>
@@ -277,7 +222,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
             type="password"
             placeholder="비우면 평문으로 저장됩니다"
             value={passphrase}
-            onChange={(event) => setPassphrase(event.target.value)}
+            onChange={(event) => setField("passphrase", event.target.value)}
           />
         </label>
         <p className="sync-note">
@@ -318,27 +263,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
           <button type="button" onClick={onClose}>
             취소
           </button>
-          <button
-            type="button"
-            className="primary"
-            disabled={built === null}
-            onClick={() => {
-              if (built?.kind !== "file") {
-                store.sync.setConfig(built);
-                onClose();
-                return;
-              }
-              // The shell keeps its own list of folders it may touch; a typed
-              // path gets its native confirmation first.
-              void allowFolder(built.dir)
-                .then((allowed) => {
-                  if (!allowed) return setFolderNote("폴더를 허용하지 않아 연결하지 않았습니다.");
-                  store.sync.setConfig(built);
-                  onClose();
-                })
-                .catch(() => setFolderNote("이 폴더를 쓸 수 없습니다."));
-            }}
-          >
+          <button type="button" className="primary" disabled={!canSave} onClick={() => save(onClose)}>
             저장하고 동기화
           </button>
         </div>
@@ -347,7 +272,10 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
   );
 }
 
-const GRADE_LABEL: Record<string, string> = {
+/** `storage/persist`'s `StorageGrade`, reached through the store like everything else outside `sync/`. */
+type StorageGrade = Store["storage"]["grade"];
+
+const GRADE_LABEL: Record<StorageGrade, string> = {
   persisted: "저장 보장됨",
   file: "앱 파일에도 보관됨",
   "best-effort": "보장되지 않음",

@@ -342,3 +342,14 @@ export function docTree(workspace: Workspace, openFolders: (id: Id) => boolean =
 export function payloadOf(workspace: Workspace): SyncPayload {
   return { docs: workspace.docs, graves: workspace.graves, keymap: workspace.keymap };
 }
+
+/**
+ * Whether anything that travels differs between the two, by object identity
+ * (DESIGN.md principle 4). Like `payloadOf` it names every field of
+ * `SyncPayload`, and a field added there belongs here too: when `keymap` was
+ * missing from this comparison, an edit that only rebound keys never woke
+ * sync.
+ */
+export function payloadChanged(prev: SyncPayload, next: SyncPayload): boolean {
+  return prev.docs !== next.docs || prev.graves !== next.graves || prev.keymap !== next.keymap;
+}

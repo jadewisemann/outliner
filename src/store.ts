@@ -1,31 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import * as documents from "./documents";
 import { createHistory } from "./history";
 import { rememberDoc } from "./palette/palette";
 import { useSync } from "./sync/useSync";
 import { keyBetween } from "./shared/order";
-import { loadLocal, requestPersistence, saveWorkspace, type StorageGrade } from "./storage/persist";
+import { usePersistence } from "./storage/usePersistence";
 import { announceToOtherTabs } from "./sync/api/remote";
-import {
-  ancestors,
-  appendChild,
-  cutSubtree,
-  ensureEditable,
-  graftSubtree,
-  patchNode,
-  visibleRows,
-  type Edit
-} from "./outline/tree";
+import { ancestors, ensureEditable, visibleRows, type Edit } from "./outline/tree";
 import { parseQuery } from "./search/query";
 import {
-  docChildren,
   docList,
   inboxDoc,
   makeDoc,
   makeFolder,
   makeSearch,
-  makeView,
-  makeWorkspace,
-  realDocs,
+  payloadChanged,
   stamp,
   type Doc,
   type DocView,
@@ -34,8 +23,6 @@ import {
 } from "./types";
 
 type FocusRequest = { id: Id; caret: number | "end"; seq: number };
-
-const SAVE_DEBOUNCE_MS = 400;
 
 type EditOptions = {
   /** Consecutive edits sharing a key within a short window collapse into one undo step. */
@@ -49,8 +36,6 @@ export type Store = ReturnType<typeof useStore>;
 export function useStore() {
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
   const [focus, setFocus] = useState<FocusRequest | null>(null);
-  const [saveFailed, setSaveFailed] = useState(false);
-  const [storageGrade, setStorageGrade] = useState<StorageGrade>("unknown");
 
   // Mirrors `workspace` so several edits dispatched in one tick compose
   // instead of overwriting each other.
@@ -58,64 +43,30 @@ export function useStore() {
   const history = useRef(createHistory()).current;
   const focusSeq = useRef(0);
 
-  useEffect(() => {
-    let cancelled = false;
-    void loadLocal().then((loaded) => {
-      if (cancelled) return;
-      const next = loaded && Object.keys(loaded.docs).length > 0 ? loaded : makeWorkspace();
-      live.current = next;
-      setWorkspace(next);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  // Asked on every start rather than once: the browser's answer changes as the
-  // user commits to the app (installs it, bookmarks it, keeps coming back), so
-  // a no from the first visit is not the standing answer.
-  const askForDurableStorage = useCallback(() => void requestPersistence().then(setStorageGrade), []);
-  useEffect(askForDurableStorage, [askForDurableStorage]);
-
-  // Debounced persistence, which doubles as the signal to other tabs. One
-  // timer, driven by actual changes rather than a polling flag.
-  useEffect(() => {
-    if (!workspace) return;
-    const timer = setTimeout(() => {
-      void saveWorkspace(workspace).then(() => {
-        setSaveFailed(false);
-        announceToOtherTabs();
-      }, () => setSaveFailed(true));
-    }, SAVE_DEBOUNCE_MS);
-    // Best effort on the way out; a failure has nowhere left to be shown.
-    const flush = () => void saveWorkspace(workspace).catch(() => undefined);
-    window.addEventListener("beforeunload", flush);
-    return () => {
-      clearTimeout(timer);
-      window.removeEventListener("beforeunload", flush);
-    };
-  }, [workspace]);
-
   const applyWorkspace = useCallback((next: Workspace) => {
     live.current = next;
     setWorkspace(next);
   }, []);
 
+  // The load, the durability request and the debounced save. Their effects
+  // run before the sync loop's. A save that landed doubles as the signal to
+  // other tabs, which `useSync` watches for.
+  const { saveFailed, storage } = usePersistence({ workspace, apply: applyWorkspace, onSaved: announceToOtherTabs });
+
   // Undo snapshots predate work this device did not author; replaying one
   // would delete the other device's rows — so an absorbed merge clears them.
   const onAbsorb = useCallback(() => history.clear(), [history]);
   const sync = useSync({ live, apply: applyWorkspace, onAbsorb, ready: workspace !== null });
+  const { noteEdit, ...syncView } = sync;
 
   const commit = useCallback(
     (next: Workspace, previous: Workspace, options: EditOptions) => {
       if (!options.transient) history.record(previous, options.coalesceKey);
       // Zoom and focus live on this device only; they should not wake sync.
-      if (next.docs !== previous.docs || next.graves !== previous.graves || next.keymap !== previous.keymap) {
-        sync.noteEdit();
-      }
+      if (payloadChanged(previous, next)) noteEdit();
       applyWorkspace(next);
     },
-    [applyWorkspace, history, sync.noteEdit]
+    [applyWorkspace, history, noteEdit]
   );
 
   const editWorkspace = useCallback(
@@ -195,10 +146,10 @@ export function useStore() {
       if (!current) return;
       const next = take(current);
       if (!next) return;
-      sync.noteEdit();
+      noteEdit();
       applyWorkspace(next);
     },
-    [applyWorkspace, sync.noteEdit]
+    [applyWorkspace, noteEdit]
   );
 
   const undo = useCallback(() => step((current) => history.undo(current)), [step, history]);
@@ -222,51 +173,28 @@ export function useStore() {
   /* ---------------------------------------------------------------- */
 
   const docs = useMemo(() => {
-    const attach = (current: Workspace, doc: Doc): Workspace => ({
-      ...current,
-      docs: { ...current.docs, [doc.id]: doc },
-      activeDocId: doc.id,
-      views: { ...current.views, [doc.id]: makeView(doc) }
-    });
     const lastSort = (current: Workspace) => docList(current).at(-1)?.sort ?? null;
+    // Minted from `live.current` at call time, not from React state: an import
+    // creates folders one after another in one tick, and each has to sort
+    // after the one before.
+    const nextSort = () => keyBetween(live.current ? lastSort(live.current) : null, null);
 
     return {
       create(title = "Untitled", parent: Id | null = null) {
-        const current = live.current;
-        const doc = makeDoc(title, { sort: keyBetween(current ? lastSort(current) : null, null), parent });
-        editWorkspace((now) => attach(now, doc));
+        const doc = makeDoc(title, { sort: nextSort(), parent });
+        editWorkspace((current) => documents.attach(current, doc));
         requestFocus(doc.nodes[doc.rootId].children[0]);
         return doc;
       },
       /** A folder is an ordinary document that holds no outline of its own. */
       createFolder(title = "새 폴더", parent: Id | null = null) {
-        const current = live.current;
-        const folder = makeFolder(title, { sort: keyBetween(current ? lastSort(current) : null, null), parent });
-        editWorkspace((now) => ({ ...now, docs: { ...now.docs, [folder.id]: folder } }));
+        const folder = makeFolder(title, { sort: nextSort(), parent });
+        editWorkspace((current) => ({ ...current, docs: { ...current.docs, [folder.id]: folder } }));
         return folder;
       },
-      /**
-       * Marks where a quick capture lands, or clears the mark.
-       *
-       * Only one document is the inbox, so setting it unmarks the others in the
-       * same edit — otherwise two marks would sit here waiting for `inboxDoc`
-       * to break a tie that this device could have avoided making. Folders and
-       * saved searches cannot hold an outline, so they cannot hold a capture.
-       */
+      /** Marks where a quick capture lands, or clears the mark. */
       setInbox(id: Id | null) {
-        editWorkspace((current) => {
-          if (id !== null && current.docs[id]?.kind !== "doc") return current;
-          const now = stamp();
-          const docs = { ...current.docs };
-          let changed = false;
-          for (const doc of Object.values(current.docs)) {
-            const wanted = doc.id === id;
-            if (doc.inbox === wanted) continue;
-            docs[doc.id] = { ...doc, inbox: wanted, titleEdited: now };
-            changed = true;
-          }
-          return changed ? { ...current, docs } : current;
-        });
+        editWorkspace((current) => documents.setInbox(current, id));
       },
       /**
        * Files shared text as a row in the inbox, and opens it there.
@@ -277,200 +205,67 @@ export function useStore() {
        * One edit, creating the document when nothing is marked — a workspace
        * carried over from before this field existed has no mark, and making the
        * inbox visibly, once, beats appending to whatever happened to be on
-       * screen. `appendChild` writes into the empty first row of a document it
-       * just made rather than adding a second one.
+       * screen.
        */
       capture(text: string) {
         const current = live.current;
         if (!current) return;
-        const target =
-          inboxDoc(current) ?? makeDoc("인박스", { sort: keyBetween(lastSort(current), null), inbox: true });
-
-        editWorkspace((now) => {
-          const doc = now.docs[target.id] ?? target;
-          const added = appendChild(doc, doc.rootId);
-          if (!added.focusId) return now;
-          const next = patchNode(added.doc, added.focusId, { text });
-          return {
-            ...now,
-            docs: { ...now.docs, [next.id]: next },
-            activeDocId: next.id,
-            views: now.views[next.id] ? now.views : { ...now.views, [next.id]: makeView(next) }
-          };
-        });
+        const target = inboxDoc(current) ?? makeDoc("인박스", { sort: nextSort(), inbox: true });
+        editWorkspace((now) => documents.capture(now, target, text));
 
         const landed = live.current?.docs[target.id];
         const row = landed?.nodes[landed.rootId].children.at(-1);
         if (row) requestFocus(row);
       },
       toggleBookmark(id: Id) {
-        editWorkspace((current) =>
-          current.docs[id]
-            ? {
-                ...current,
-                docs: {
-                  ...current.docs,
-                  [id]: { ...current.docs[id], bookmarked: !current.docs[id].bookmarked, titleEdited: stamp() }
-                }
-              }
-            : current
-        );
+        editWorkspace((current) => documents.toggleBookmark(current, id));
       },
       /** Files a document (or folder) into `parent`, or back to the top level. */
       moveInto(id: Id, parent: Id | null) {
-        editWorkspace((current) => {
-          const doc = current.docs[id];
-          // A folder cannot be filed into itself or into its own descendant.
-          if (!doc || id === parent) return current;
-          for (let cursor = parent; cursor; cursor = current.docs[cursor]?.parent ?? null) {
-            if (cursor === id) return current;
-          }
-          return { ...current, docs: { ...current.docs, [id]: { ...doc, parent, moved: stamp() } } };
-        });
+        editWorkspace((current) => documents.moveInto(current, id, parent));
       },
       add(doc: Doc) {
-        const current = live.current;
-        editWorkspace((now) => attach(now, { ...doc, sort: keyBetween(current ? lastSort(current) : null, null) }));
+        const sort = nextSort();
+        editWorkspace((current) => documents.attach(current, { ...doc, sort }));
       },
       rename(id: Id, title: string) {
-        editWorkspace((current) =>
-          current.docs[id]
-            ? { ...current, docs: { ...current.docs, [id]: { ...current.docs[id], title, titleEdited: stamp() } } }
-            : current
-        );
+        editWorkspace((current) => documents.rename(current, id, title));
       },
       /** Into the trash, where it stays restorable until the window runs out. */
       remove(id: Id) {
-        editWorkspace((current) => {
-          const doomed = current.docs[id];
-          if (!doomed || doomed.deleted) return current;
-          // The app always has to have a document open, so the last live one
-          // cannot go. Folders and saved searches do not count towards that.
-          const survivors = realDocs(current).filter((doc) => doc.id !== id);
-          if (doomed.kind === "doc" && survivors.length === 0) return current;
-          const now = stamp();
-          return {
-            ...current,
-            docs: { ...current.docs, [id]: { ...doomed, deleted: now, titleEdited: now } },
-            activeDocId: current.activeDocId === id ? survivors[0].id : current.activeDocId
-          };
-        });
+        editWorkspace((current) => documents.remove(current, id));
       },
       restore(id: Id) {
-        editWorkspace((current) => {
-          const doc = current.docs[id];
-          if (!doc?.deleted) return current;
-          const now = stamp();
-          return { ...current, docs: { ...current.docs, [id]: { ...doc, deleted: null, titleEdited: now } } };
-        });
+        editWorkspace((current) => documents.restore(current, id));
       },
       /** The one delete that cannot be undone; the file leaves the remote too. */
       purge(id: Id) {
-        editWorkspace((current) => {
-          const remaining = { ...current.docs };
-          delete remaining[id];
-          const views = { ...current.views };
-          delete views[id];
-          return { ...current, docs: remaining, graves: { ...current.graves, [id]: stamp() }, views };
-        });
+        editWorkspace((current) => documents.purge(current, id));
       },
-      /**
-       * Puts a past version of a document back.
-       *
-       * Every node is re-stamped, for the same reason undo re-stamps rather
-       * than restoring a snapshot: an old stamp loses the next merge, and the
-       * restore would be quietly undone by the first sync. Gravestones for the
-       * rows coming back are dropped, or they would bury them again.
-       */
+      /** Puts a past version of a document back, re-stamped so that the next sync keeps it. */
       restoreVersion(past: Doc) {
-        editWorkspace((current) => {
-          const live = current.docs[past.id];
-          if (!live) return current;
-          const now = stamp();
-          const nodes: Record<Id, Doc["nodes"][string]> = {};
-          for (const [id, node] of Object.entries(past.nodes)) nodes[id] = { ...node, edited: now, moved: now };
-
-          const graves = { ...live.graves };
-          for (const id of Object.keys(nodes)) delete graves[id];
-          // Rows the live document has that the past one did not are gone as
-          // of this restore, and need stones so other devices agree.
-          for (const id of Object.keys(live.nodes)) if (!nodes[id]) graves[id] = now;
-
-          return {
-            ...current,
-            docs: {
-              ...current.docs,
-              [past.id]: { ...live, rootId: past.rootId, nodes, graves, titleEdited: now, title: past.title }
-            }
-          };
-        });
+        editWorkspace((current) => documents.restoreVersion(current, past));
       },
       createSearch(title: string, query: string) {
-        const current = live.current;
-        const saved = makeSearch(title, query, { sort: keyBetween(current ? lastSort(current) : null, null) });
-        editWorkspace((now) => ({ ...now, docs: { ...now.docs, [saved.id]: saved } }));
+        const saved = makeSearch(title, query, { sort: nextSort() });
+        editWorkspace((current) => ({ ...current, docs: { ...current.docs, [saved.id]: saved } }));
         return saved;
       },
       select(id: Id, options: { zoomId?: Id; focusId?: Id } = {}) {
-        editWorkspace(
-          (current) => {
-            const target = current.docs[id];
-            if (!target || target.kind !== "doc" || target.deleted) return current;
-            const existing = current.views[id] ?? makeView(target);
-            return {
-              ...current,
-              activeDocId: id,
-              views: {
-                ...current.views,
-                [id]: { ...existing, zoomId: options.zoomId ?? existing.zoomId, focusId: options.focusId ?? existing.focusId }
-              }
-            };
-          },
-          { transient: true }
-        );
+        editWorkspace((current) => documents.select(current, id, options), { transient: true });
         rememberDoc(id);
         if (options.focusId) requestFocus(options.focusId);
       },
       /** Drops `id` at `toIndex` among the children of `parent`. */
       reorder(id: Id, parent: Id | null, toIndex: number) {
-        editWorkspace((current) => {
-          const doc = current.docs[id];
-          if (!doc || id === parent) return current;
-          // Same guard as `moveInto`: a folder cannot end up inside itself.
-          for (let cursor = parent; cursor; cursor = current.docs[cursor]?.parent ?? null) {
-            if (cursor === id) return current;
-          }
-          const ordered = docChildren(current, parent).filter((entry) => entry.id !== id);
-          const at = Math.max(0, Math.min(toIndex, ordered.length));
-          const before = ordered[at - 1]?.sort ?? null;
-          const after = ordered[at]?.sort ?? null;
-          const sort = keyBetween(before, before !== null && after !== null && before >= after ? null : after);
-          return { ...current, docs: { ...current.docs, [id]: { ...doc, parent, sort, moved: stamp() } } };
-        });
+        editWorkspace((current) => documents.reorder(current, id, parent, toIndex));
       },
       replaceAll(next: Workspace) {
         editWorkspace(() => next);
       },
-      /**
-       * Moves a row and everything under it into another document, ids and all.
-       *
-       * Both documents change in one edit, but they are two files on the
-       * remote, so a device that pulls between the two writes sees the row in
-       * both places. It converges on the next round — the merge does not care
-       * about order — and `sync/api/remote` pushes the document that did the burying
-       * first, which makes that window as small as it can be.
-       */
+      /** Moves a row and everything under it into another document, ids and all. */
       moveToDoc(nodeId: Id, targetDocId: Id) {
-        editWorkspace((current) => {
-          const source = current.docs[current.activeDocId];
-          const target = current.docs[targetDocId];
-          if (!source || !target || target.kind === "folder" || source.id === target.id) return current;
-
-          const cut = cutSubtree(source, nodeId);
-          if (!cut) return current;
-          const grafted = graftSubtree(target, target.rootId, cut.taken);
-          return { ...current, docs: { ...current.docs, [source.id]: cut.doc, [target.id]: grafted.doc } };
-        });
+        editWorkspace((current) => documents.moveToDoc(current, nodeId, targetDocId));
       }
     };
   }, [editWorkspace, requestFocus]);
@@ -533,22 +328,14 @@ export function useStore() {
     /** The chosen keyboard table, or null while nobody has chosen one. */
     keymap: workspace?.keymap ?? null,
     setKeymap,
-    sync: {
-      status: sync.status,
-      config: sync.config,
-      setConfig: sync.setConfig,
-      now: sync.now,
-      /** Present only on a backend that keeps history — today, GitHub. */
-      history: sync.history,
-      /** Likewise for somewhere to put attachment bytes. */
-      files: sync.files
-    },
+    /** The sync loop's surface, less the edit counter that `commit` and `step` feed. */
+    sync: syncView,
     saveFailed,
     /**
      * What the browser promises about local storage, and the way to ask again
      * — Firefox answers with a prompt, which needs a button behind it.
      */
-    storage: { grade: storageGrade, request: askForDurableStorage }
+    storage
   };
 }
 
