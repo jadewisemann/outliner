@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_KEYMAP,
   DYNALIST_KEYMAP,
@@ -81,8 +81,13 @@ describe("the default table", () => {
     expect(conflicts(DEFAULT_KEYMAP, "duplicate", DEFAULT_KEYMAP.duplicate)).toEqual([]);
   });
 
-  it("is written for a reader, not for the parser", () => {
-    expect(show("Mod+Shift+K")).toMatch(/⇧K$/);
+  it("is written for a reader in the platform's own notation", () => {
+    const platform = vi.spyOn(navigator, "platform", "get");
+    platform.mockReturnValue("MacIntel");
+    expect(show("Mod+Shift+K")).toBe("⌘⇧K");
+    platform.mockReturnValue("Win32");
+    expect(show("Mod+Shift+K")).toBe("Ctrl+Shift+K");
+    platform.mockRestore();
   });
 });
 

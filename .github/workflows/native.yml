@@ -1,0 +1,296 @@
+# Builds the native apps from the same static build the web deploys.
+#
+# Desktop (macOS universal, Windows, Linux) and Android come out of one Tauri
+# project (`src-tauri/`). Everything runs on GitHub's free hosted runners —
+# nothing here needs a paid account:
+#
+# - macOS builds are unsigned. Gatekeeper refuses them on first open; right-
+#   click → Open once, or `xattr -dr com.apple.quarantine /Applications/Outliner.app`.
+#   Signing and notarising need a paid Apple developer account.
+# - The Android APK is signed with the keystore in the repository secrets
+#   (ANDROID_KEYSTORE_BASE64 / _PASSWORD, ANDROID_KEY_ALIAS / _PASSWORD). Without
+#   them a throwaway key is made per run: the APK installs, but the next build
+#   cannot update it in place. README 「네이티브 앱」 has the one-time setup.
+#
+# A `v*` tag publishes everything as a draft release; branch pushes and manual
+# runs keep the files as workflow artifacts.
+#
+# Write access is given only where something is written: the release, and
+# publishing smoke-test evidence. The jobs that run install and build scripts
+# from third parties (npm, cargo, gradle) hold a read-only token, and the
+# Android signing key is only ever decoded in a job that runs none of them.
+name: Native apps
+
+on:
+  push:
+    tags: ["v*"]
+    branches-ignore: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: native-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # The folder backend's disk side is plain std and has its own tests; they
+  # run in seconds without compiling Tauri.
+  shell-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - run: rustc --edition 2021 --test src-tauri/src/folder.rs -o folder-tests && ./folder-tests
+
+  desktop:
+    needs: shell-tests
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macos
+            os: macos-latest
+            args: --target universal-apple-darwin
+            rust-targets: aarch64-apple-darwin,x86_64-apple-darwin
+          - name: windows
+            os: windows-latest
+            args: ""
+            rust-targets: ""
+          - name: linux
+            os: ubuntu-22.04
+            args: ""
+            rust-targets: ""
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust-targets }}
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+      - name: Linux webview libraries
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+      - run: npm ci
+      - name: Version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: node -e 'const f="src-tauri/tauri.conf.json",c=require("./"+f);c.version=process.argv[1];require("fs").writeFileSync(f,JSON.stringify(c,null,2)+"\n")' "${GITHUB_REF_NAME#v}"
+      # Icons are generated from the one canonical source, never committed.
+      - run: npm run tauri -- icon public/icon.svg
+      - run: npm run tauri -- build ${{ matrix.args }}
+      # Run the real app, not just build it (docs/design/native.md 「검증」).
+      # Linux drives it through tauri-driver; macOS and Windows launch it and
+      # check what the app wrote to disk.
+      - name: Native smoke test (Linux)
+        if: matrix.name == 'linux'
+        run: |
+          sudo apt-get install -y webkit2gtk-driver xvfb fonts-noto-cjk
+          cargo install tauri-driver --locked
+          xvfb-run -a -s "-screen 0 1280x860x24" bash e2e/native/run-driver.sh src-tauri/target/release/outliner evidence
+      - name: Native smoke test (Windows)
+        if: matrix.name == 'windows'
+        shell: bash
+        # Launch-and-check like macOS. Driving WebView2 through tauri-driver +
+        # msedgedriver never attached (DevToolsActivePort), see native.md 「검증」.
+        run: bash e2e/native/launch.sh src-tauri/target/release/outliner.exe "$APPDATA/io.github.jadewisemann.outliner" evidence
+      - name: Native smoke test (macOS)
+        if: matrix.name == 'macos'
+        run: |
+          bundle="$(find src-tauri/target -type d -path '*release/bundle/macos/*.app' | head -1)"
+          binary="$(ls -d "$bundle"/Contents/MacOS/* | head -1)"
+          echo "launching $binary"
+          bash e2e/native/launch.sh "$binary" "$HOME/Library/Application Support/io.github.jadewisemann.outliner" evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidence-desktop-${{ matrix.name }}
+          path: evidence
+          if-no-files-found: ignore
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p out
+          find src-tauri/target -path '*/release/bundle/*' -type f \
+            \( -name '*.dmg' -o -name '*.msi' -o -name '*-setup.exe' -o -name '*.deb' -o -name '*.rpm' -o -name '*.AppImage' \) \
+            -exec cp {} out/ \;
+          ls -la out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: outliner-${{ matrix.name }}
+          path: out/*
+          if-no-files-found: error
+
+  android:
+    needs: shell-tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      # The hosted image already carries the SDK and an NDK; the setup action
+      # re-downloading them is slower and has broken on sdkmanager changes.
+      - name: NDK
+        run: |
+          echo "ANDROID_HOME=${ANDROID_HOME}"
+          ls "${ANDROID_HOME}/ndk" || true
+          echo "NDK_HOME=${ANDROID_NDK_LATEST_HOME:-${ANDROID_HOME}/ndk/$(ls "${ANDROID_HOME}/ndk" | sort -V | tail -1)}" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android,armv7-linux-androideabi,i686-linux-android,x86_64-linux-android
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+      - run: npm ci
+      - name: Version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: node -e 'const f="src-tauri/tauri.conf.json",c=require("./"+f);c.version=process.argv[1];require("fs").writeFileSync(f,JSON.stringify(c,null,2)+"\n")' "${GITHUB_REF_NAME#v}"
+      # The Android project is generated, not committed: it is derived from
+      # tauri.conf.json and the Cargo manifest, like the icons.
+      - run: npm run tauri -- android init --ci
+      # The one generated file the app owns: window insets (see the file).
+      - name: Own MainActivity
+        run: |
+          target="$(find src-tauri/gen/android -name MainActivity.kt | head -1)"
+          echo "replacing $target"
+          cat "$target"
+          cp src-tauri/android/MainActivity.kt "$target"
+          gradle=src-tauri/gen/android/app/build.gradle.kts
+          # enableEdgeToEdge and the insets API; add them only if the template did not.
+          grep -q 'androidx.activity:activity' "$gradle" || sed -i '/^dependencies {/a\    implementation("androidx.activity:activity-ktx:1.9.3")' "$gradle"
+          grep -q 'androidx.core:core' "$gradle" || sed -i '/^dependencies {/a\    implementation("androidx.core:core-ktx:1.13.1")' "$gradle"
+          grep -n "implementation" "$gradle"
+      - run: npm run tauri -- icon public/icon.svg
+      - run: npm run tauri -- android build --apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android-unsigned
+          path: src-tauri/gen/android/app/build/outputs/apk/**/*release*.apk
+          if-no-files-found: error
+
+  # Signing is its own job: nothing from npm, cargo or gradle runs here, so no
+  # third-party script is ever on the machine while the key is.
+  android-sign:
+    needs: android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: android-unsigned
+          path: unsigned
+      - name: Sign
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          tools="$(ls -d "${ANDROID_HOME}"/build-tools/* | sort -V | tail -1)"
+          apk="$(find unsigned -name '*.apk' | head -1)"
+          if [ -n "${KEYSTORE}" ]; then
+            echo "${KEYSTORE}" | base64 -d > signing.jks
+          else
+            echo "::warning::No ANDROID_KEYSTORE_BASE64 secret: signing with a throwaway key. This APK installs, but a later build cannot update it in place."
+            KEYSTORE_PASSWORD=throwaway KEY_PASSWORD=throwaway KEY_ALIAS=outliner
+            keytool -genkeypair -keystore signing.jks -storepass "$KEYSTORE_PASSWORD" -keypass "$KEY_PASSWORD" \
+              -alias "$KEY_ALIAS" -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Outliner"
+          fi
+          mkdir -p out
+          "$tools/zipalign" -f -p 4 "$apk" aligned.apk
+          "$tools/apksigner" sign --ks signing.jks --ks-pass "pass:${KEYSTORE_PASSWORD}" \
+            --ks-key-alias "${KEY_ALIAS}" --key-pass "pass:${KEY_PASSWORD:-$KEYSTORE_PASSWORD}" \
+            --out out/outliner-android.apk aligned.apk
+          "$tools/apksigner" verify out/outliner-android.apk
+          rm -f signing.jks
+      - uses: actions/upload-artifact@v4
+        with:
+          name: outliner-android
+          path: out/*
+          if-no-files-found: error
+
+  # Installs the signed APK on an emulator, opens it, types a row, and keeps
+  # screenshots and the app's log (e2e/native/android.sh).
+  android-smoke:
+    needs: android-sign
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: outliner-android
+          path: apk
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          script: bash e2e/native/android.sh apk/outliner-android.apk evidence
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: evidence-android
+          path: evidence
+          if-no-files-found: ignore
+
+  # Screenshots and results onto `ci-evidence/<name>` branches, readable with
+  # plain git (.github/scripts/publish-evidence.sh). Runs even when a smoke
+  # test failed — that is when the evidence matters most.
+  evidence:
+    if: always()
+    needs: [desktop, android-smoke]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: evidence-*
+          path: evidence
+      - name: Publish
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          for dir in evidence/evidence-*; do
+            [ -d "$dir" ] || continue
+            bash .github/scripts/publish-evidence.sh "$dir" "${dir#evidence/evidence-}"
+          done
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [desktop, android-sign]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: outliner-*
+          path: artifacts
+          merge-multiple: true
+      - name: Draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" artifacts/* --repo "$GITHUB_REPOSITORY" --draft --generate-notes --title "Outliner $GITHUB_REF_NAME"

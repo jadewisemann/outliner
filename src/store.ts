@@ -3,7 +3,7 @@ import { createHistory } from "./history";
 import { rememberDoc } from "./palette/palette";
 import { useSync } from "./sync/useSync";
 import { keyBetween } from "./shared/order";
-import { loadWorkspace, requestPersistence, saveWorkspace, type StorageGrade } from "./storage/persist";
+import { loadLocal, requestPersistence, saveWorkspace, type StorageGrade } from "./storage/persist";
 import { announceToOtherTabs } from "./sync/api/remote";
 import {
   ancestors,
@@ -60,7 +60,7 @@ export function useStore() {
 
   useEffect(() => {
     let cancelled = false;
-    void loadWorkspace().then((loaded) => {
+    void loadLocal().then((loaded) => {
       if (cancelled) return;
       const next = loaded && Object.keys(loaded.docs).length > 0 ? loaded : makeWorkspace();
       live.current = next;
@@ -87,7 +87,8 @@ export function useStore() {
         announceToOtherTabs();
       }, () => setSaveFailed(true));
     }, SAVE_DEBOUNCE_MS);
-    const flush = () => void saveWorkspace(workspace);
+    // Best effort on the way out; a failure has nowhere left to be shown.
+    const flush = () => void saveWorkspace(workspace).catch(() => undefined);
     window.addEventListener("beforeunload", flush);
     return () => {
       clearTimeout(timer);
@@ -550,3 +551,4 @@ export function useStore() {
     storage: { grade: storageGrade, request: askForDurableStorage }
   };
 }
+

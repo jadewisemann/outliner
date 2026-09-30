@@ -3,6 +3,8 @@ import { search, type Hit } from "../search";
 import type { Store } from "../../store";
 import { reveal } from "../../outline/tree";
 import { Panel } from "../../shared/components/Panel";
+import { renderInline } from "../../outline/inline";
+import { labelOf } from "../links";
 
 type Props = {
   store: Store;
@@ -76,7 +78,13 @@ export function SearchPanel({ store, initialQuery, onClose }: Props) {
                 onMouseEnter={() => setCursor(index)}
                 onClick={() => open(hit)}
               >
-                <span className="search-hit-text">{hit.text || "(빈 항목)"}</span>
+                {/* Rendered like the row it came from, inert because the hit is itself a
+                    button: a date reads as a date here too, not as !(…). */}
+                <span className="search-hit-text">
+                  {hit.text
+                    ? renderInline(hit.text, { inert: true, resolveItem: (id) => labelOf(store.workspace, id) })
+                    : "(빈 항목)"}
+                </span>
                 <span className="search-hit-trail">
                   {[hit.docTitle, ...hit.trail.slice(-2)].join(" › ")}
                 </span>

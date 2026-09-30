@@ -242,3 +242,20 @@ test("files a document into a folder and bookmarks it", async ({ page }) => {
   await page.locator(".doc-pin").first().click();
   await expect(page.locator(".sidebar-title").first()).toHaveText("즐겨찾기");
 });
+
+test("!! writes today's date, the date is selected to type over, and it renders as a chip", async ({ page }) => {
+  await page.clock.setFixedTime(new Date(2026, 8, 29, 12, 0));
+  await page.reload();
+  await page.locator(".row").first().click();
+
+  await page.keyboard.type("회의 !!");
+  await expect(value(page)).toHaveValue("회의 !(2026-09-29)");
+  // The date part is selected, so typing replaces just that.
+  await page.keyboard.type("2026-09-30");
+  await expect(value(page)).toHaveValue("회의 !(2026-09-30)");
+
+  await page.keyboard.press("Escape");
+  const chip = page.locator(".row time.inline-date").first();
+  await expect(chip).toHaveText("내일");
+  await expect(chip).toHaveClass(/inline-date-soon/);
+});

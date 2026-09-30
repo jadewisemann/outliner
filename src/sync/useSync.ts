@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import { changedBy, mergeWorkspace } from "./merge";
+import { shouldPush } from "./push";
 import { isLocked } from "./api/cipher";
 import { loadWorkspace, saveWorkspace } from "../storage/persist";
 import {
@@ -15,7 +16,7 @@ import {
   type SyncConfig,
   type SyncStatus
 } from "./api/remote";
-import type { SyncPayload, Workspace } from "../types";
+import { payloadOf, type SyncPayload, type Workspace } from "../types";
 
 /** Longest gap between retries after the endpoint starts failing. */
 const MAX_BACKOFF_MS = 5 * 60_000;
@@ -64,16 +65,17 @@ export function useSync(options: {
 
   /** Applies a merge result, but only when it actually brought something in. */
   const absorb = useCallback(
-    (payload: SyncPayload) => {
+    (payload: SyncPayload): boolean => {
       const current = live.current;
-      if (!current || !changedBy(payloadOf(current), payload)) return;
+      if (!current || !changedBy(payloadOf(current), payload)) return false;
       onAbsorb();
 
       const active = payload.docs[current.activeDocId] ? current.activeDocId : Object.keys(payload.docs)[0];
-      if (!active) return;
+      if (!active) return false;
       const views = { ...current.views };
       for (const id of Object.keys(views)) if (!payload.docs[id]) delete views[id];
       apply({ ...current, ...payload, activeDocId: active, views });
+      return true;
     },
     [live, apply, onAbsorb]
   );
@@ -85,21 +87,23 @@ export function useSync(options: {
     try {
       // Pull, merge into whatever is local right now, then offer the result
       // back. A lost race just means the next round settles it.
+      let absorbed = false;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const stored = await backend.pull();
         if (!stored) break;
-        absorb(
-          mergeWorkspace(payloadOf(live.current!), stored.payload, {
-            // Nothing typed here yet, and never synced with this remote:
-            // this device is joining, not contributing a blank document.
-            adoptRemote: edits.current === 0 && !hasSynced(configKey(config!))
-          })
-        );
+        const merged = mergeWorkspace(payloadOf(live.current!), stored.payload, {
+          // Nothing typed here yet, and never synced with this remote:
+          // this device is joining, not contributing a blank document.
+          adoptRemote: edits.current === 0 && !hasSynced(configKey(config!))
+        });
+        if (absorb(merged)) absorbed = true;
 
-        // Nothing of ours is unpushed and the remote has a version, so a push
-        // would only echo back what it already holds. On GitHub every push is
-        // a commit — an idle device must not leave a trail of empty ones.
-        if (edits.current === pushed.current && stored.version !== null) break;
+        // Usually: only when there is something of ours to send (see push.ts
+        // for why, and for the two remotes that need more than that).
+        const unpushed = edits.current !== pushed.current;
+        if (!shouldPush({ stored, local: payloadOf(live.current!), unpushed, unguarded: backend.unguarded === true })) {
+          break;
+        }
 
         // Captured before the request: anything typed during the round trip
         // must stay pending rather than be marked as sent.
@@ -114,7 +118,9 @@ export function useSync(options: {
       retryAfter.current = 0;
       markSynced(configKey(config!));
       setStatus("idle");
-      void saveWorkspace(live.current!);
+      // Only when something arrived: an idle round has nothing new to keep,
+      // and in the native shell every save is also a file write.
+      if (absorbed) void saveWorkspace(live.current!).catch(() => undefined);
     } catch (error) {
       if (isLocked(error)) {
         // The remote holds bytes this device cannot read. Retrying is pointless
@@ -204,8 +210,4 @@ export function useSync(options: {
     files: backend?.files ?? null,
     noteEdit
   };
-}
-
-function payloadOf(workspace: Workspace): SyncPayload {
-  return { docs: workspace.docs, graves: workspace.graves, keymap: workspace.keymap };
 }

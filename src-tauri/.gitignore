@@ -1,0 +1,6 @@
+# Build output and what the CLI generates from the canonical sources:
+# icons come from public/icon.svg (`npm run tauri -- icon ../public/icon.svg`),
+# the Android project from `npm run tauri -- android init`.
+/target/
+/gen/
+/icons/

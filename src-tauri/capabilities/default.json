@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "The main window. The app's own commands need no entry here; plugin APIs are called from Rust, never from the page, so only the core set is granted.",
+  "windows": ["main"],
+  "permissions": ["core:default"]
+}

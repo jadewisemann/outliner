@@ -23,6 +23,9 @@ export function loadSyncConfig(): SyncConfig | null {
         markdown: parsed.markdown === true ? true : undefined
       };
     }
+    if (parsed?.kind === "file" && typeof parsed.dir === "string" && parsed.dir !== "") {
+      return { kind: "file", dir: parsed.dir, passphrase };
+    }
     // Configs saved before backends had a `kind` were always plain REST.
     if (typeof parsed?.url === "string" && parsed.url !== "") {
       return {

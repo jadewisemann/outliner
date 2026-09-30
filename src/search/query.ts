@@ -1,4 +1,5 @@
-import { extractTags } from "../outline/inline";
+import { extractTags, inlineDates } from "../outline/inline";
+import { daysFrom } from "../outline/dates";
 import type { Node } from "../types";
 
 /**
@@ -91,8 +92,10 @@ const OPERATORS: Record<string, (value: string, now: number) => Predicate | null
     if (value === "image") return ({ node }) => /!\[[^\]]*\]\([^)\s]+\)/.test(node.text);
     if (value === "tag") return ({ node }) => extractTags(node.text).length > 0;
     if (value === "child") return ({ node }) => node.children.length > 0;
+    if (value === "date") return ({ node }) => inlineDates(node.text).length > 0;
     return null;
   },
+  date: (value, now) => onDate(value, now),
   edited: (value, now) => within(value, now, (node) => node.edited.at),
   created: (value, now) => within(value, now, (node) => node.created.at),
   parent: (value) => ({ trail }) => (trail.at(-1) ?? "").toLowerCase().includes(value),
@@ -105,6 +108,30 @@ function within(value: string, now: number, stampOf: (node: Node) => number): Pr
   if (!match) return null;
   const since = now - Number(match[1]) * DURATION_MS[match[2]];
   return ({ node }) => stampOf(node) >= since;
+}
+
+/**
+ * `date:today`, `date:overdue` (before today), `date:7d` (today through the
+ * next seven days), `date:2026-09-29` (that day). Dynalist's rows carry dates
+ * in their text, so this reads the first date written in the row.
+ */
+function onDate(value: string, now: number): Predicate | null {
+  const first = (node: Node) => inlineDates(node.text)[0] ?? null;
+  const days = (test: (days: number) => boolean): Predicate => ({ node }) => {
+    const date = first(node);
+    return date !== null && test(daysFrom(date.day, now));
+  };
+  if (value === "today") return days((d) => d === 0);
+  if (value === "overdue") return days((d) => d < 0);
+  if (value === "tomorrow") return days((d) => d === 1);
+  const ahead = value.match(/^(\d+)d$/);
+  if (ahead) return days((d) => d >= 0 && d <= Number(ahead[1]));
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const [y, m, d] = value.split("-").map(Number);
+    const day = new Date(y, m - 1, d).getTime();
+    return days((n) => n === daysFrom(day, now));
+  }
+  return null;
 }
 
 function unquote(value: string): string {

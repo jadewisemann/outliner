@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { isNative } from "../shared/native";
 
 /**
  * Where to put a bar that has to sit on top of the software keyboard.
@@ -11,15 +12,13 @@ import { useEffect, useState } from "react";
  * the offset comes from `visualViewport` — the part of the page still visible.
  */
 export function useTouchBar(): { coarse: boolean; inset: number } {
-  const [coarse, setCoarse] = useState(
-    () => typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches
-  );
+  const [coarse, setCoarse] = useState(isTouchFirst);
   const [inset, setInset] = useState(0);
 
   useEffect(() => {
     if (typeof matchMedia !== "function") return;
     const query = matchMedia("(pointer: coarse)");
-    const update = () => setCoarse(query.matches);
+    const update = () => setCoarse(isTouchFirst());
     query.addEventListener("change", update);
     return () => query.removeEventListener("change", update);
   }, []);
@@ -41,4 +40,15 @@ export function useTouchBar(): { coarse: boolean; inset: number } {
   }, [coarse]);
 
   return { coarse, inset };
+}
+
+/**
+ * A coarse pointer, or the phone build of the native shell. The shell is told
+ * apart because a phone's webview does not always report its pointer: the
+ * Android emulator answered `fine`, which hid the bar in the one place the
+ * app knows for certain it is on a phone.
+ */
+function isTouchFirst(): boolean {
+  if (isNative() && /Android|iPhone|iPad/.test(navigator.userAgent)) return true;
+  return typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches;
 }

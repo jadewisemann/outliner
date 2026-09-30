@@ -1,0 +1,36 @@
+# Packs the installed dev toolchain (node_modules, for linux-x64) onto an
+# orphan branch `toolchain-cache`, for a development sandbox that can reach
+# git but neither the package registry nor artifact storage. Nothing in the
+# product depends on it; the branch can be deleted at any time.
+name: Toolchain export
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  export:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - run: npm ci
+      - name: Pack in parts under GitHub's file size limit
+        run: |
+          mkdir -p /tmp/pack
+          tar czf - node_modules | split -b 45m - /tmp/pack/node_modules.tgz.part-
+          sha256sum package-lock.json > /tmp/pack/lock.sha256
+          ls -la /tmp/pack
+      - name: Publish to toolchain-cache
+        run: |
+          cd /tmp/pack
+          git init -q -b toolchain-cache
+          git config user.name "toolchain-bot"
+          git config user.email "toolchain-bot@users.noreply.github.com"
+          git add -A
+          git commit -qm "toolchain for $(cut -c1-12 lock.sha256)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" toolchain-cache

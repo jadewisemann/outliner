@@ -291,15 +291,19 @@ export function specOf(event: KeyboardEvent | React.KeyboardEvent): string | nul
   return parts.length > 1 ? parts.join("+") : null;
 }
 
-/** How a binding is written for a reader: ⌘⇧K rather than Mod+Shift+K. */
+/**
+ * How a binding is written for a reader, in each platform's own notation:
+ * ⌘⇧K on a Mac, Ctrl+Shift+K elsewhere. Mixing the two (Ctrl+⇧K) reads as
+ * neither, which is what this used to print on Windows and Linux.
+ */
 export function describe(spec: string): string {
-  const mac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
-  return spec
-    .replace("Mod+", mac ? "⌘" : "Ctrl+")
-    .replace("Shift+", "⇧")
-    .replace("Alt+", mac ? "⌥" : "Alt+")
-    .replace("ArrowUp", "↑")
-    .replace("ArrowDown", "↓");
+  const arrows = (text: string) => text.replace("ArrowUp", "↑").replace("ArrowDown", "↓");
+  if (!isMac()) return arrows(spec.replace("Mod+", "Ctrl+"));
+  return arrows(spec.replace("Mod+", "⌘").replace("Shift+", "⇧").replace("Alt+", "⌥").replace("Ctrl+", "⌃"));
+}
+
+export function isMac(): boolean {
+  return typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 }
 
 /* ------------------------------------------------------------------ */

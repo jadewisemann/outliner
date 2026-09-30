@@ -39,6 +39,16 @@ export type SyncConfig =
        * a plaintext copy next to the ciphertext would undo the encryption.
        */
       markdown?: boolean;
+    }
+  | {
+      kind: "file";
+      /**
+       * An absolute folder path on this computer, holding `outliner.json`.
+       * Native shell on desktop only (`remote/file.ts`).
+       */
+      dir: string;
+      /** Set to keep whoever holds the folder (a sync service) from reading it. */
+      passphrase?: string;
     };
 
 /** Per-file shas of the split GitHub layout — one token covering many files. */
@@ -51,7 +61,16 @@ export type GithubVersion = { docs: Record<Id, string>; graves: string | null; k
  */
 export type Version = string | GithubVersion | null;
 
-export type Stored = { payload: SyncPayload; version: Version };
+export type Stored = {
+  payload: SyncPayload;
+  version: Version;
+  /**
+   * The remote needs writing even if this device has nothing new — the folder
+   * backend sets it when it merged conflict copies that only a write can
+   * retire. Absent on every other backend.
+   */
+  rewrite?: boolean;
+};
 
 /** One past version of one document, as the remote remembers it. */
 export type Revision = { id: string; message: string; at: string; author: string };
@@ -90,6 +109,14 @@ export type Backend = {
    * cadence is gentler.
    */
   cadence: { pullMs: number; pushMs: number };
+  /**
+   * Writes can be replaced without a compare-and-swap ever refusing them — a
+   * file that a sync service carries between machines. The loop then pushes
+   * whenever the remote lacks something this device holds, instead of only
+   * when there are unpushed edits. Absent on backends that answer a stale
+   * write with a refusal, where that check would only repeat what CAS does.
+   */
+  unguarded?: boolean;
 };
 
 export function emptyPayload(): SyncPayload {

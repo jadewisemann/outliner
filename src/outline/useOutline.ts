@@ -16,6 +16,7 @@ import { type Color, type Id, type Node, type Row as RowModel } from "../types";
 import type { DropPosition, RowApi } from "./components/Row";
 import type { MenuSpot } from "./components/RowMenu";
 import { writeField } from "./components/Editable";
+import { dateToken } from "./dates";
 import { autoFormat, isUrl, linkTo, toggleLink, toggleWrap, type Selection, type WrapKind } from "./markdown";
 import {
   appendChild,
@@ -293,6 +294,25 @@ export function useOutline(
         if (!bound(action)) continue;
         stop();
         edit((current) => patchNode(current, row.id, { color }));
+        return;
+      }
+
+      // `!!` writes today's date the way Dynalist does, `!(YYYY-MM-DD)`, with
+      // the date itself selected so typing replaces it and → keeps it. Only
+      // at the start of a word: "감사합니다!!" is punctuation, not a date.
+      if (
+        event.key === "!" &&
+        noRange &&
+        caret > 0 &&
+        element.value[caret - 1] === "!" &&
+        (caret === 1 || /\s/.test(element.value[caret - 2]))
+      ) {
+        stop();
+        const token = dateToken(Date.now());
+        const text = element.value.slice(0, caret - 1) + token + element.value.slice(caret);
+        writeField(element, text, caret + 1, caret + 1 + token.length - 3);
+        edit((current) => patchNode(current, row.id, { text }));
+        completions.clear();
         return;
       }
 

@@ -1,0 +1,16 @@
+# `npx wrangler deploy` from this folder. See README.md.
+name = "outliner-sync"
+main = "worker.mjs"
+compatibility_date = "2025-09-01"
+
+[[durable_objects.bindings]]
+name = "WORKSPACE"
+class_name = "Workspace"
+
+# SQLite-backed: the only kind the Workers Free plan can create.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Workspace"]
+
+[vars]
+OUTLINER_PATH = "/workspace"

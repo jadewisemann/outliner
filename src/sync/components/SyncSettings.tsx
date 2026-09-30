@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import type { Store } from "../../store";
 import { Panel } from "../../shared/components/Panel";
-import type { SyncConfig } from "../api/remote";
+import { allowFolder, pickFolder, type SyncConfig } from "../api/remote";
+import { nativeInfo } from "../../shared/native";
 import { beginGithubLogin, createPrivateRepo, fetchOauthClientId } from "../api/githubAuth";
 
 const STATUS_LABEL: Record<string, string> = {
@@ -28,13 +29,24 @@ export function SyncBadge({ store, onClick }: { store: Store; onClick: () => voi
 
 export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: OauthPrefill; onClose: () => void }) {
   const config = store.sync.config;
-  const [mode, setMode] = useState<"rest" | "github">(oauth ? "github" : config?.kind ?? "rest");
+  const [mode, setMode] = useState<"rest" | "github" | "file">(oauth ? "github" : config?.kind ?? "rest");
   const [url, setUrl] = useState(config?.kind === "rest" ? config.url : "");
   const [repo, setRepo] = useState(
     config?.kind === "github" ? config.repo : oauth?.login ? `${oauth.login}/outliner` : ""
   );
   const [path, setPath] = useState(config?.kind === "github" ? config.path : "outliner");
-  const [token, setToken] = useState(oauth?.token ?? config?.token ?? "");
+  const [token, setToken] = useState(oauth?.token ?? (config && config.kind !== "file" ? config.token : ""));
+  const [dir, setDir] = useState(config?.kind === "file" ? config.dir : "");
+  const [folderNote, setFolderNote] = useState("");
+
+  // The folder option needs a real path on disk: the desktop shell has one to
+  // give, a browser tab and a phone do not.
+  const [folders, setFolders] = useState(config?.kind === "file");
+  useEffect(() => {
+    void nativeInfo().then((info) => {
+      if (info && !info.mobile) setFolders(true);
+    });
+  }, []);
   const [passphrase, setPassphrase] = useState(config?.passphrase ?? "");
   const [markdown, setMarkdown] = useState(config?.kind === "github" && config.markdown === true);
 
@@ -47,7 +59,11 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
 
   const secret = passphrase === "" ? undefined : passphrase;
   const built: SyncConfig | null =
-    mode === "github"
+    mode === "file"
+      ? dir.trim() !== ""
+        ? { kind: "file", dir: dir.trim(), passphrase: secret }
+        : null
+      : mode === "github"
       ? /^[^\s/]+\/[^\s/]+$/.test(repo.trim()) && token.trim() !== ""
         ? {
             kind: "github",
@@ -89,13 +105,60 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
           >
             GitHub 저장소
           </button>
+          {folders ? (
+            <button
+              type="button"
+              className={mode === "file" ? "mode-on" : ""}
+              aria-pressed={mode === "file"}
+              onClick={() => setMode("file")}
+            >
+              이 컴퓨터의 폴더
+            </button>
+          ) : null}
         </div>
 
-        {mode === "rest" ? (
+        {mode === "file" ? (
           <>
             <p className="sync-note">
-              JSON 문서 하나를 <code>GET</code> / <code>PUT</code> 하는 주소면 무엇이든 됩니다. Firebase Realtime
-              Database 경로를 그대로 붙여넣어도 되고, 직접 만든 엔드포인트여도 됩니다. 병합은 기기 쪽에서
+              고른 폴더에 <code>outliner.json</code> 파일 하나를 두고, 그 파일을 정본으로 읽고 씁니다. iCloud
+              Drive·Dropbox·Google Drive·OneDrive·Syncthing이 이미 동기화하는 폴더를 고르면 그 서비스가 파일을
+              다른 컴퓨터로 옮겨 주고, 병합은 이 앱이 합니다. 서비스가 충돌 사본(<code>outliner (1).json</code>{" "}
+              같은 파일)을 만들면 그 내용까지 합친 뒤 사본을 지웁니다. 그래서 <strong>이 앱 전용 폴더</strong>를
+              고르세요. 폴더를 공유하지 않으면 이 컴퓨터 안의 백업 사본으로 쓰입니다. 폰에서는 이 방식을 쓸 수
+              없으므로, 폰과 함께 쓰려면 GitHub 저장소나 서버를 고르세요.
+            </p>
+            <label className="field">
+              <span>폴더</span>
+              <input
+                className="field-input"
+                placeholder="/Users/me/Library/Mobile Documents/com~apple~CloudDocs/Outliner"
+                value={dir}
+                onChange={(event) => setDir(event.target.value)}
+              />
+            </label>
+            <button
+              type="button"
+              className="ghost repo-create"
+              onClick={() => {
+                void pickFolder()
+                  .then((picked) => {
+                    if (picked) setDir(picked);
+                  })
+                  .catch(() => {
+                    /* the dialog failed to open; the path can still be typed */
+                  });
+              }}
+            >
+              폴더 고르기…
+            </button>
+            {folderNote ? <p className="sync-note">{folderNote}</p> : null}
+          </>
+        ) : mode === "rest" ? (
+          <>
+            <p className="sync-note">
+              JSON 문서 하나를 <code>GET</code> / <code>PUT</code> 하는 주소면 무엇이든 됩니다. 무료로 띄울 수 있는
+              Cloudflare Worker(<code>server/cloudflare/</code>)나 직접 띄우는 레퍼런스 서버의 주소를 넣어도 되고,
+              Firebase Realtime Database 경로를 그대로 붙여넣어도 됩니다. 병합은 기기 쪽에서
               일어나므로 서버는 저장만 하면 됩니다. 문서 히스토리와 이미지 첨부는 GitHub 저장소 백엔드만의
               기능입니다 — 동기화와 병합은 어느 쪽이든 같습니다.
             </p>
@@ -260,8 +323,20 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
             className="primary"
             disabled={built === null}
             onClick={() => {
-              store.sync.setConfig(built);
-              onClose();
+              if (built?.kind !== "file") {
+                store.sync.setConfig(built);
+                onClose();
+                return;
+              }
+              // The shell keeps its own list of folders it may touch; a typed
+              // path gets its native confirmation first.
+              void allowFolder(built.dir)
+                .then((allowed) => {
+                  if (!allowed) return setFolderNote("폴더를 허용하지 않아 연결하지 않았습니다.");
+                  store.sync.setConfig(built);
+                  onClose();
+                })
+                .catch(() => setFolderNote("이 폴더를 쓸 수 없습니다."));
             }}
           >
             저장하고 동기화
@@ -274,6 +349,7 @@ export function SyncSettings({ store, oauth, onClose }: { store: Store; oauth?: 
 
 const GRADE_LABEL: Record<string, string> = {
   persisted: "저장 보장됨",
+  file: "앱 파일에도 보관됨",
   "best-effort": "보장되지 않음",
   unknown: "알 수 없음"
 };
@@ -290,7 +366,7 @@ function StorageGradeLine({ store }: { store: Store }) {
   return (
     <p className="sync-status-line">
       이 기기의 저장: <strong>{GRADE_LABEL[grade]}</strong>
-      {grade === "persisted" ? null : (
+      {grade === "persisted" || grade === "file" ? null : (
         <button type="button" className="search-save" onClick={request}>
           저장 보장 요청
         </button>

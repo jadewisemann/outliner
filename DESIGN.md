@@ -4,7 +4,7 @@
 조용히 코드를 따르지 않고 [AGENTS.md](./AGENTS.md)의 판정 규칙대로 판정한다. 이 문서를
 정본으로 승격한 결정 자체는 [ADR-0001](./docs/adr/0001-design-doc-authority.md)에 있다.
 
-> **작성 기준: 2026-09-01, 스키마 v8(`Workspace.keymap`) 반영.** 이 문서는 코드에서 추출해
+> **작성 기준: 2026-09-29, 스키마 v8(`Workspace.keymap`)과 네이티브 셸(ADR-0010·0011) 반영.** 이 문서는 코드에서 추출해
 > 동기화한 것이며, 이 시점 이후에 생긴 어긋남만 판정 대상이다.
 
 ## 무엇인가
@@ -13,7 +13,10 @@ Dynalist를 대신하는 로컬 우선 아웃라이너. 브라우저에서 열�
 기기에 남고, 내 기기끼리는 알아서 합쳐진다. 정적 빌드 하나가 제품의 전부이고, 서버는 노트를
 저장할 뿐 판정하지 않는다. 방향은 Dynalist를 베끼는 것이 아니다 — **편집은 마크다운
 에디터처럼, 항해는 코드 에디터의 팔레트처럼** ([docs/parity.md](./docs/parity.md)).
-날짜·일정 계열과 Tauri 데스크톱은 범위에서 뺐다.
+날짜는 텍스트 안의 표기로 읽고 찾지만, 알림·반복·캘린더 같은 일정 기능은 범위 밖이다
+([ADR-0012](./docs/adr/0012-dates-as-text.md)). 같은 정적 빌드가 브라우저 탭, 설치된 PWA, 그리고 macOS·Windows·
+Linux·Android용 Tauri 셸(`src-tauri/`) 안에서 돈다
+([ADR-0010](./docs/adr/0010-native-shell.md)).
 
 ## 핵심 원칙 — 각각이 위반 판정 가능한 불변식이다
 
@@ -53,7 +56,8 @@ Dynalist를 대신하는 로컬 우선 아웃라이너. 브라우저에서 열�
 14. **서식은 전부 `text` 안의 마크다운 문자열이다.** 서식을 위한 별도 필드나 리치텍스트
     구조를 들이는 구현은 위반이다 — 내보내기에서 살아남고 동기화 페이로드가 그대로인 것의
     전제다. (표시 전용 플래그 `checklist`/`numbered`/`color`/`quote`는 노드 필드이고 기존
-    LWW를 탄다.)
+    LWW를 탄다.) 날짜 `!(2026-09-29)`도 같은 계열이다 — 필드가 아니라 문자열이라서, Dynalist에서 가져온
+    노트의 날짜가 변환 없이 날짜로 보인다 ([ADR-0012](./docs/adr/0012-dates-as-text.md)).
 15. **폴더·저장된 검색·휴지통은 전부 문서다** — `kind: "doc" | "folder" | "search"`와
     `deleted` 스탬프로 구분되는 같은 레코드·같은 파일·같은 병합 규칙. 이들을 위해 동기화
     페이로드나 파일 종류를 늘리는 구현은 위반이다. 퀵 캡처의 도착지도 같은 수법으로
@@ -75,13 +79,30 @@ Dynalist를 대신하는 로컬 우선 아웃라이너. 브라우저에서 열�
     바뀐다), 등급이 persisted가 아니면 그 사실이 보인다. 요청하지 않는 구현, 또는 거절을
     조용히 넘기는 구현은 위반이다 — 후자는 하지 않은 보장을 한 척하는 것이다.
     **"persisted 여야 한다"는 불변식이 아니다** — 판정하는 것은 코드가 아니라 브라우저이고,
-    코드가 지킬 수 있는 것은 묻는 것과 정직하게 말하는 것까지다.
+    코드가 지킬 수 있는 것은 묻는 것과 정직하게 말하는 것까지다. 네이티브 셸 안에서는 저장할 때마다
+    앱이 자기 데이터 폴더에 파일을 직접 쓰므로, 등급을 `file`로 보고하고 경고하지 않는다. 그 파일
+    쓰기가 실패하면 저장 실패로 보인다 ([native.md](./docs/design/native.md) 「로컬 사본」).
 19. **읽을 수 있는 Markdown 사본은 파생물이고, 암호와 함께 갈 수 없다.** `.json`이 정본이고
     `.md`는 그것의 사본이다. 앱이 이 파일을 **읽는** 구현은 위반이다 — 정본이 둘이 된다.
     그리고 **암호가 걸린 워크스페이스에 사본을 남기는 구현은 위반이다** — 암호문 옆의 평문은
     암호를 건 의미를 없앤다. 끄거나 암호를 걸었을 때 이미 만들어진 사본을 지우는 데까지가 이
     불변식이고, 판정은 UI가 아니라 백엔드가 한다
     ([ADR-0007](./docs/adr/0007-markdown-mirror.md)).
+20. **네이티브 셸은 바이트를 옮길 뿐 판정하지 않는다.** `src-tauri/`의 Rust 명령은 파일 읽기·조건부
+    쓰기, 폴더 고르기, 외부 링크 열기, 창 불러오기만 한다. 노트를 파싱·검증·병합하는 코드를 Rust 쪽에
+    두는 구현은 위반이다. 그러면 브라우저와 앱이 서로 다른 규칙으로 병합하고, 신뢰 경계(원칙 6)가
+    둘로 갈라진다. 웹 코드는 `@tauri-apps/api` 없이 `window.__TAURI__` 전역만
+    `src/shared/native.ts`에서 읽는다. 그래서 원칙 12의 의존성 목록이 셸 때문에 늘지 않는다
+    ([ADR-0010](./docs/adr/0010-native-shell.md)).
+21. **CAS가 없는 원격은 스스로 `unguarded`라고 밝히고, 그때 루프는 원격이 빠뜨린 것이 있으면
+    편집이 없어도 푸시한다.** 동기화 서비스가 옮기는 폴더의 파일은 묻지 않고 바뀔 수 있어서,
+    "편집이 없으면 푸시하지 않는다"는 규칙만으로는 잃어버린 쓰기가 다음 편집 때까지 복구되지 않는다.
+    판정은 `mergeWorkspace(원격, 로컬)`의 객체 동일성으로 하고(원칙 4), CAS가 있는 백엔드에는 켜지
+    않는다. 그리고 **이 백엔드는 남의 바이트를 지우지 않는다.** 합친 충돌 사본은 합친 결과를 쓴 뒤
+    `.outliner-merged/`로 옮기되 읽은 뒤로 바뀌지 않았을 때만 옮기고, 읽지 못한 `outliner.json`은 그
+    자리에 쓰기 전에 `outliner.unreadable-….json`으로 비켜 두며, 읽지 못한 사본은 건드리지 않는다.
+    이 불변식이 없으면 "원격이 비어 보인다"가 곧바로 덮어쓰기가 된다 — 편집 없이도 푸시하는
+    백엔드가 여기서 처음 생겼기 때문이다 ([ADR-0011](./docs/adr/0011-folder-backend.md)).
 
 ## 아키텍처
 
@@ -98,9 +119,11 @@ Dynalist를 대신하는 로컬 우선 아웃라이너. 브라우저에서 열�
            │ pull → merge → push (compare-and-swap, 지면 pull부터 재시도)
            ▼                                                      ▼
       ┌────────────────────────────────────────────────────────────────┐
-      │ 백엔드 = "버전 붙은 JSON을 읽고 CAS로 쓴다"는 계약의 구현체 둘:      │
-      │  · 아무 GET/PUT JSON 엔드포인트 (Firebase RTDB 경로 포함)         │
+      │ 백엔드 = "버전 붙은 JSON을 읽고 CAS로 쓴다"는 계약의 구현체 셋:      │
+      │  · 아무 GET/PUT JSON 엔드포인트 (레퍼런스 서버, Cloudflare Worker, │
+      │    Firebase RTDB 경로)                                          │
       │  · GitHub 저장소 (contents API, 문서당 파일 하나)                 │
+      │  · 폴더의 outliner.json (데스크톱 셸만, CAS는 기기 안에서만)       │
       │ (선택) 종단 간 암호화 — 기기를 떠나기 전에 봉하고, 원격은 크기만 본다 │
       └────────────────────────────────────────────────────────────────┘
 ```
@@ -111,6 +134,9 @@ Dynalist를 대신하는 로컬 우선 아웃라이너. 브라우저에서 열�
 api/            Vercel serverless — OAuth code↔token 교환 (client secret 보관처)
 server/         레퍼런스 셀프 호스트 백엔드 — 정적 파일 + GET/PUT + If-Match, 의존성 0.
                 앱은 이것을 import 하지 않는다. REST 백엔드가 요구하는 계약의 구현 하나일 뿐이다
+  cloudflare/     같은 계약을 Workers Free 플랜의 Durable Object 위에 (worker.mjs, wrangler.toml)
+src-tauri/      네이티브 셸 (Tauri 2) — 판정하지 않는다(원칙 20). folder.rs는 std만 쓰고 단독으로
+                테스트된다. icons/·gen/은 생성물이라 커밋하지 않는다
 public/sw.js    셸 캐시 — 오프라인으로 "여는" 것만 담당
 src/
   types.ts      Node / Doc / Workspace 모델, 문서 트리(폴더) (코드가 정본)
@@ -118,15 +144,16 @@ src/
   history.ts    실행 취소 — 재스탬프 (원칙 10)
   app/          레이아웃 껍데기: App, Sidebar, Backlinks, Settings, Keys, Shortcuts
                 appearance.ts(글꼴·너비·공유 캡처)
-  outline/      트리 연산(tree.ts), 인라인 마크다운, markdown.ts(서식 키보드),
+  outline/      트리 연산(tree.ts), 인라인 마크다운, markdown.ts(서식 키보드), dates.ts(날짜 표기),
                 highlight.tsx(라이브러리 없는 코드 색), 가상화·스와이프,
                 useOutline(조립 + 행 키보드·메모·확대·첨부)와 관심사별 훅 —
                 useLive(공유 최신값) · useRowDrag(드래그) · useRowMenu(메뉴) ·
                 useCompletion([[/#/@ 자동완성) · useRowSelection(행 선택)
     components/   Outline, Row, RowMenu, Editable, TouchBar, TeX, Attachment — 렌더링만
   palette/      palette.ts(후보 랭킹), commands.ts(앱의 모든 명령) + Palette
-  sync/         merge.ts(병합 규칙), useSync.ts(pull–merge–push 루프·백오프·탭 간 핑)
-    api/          remote/(전송 — contract·rest·github·codec·settings·mirror, 입구는 index.ts),
+  sync/         merge.ts(병합 규칙), useSync.ts(pull–merge–push 루프·백오프·탭 간 핑),
+                push.ts(언제 푸시하나 — CAS 없는 원격의 보정 포함)
+    api/          remote/(전송 — contract·rest·github·file·codec·settings·mirror, 입구는 index.ts),
                   cipher.ts(E2EE), attachments.ts(내용 해시 이름과 object URL),
                   githubAuth.ts(OAuth 플로)
     components/   SyncSettings(+SyncBadge), HistoryPanel
@@ -136,6 +163,7 @@ src/
   transfer/     Markdown/OPML/백업 변환, paths(피커가 준 경로) + useTransfer(파일 입출력)
   shared/       order(정렬 키), clock(논리 시계),
                 keymap.ts(재바인딩 가능한 키 전부 + editor·dynalist 두 프리셋),
+                native.ts(네이티브 셸 다리 — 브라우저에서는 전부 no-op), useDay(자정에 바뀌는 오늘),
                 download, Panel(모달)
 ```
 
@@ -149,6 +177,7 @@ src/
 | [docs/design/sync.md](./docs/design/sync.md) | 병합 규칙, 전송 계약·케이던스, GitHub 파일 배치, E2EE를 만질 때 |
 | [docs/design/editing.md](./docs/design/editing.md) | 행 편집 모델(IME), 트리 연산 성능, 가상화, 터치 바, undo를 만질 때 |
 | [docs/design/trust-boundary.md](./docs/design/trust-boundary.md) | 외부 데이터 검증, CSP, 실패 처리, 토큰·암호의 경계를 만질 때 |
+| [docs/design/native.md](./docs/design/native.md) | 네이티브 셸의 명령, 로컬 사본, 폴더 허용 목록, Android 인셋, 빌드·서명·스모크 검증을 만질 때 |
 | [docs/design/code-rationale.md](./docs/design/code-rationale.md) | **값을 바꾸거나 단순화하기 전에 해당 심볼을 여기서 먼저 찾아본다** |
 | [docs/parity.md](./docs/parity.md) | 기능 방향의 근거 — Dynalist 격차 분석, P0~P2 이력, 스키마 변경 총계 |
 | [docs/research/logseq-prior-art.md](./docs/research/logseq-prior-art.md) | Markdown 파일을 정본으로 두는 방안이나 파생 Markdown 미러를 검토할 때. Logseq이 같은 선택을 하고 물러난 기록이다 |
@@ -167,7 +196,8 @@ src/
 - `index.html`의 CSP 정책 값
 - `public/manifest.webmanifest`, `public/icon.svg`(아이콘의 정본은 SVG, PNG는 파생), `public/sw.js`
 - `package.json`의 스크립트·의존성 목록
-- `.github/workflows/pages.yml` — 배포 파이프라인
+- `.github/workflows/pages.yml` — 배포 파이프라인, `native.yml` — 설치 파일 빌드, `check.yml` — PR 검사
+- `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml` — 셸의 식별자·창·번들 설정과 네이티브 의존성
 
 ## 알려진 한계 (의도된 트레이드 — 조용히 "고치지" 않는다)
 
@@ -211,4 +241,18 @@ src/
 - **단축키 표는 기기 사이를 건너고, 화면 설정과 테마는 건너지 않는다.** 측정값은 화면의
   것이고 단축키는 사람의 것이다 ([ADR-0008](./docs/adr/0008-keymap-travels.md)). 대가로
   동기화 페이로드가 노트만 싣던 것에서 표시 설정 하나를 더 싣는 것으로 자랐다.
+- **macOS 설치 파일은 서명·공증이 없다.** 유료 개발자 계정이 필요한 일이라, 처음 열 때 한 번
+  우클릭 → 열기가 필요하다. Android APK는 저장소 비밀값의 키로 서명되고, 키가 없으면 빌드마다 다른
+  키가 쓰여 업데이트 설치가 안 된다 (ADR-0010).
+- **폴더 백엔드는 데스크톱 셸에만 있다.** Android는 경로가 아니라 content URI를 주고, 브라우저는
+  백그라운드에서 폴더를 읽지 못한다. 그리고 **폴더는 앱 전용이어야 한다.** `outliner`로 시작하는
+  `.json` 파일은 충돌 사본으로 읽히고, 합쳐진 뒤 `.outliner-merged/`로 옮겨지기 때문이다. Finder의
+  「복제」가 만드는 `outliner copy.json`은 사람이 남긴 스냅숏으로 보고 건드리지 않는다 (ADR-0011).
+- **날짜는 첫 날짜 하나만 읽고, 반복 규칙은 해석하지 않는다.** `!(2026-09-29 | 1w)`의 `| 1w`는 그대로
+  보일 뿐이다. `!!`는 단어 시작에서만 날짜가 되고, Android에서는 팔레트 명령이 그 자리를 대신한다
+  (ADR-0012).
+- **macOS·Windows 앱은 빌드까지만 자동으로 확인된다.** 실제 앱을 구동하는 스모크 테스트는 Linux와
+  Android에서만 돈다 ([native.md](./docs/design/native.md) 「검증」).
+- **셸 안에서는 GitHub 로그인 버튼이 없다.** OAuth 콜백이 웹 origin으로 돌아와야 하기 때문이다.
+  PAT 붙여넣기는 그대로 된다.
 - `Node` 타입 이름이 DOM의 `Node`를 가린다.
