@@ -1,10 +1,9 @@
-import { readPayload } from "../../../storage/validate";
 import { invokeNative } from "../../../shared/native";
 import { mergeWorkspace } from "../../merge";
 import { lacks } from "../../push";
 import { isLocked, type Keyring } from "../cipher";
 import { emptyPayload, type Backend, type Stored, type SyncConfig } from "./contract";
-import { parse } from "./codec";
+import { openPayload, sealPayload } from "./payload";
 import type { SyncPayload } from "../../../types";
 
 /** One file as the shell read it. `stamp` is a hash of its bytes, used as the version. */
@@ -60,7 +59,7 @@ export function createFileBackend(config: Extract<SyncConfig, { kind: "file" }>,
     // Untrusted like any remote: the file may have been edited by hand,
     // half-synced, or written by a newer build. A sealed file under another
     // passphrase throws `locked` here, which stops the round.
-    const payload = readPayload(parse(await keys.open(entry.text)));
+    const payload = await openPayload(keys, entry.text);
     if (payload) return payload;
     // Readable bytes that are not a workspace: set them aside so the write
     // that follows cannot destroy them.
@@ -70,7 +69,8 @@ export function createFileBackend(config: Extract<SyncConfig, { kind: "file" }>,
 
   const readCopy = async (entry: Entry): Promise<SyncPayload | null> => {
     try {
-      return readPayload(parse(await keys.open(entry.text)));
+      // Awaited here, inside the try: a returned promise would reject past the catch.
+      return await openPayload(keys, entry.text);
     } catch (error) {
       // A copy sealed under a passphrase this device lacks is left on disk
       // and out of the merge. It is never written over, so it need not stop
@@ -129,7 +129,7 @@ export function createFileBackend(config: Extract<SyncConfig, { kind: "file" }>,
     async push(payload, version) {
       const stamp = await invokeNative<string | null>("folder_write", {
         dir: config.dir,
-        text: await keys.seal(JSON.stringify(payload)),
+        text: await sealPayload(keys, payload),
         expect: typeof version === "string" ? version : null,
         retire: merged
       });

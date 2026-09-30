@@ -17,6 +17,7 @@
  * `crypto.subtle` needs a secure context, so this works over https and on
  * localhost, which is where the app runs anyway.
  */
+import { fromBinaryString, toBinaryString } from "./remote/codec";
 
 /**
  * Thrown when the bytes cannot be read: no passphrase for an encrypted
@@ -24,9 +25,9 @@
  * because carrying on would mean treating unreadable files as absent ones and
  * overwriting them.
  */
-export const LOCKED = "outliner:locked";
+const LOCKED = "outliner:locked";
 
-export const ITERATIONS = 600_000;
+const ITERATIONS = 600_000;
 
 /** Refuses a file that would cost minutes to derive from. */
 const MAX_ITERATIONS = 4_000_000;
@@ -151,12 +152,9 @@ function random(bytes: number): Uint8Array<ArrayBuffer> {
 }
 
 function encode(bytes: Uint8Array): string {
-  let binary = "";
-  for (let at = 0; at < bytes.length; at += 0x8000) binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
-  return btoa(binary);
+  return btoa(toBinaryString(bytes));
 }
 
 function decode(text: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(text);
-  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return fromBinaryString(atob(text));
 }

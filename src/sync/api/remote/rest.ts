@@ -1,7 +1,6 @@
-import { readPayload } from "../../../storage/validate";
 import type { Keyring } from "../cipher";
 import { TIMEOUT_MS, emptyPayload, type Backend, type SyncConfig } from "./contract";
-import { parse } from "./codec";
+import { openPayload, sealPayload } from "./payload";
 
 /**
  * Correctness does not depend on locking. Every device pulls, merges and
@@ -30,7 +29,7 @@ export function createRestBackend(config: Extract<SyncConfig, { kind: "rest" }>,
 
       // Whatever is at the other end is untrusted, even when it is the user's
       // own server: a malformed body must not be able to damage the workspace.
-      const payload = readPayload(parse(await keys.open(await response.text())));
+      const payload = await openPayload(keys, await response.text());
       return { payload: payload ?? emptyPayload(), version: response.headers.get("etag") };
     },
 
@@ -39,7 +38,7 @@ export function createRestBackend(config: Extract<SyncConfig, { kind: "rest" }>,
       const response = await fetch(config.url, {
         method: "PUT",
         headers: headers(etag ? { "if-match": etag } : {}),
-        body: await keys.seal(JSON.stringify(payload)),
+        body: await sealPayload(keys, payload),
         signal: AbortSignal.timeout(TIMEOUT_MS)
       });
       if (response.status === 412 || response.status === 409) return null;

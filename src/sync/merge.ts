@@ -19,14 +19,16 @@ import type { Doc, Id, KeymapSetting, Node, Stamp, SyncPayload } from "../types"
  * winner. For a single person across their own devices that is the right
  * trade: the alternative costs an order of magnitude more machinery.
  *
- * The merge preserves object identity wherever nothing actually changed, so
- * `store` can tell a no-op sync from a real one and React can skip the render.
+ * The merge preserves object identity wherever nothing actually changed, so a
+ * no-op sync can be told from a real one without serialising anything —
+ * `useSync`'s absorb asks `changedBy`, and `push.ts`'s `lacks` asks the same
+ * question the other way round — and React can skip the render.
  */
 
 /** Gravestones older than this are forgotten; see `pruneGraves`. */
-export const GRAVE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const GRAVE_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
-export type MergeOptions = {
+type MergeOptions = {
   now?: number;
   /**
    * Set only on a device's very first sync with an endpoint. Content alone

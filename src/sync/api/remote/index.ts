@@ -1,6 +1,8 @@
 // The one import path for the transport layer. The split behind it: contract
 // (types), rest / github / file (the three backends), codec (byte-stable serialisation),
-// settings (localStorage config and the cross-tab ping).
+// payload (whole-workspace bodies, opened through validation), mirror (the
+// Markdown mirror's file names and text), settings (localStorage config and the
+// cross-tab ping).
 import { createKeyring, plainKeyring } from "../cipher";
 import { createGithubBackend, repoFolder } from "./github";
 import { createFileBackend } from "./file";
@@ -10,7 +12,6 @@ import type { Backend, SyncConfig } from "./contract";
 export type {
   Backend,
   Files,
-  GithubVersion,
   History,
   Revision,
   Stored,
@@ -18,6 +19,7 @@ export type {
   SyncStatus,
   Version
 } from "./contract";
+export { DEFAULT_FOLDER } from "./contract";
 export { allowFolder, pickFolder } from "./file";
 export {
   announceToOtherTabs,

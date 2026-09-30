@@ -1,9 +1,14 @@
 import type { Doc, Id, Stamp, SyncPayload } from "../../../types";
-import { readDoc, readGraves, readKeymap, readPayload } from "../../../storage/validate";
+import { readDoc, readGraves, readKeymap } from "../../../storage/validate";
 import type { Keyring } from "../cipher";
 import { markdownMirror } from "./mirror";
-import { TIMEOUT_MS, type Backend, type GithubVersion, type Stored, type SyncConfig } from "./contract";
+import { DEFAULT_FOLDER, TIMEOUT_MS, type Backend, type GithubVersion, type Stored, type SyncConfig } from "./contract";
 import { fromBase64, fromBinaryString, parse, serialize, toBase64, toBinaryString } from "./codec";
+import { openPayload } from "./payload";
+
+/** A small file this device keeps a copy of, as a conditional GET last found it. */
+type Fetched = { etag: string | null; sha: string | null; text: string };
+type Tracked<T> = Fetched & { value: T };
 
 /**
  * GitHub implements the contract exactly: GET a file returns its content plus
@@ -17,6 +22,8 @@ import { fromBase64, fromBinaryString, parse, serialize, toBase64, toBinaryStrin
  *     {folder}/docs/{id}.json    one whole document
  *     {folder}/graves.json       ids of deleted documents
  *     {folder}/keymap.json       the chosen keyboard table, when there is one
+ *     {folder}/files/            attachments, named by the hash of their bytes
+ *     {folder}/markdown/         the readable Markdown mirror, only while it is on
  *
  * A single file makes every commit a rewrite of everything, which says nothing
  * about what changed. Split up, a push carries only the documents that were
@@ -33,12 +40,14 @@ import { fromBase64, fromBinaryString, parse, serialize, toBase64, toBinaryStrin
  */
 export function createGithubBackend(config: Extract<SyncConfig, { kind: "github" }>, keys: Keyring): Backend {
   const folder = repoFolder(config.path).split("/");
-  const contents = (segments: string[]) =>
-    `https://api.github.com/repos/${config.repo}/contents/${segments.map(encodeURIComponent).join("/")}`;
-  const docsUrl = contents([...folder, "docs"]);
-  const gravesUrl = contents([...folder, "graves.json"]);
-  const keymapUrl = contents([...folder, "keymap.json"]);
-  const markdownUrl = contents([...folder, "markdown"]);
+  const repoApi = `https://api.github.com/repos/${config.repo}`;
+  const contents = (segments: string[]) => `${repoApi}/contents/${segments.map(encodeURIComponent).join("/")}`;
+  /** A path inside the workspace folder. */
+  const at = (...segments: string[]) => contents([...folder, ...segments]);
+  const docsUrl = at("docs");
+  const gravesUrl = at("graves.json");
+  const keymapUrl = at("keymap.json");
+  const markdownUrl = at("markdown");
   // Where the workspace lived before it was split up.
   const legacyUrl = contents([...folder.slice(0, -1), `${folder[folder.length - 1]}.json`]);
 
@@ -72,23 +81,19 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
   // Encryption wins: the mirror is plaintext by definition, so the two cannot
   // both be on. Off is not passive — it removes whatever is already there.
   const enabled = config.markdown === true && !config.passphrase;
-  let graves: { etag: string | null; sha: string | null; text: string; value: Record<Id, Stamp> } = {
-    etag: null,
-    sha: null,
-    text: serialize({}),
-    value: {}
-  };
+  // What a missing file reads as: the text push() computes for "nothing there",
+  // so an empty payload against a missing file writes nothing. That text is
+  // `{}` for the gravestones and "" for the keyboard table (no table, no file),
+  // which is why the two are kept apart.
+  const noGraves = (): Tracked<Record<Id, Stamp>> => ({ etag: null, sha: null, text: serialize({}), value: {} });
+  const noKeymap = (): Tracked<SyncPayload["keymap"]> => ({ etag: null, sha: null, text: "", value: null });
+  let graves = noGraves();
   /**
    * The keyboard table, in its own file for the same reason the documents are
    * in theirs: a workspace that never changes it never rewrites it, and the
    * commit that does says so by name.
    */
-  let keymap: { etag: string | null; sha: string | null; text: string; value: SyncPayload["keymap"] } = {
-    etag: null,
-    sha: null,
-    text: "",
-    value: null
-  };
+  let keymap = noKeymap();
   // Conditional GETs: an unchanged file or folder answers 304 with no body,
   // which does not count against the rate limit — polling an idle remote is
   // free, however many documents it holds.
@@ -106,13 +111,10 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
     }
     if (!response.ok) throw new Error(`github pull failed: ${response.status}`);
 
-    const body = (await response.json()) as unknown;
-    if (!Array.isArray(body)) return null;
+    const files = fileEntries(await response.json());
+    if (!files) return null;
     const entries: [Id, string][] = [];
-    for (const item of body) {
-      if (!item || typeof item !== "object") continue;
-      const { name, sha, type } = item as { name?: unknown; sha?: unknown; type?: unknown };
-      if (type !== "file" || typeof name !== "string" || typeof sha !== "string") continue;
+    for (const [name, sha] of files) {
       const id = docIdOf(name);
       if (id) entries.push([id, sha]);
     }
@@ -123,11 +125,7 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
 
   /** Reads one document by its blob sha, which the folder listing already gave us. */
   async function readFile(id: Id, sha: string) {
-    const response = await api(
-      `https://api.github.com/repos/${config.repo}/git/blobs/${encodeURIComponent(sha)}`,
-      {},
-      "application/vnd.github.raw"
-    );
+    const response = await api(`${repoApi}/git/blobs/${encodeURIComponent(sha)}`, {}, "application/vnd.github.raw");
     if (!response.ok) throw new Error(`github pull failed: ${response.status}`);
     const text = await keys.open(await response.text());
     // A file this device cannot read is left alone rather than deleted: it may
@@ -135,58 +133,51 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
     return { sha, text, doc: readDoc(id, parse(text)) };
   }
 
-  async function loadGraves(): Promise<void> {
-    const response = await api(gravesUrl, graves.etag ? { headers: { "if-none-match": graves.etag } } : {});
-    if (response.status === 304) return;
-    if (response.status === 404) {
-      graves = { etag: null, sha: null, text: serialize({}), value: {} };
-      return;
-    }
+  /**
+   * One of the small tracked files, by conditional GET: `"unchanged"` on a 304,
+   * `"absent"` when there is no such file, otherwise its opened text. Throws
+   * rather than answer for bytes it did not get or cannot open, and the caller
+   * replaces its copy only with what comes back, so a failure leaves it as it was.
+   */
+  async function readTracked(url: string, etag: string | null, label: string): Promise<"unchanged" | "absent" | Fetched> {
+    const response = await api(url, etag ? { headers: { "if-none-match": etag } } : {});
+    if (response.status === 304) return "unchanged";
+    if (response.status === 404) return "absent";
     if (!response.ok) throw new Error(`github pull failed: ${response.status}`);
     const body = (await response.json()) as { content?: string; encoding?: string; sha?: string };
     // A file past the contents API's inline limit answers with no content and
-    // `encoding: "none"`. Reading that as an empty set would cause the one
-    // thing this file exists to prevent: documents missing without their
-    // gravestone are live documents to the merge, so this device would upload
-    // its copies straight back, and the push after it would write its own
-    // short list over the real one. Failing the pull stops both — the loop
-    // backs off and reports itself, and no push follows a failed pull.
-    if (body.encoding !== "base64" || typeof body.content !== "string") {
-      throw new Error(`github pull failed: graves.json unreadable (encoding: ${String(body.encoding)})`);
-    }
-    const text = await keys.open(fromBase64(body.content));
-    graves = {
-      etag: response.headers.get("etag"),
-      sha: body.sha ?? null,
-      text,
-      value: readGraves(parse(text))
-    };
+    // `encoding: "none"`. Reading graves.json that way, as an empty set, would
+    // cause the one thing that file exists to prevent: documents missing
+    // without their gravestone are live documents to the merge, so this device
+    // would upload its copies straight back, and the push after it would write
+    // its own short list over the real one. Failing the pull stops both — the
+    // loop backs off and reports itself, and no push follows a failed pull.
+    // keymap.json refuses for the same reason: bytes this cannot read are not
+    // an empty table, and pretending otherwise would push a default over a
+    // choice the user actually made on another device.
+    const content = inlineContent(body);
+    if (content === null) throw new Error(`github pull failed: ${label} unreadable (encoding: ${String(body.encoding)})`);
+    const text = await keys.open(fromBase64(content));
+    return { etag: response.headers.get("etag"), sha: body.sha ?? null, text };
+  }
+
+  async function loadGraves(): Promise<void> {
+    const read = await readTracked(gravesUrl, graves.etag, "graves.json");
+    if (read === "unchanged") return;
+    graves = read === "absent" ? noGraves() : { ...read, value: readGraves(parse(read.text)) };
   }
 
   async function loadKeymap(): Promise<void> {
-    const response = await api(keymapUrl, keymap.etag ? { headers: { "if-none-match": keymap.etag } } : {});
-    if (response.status === 304) return;
-    if (response.status === 404) {
-      keymap = { etag: null, sha: null, text: "", value: null };
-      return;
-    }
-    if (!response.ok) throw new Error(`github pull failed: ${response.status}`);
-    const body = (await response.json()) as { content?: string; encoding?: string; sha?: string };
-    // Same refusal as the gravestones: bytes this cannot read are not an
-    // empty table, and pretending otherwise would push a default over a
-    // choice the user actually made on another device.
-    if (body.encoding !== "base64" || typeof body.content !== "string") {
-      throw new Error(`github pull failed: keymap.json unreadable (encoding: ${String(body.encoding)})`);
-    }
-    const text = await keys.open(fromBase64(body.content));
-    keymap = { etag: response.headers.get("etag"), sha: body.sha ?? null, text, value: readKeymap(parse(text)) };
+    const read = await readTracked(keymapUrl, keymap.etag, "keymap.json");
+    if (read === "unchanged") return;
+    keymap = read === "absent" ? noKeymap() : { ...read, value: readKeymap(parse(read.text)) };
   }
 
   /**
    * Reads the pre-split single file, once, so a repository written by an
    * earlier build keeps its notes. The version comes back `null`: the folder
-   * does not exist yet, so the store must push rather than assume the remote
-   * already holds everything.
+   * does not exist yet, so the sync loop must push rather than assume the
+   * remote already holds everything.
    */
   async function adoptLegacy(): Promise<Stored | null> {
     if (legacyChecked) return null;
@@ -195,8 +186,9 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
     if (response.status === 404) return null;
     if (!response.ok) throw new Error(`github pull failed: ${response.status}`);
     const body = (await response.json()) as { content?: string; encoding?: string; sha?: string };
-    if (body.encoding !== "base64" || typeof body.content !== "string") return null;
-    const payload = readPayload(parse(await keys.open(fromBase64(body.content))));
+    const content = inlineContent(body);
+    if (content === null) return null;
+    const payload = await openPayload(keys, fromBase64(content));
     if (!payload) return null;
     legacySha = body.sha ?? null;
     return { payload, version: null };
@@ -217,13 +209,11 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
     }
     if (!response.ok) throw new Error(`github push failed: ${response.status}`);
     const body = (await response.json().catch(() => null)) as { content?: { sha?: string } } | null;
-    const next = body?.content?.sha;
-    if (typeof next !== "string") {
-      listing = null;
-      return null;
-    }
+    // Dropped after the await, not before it: `files.put` writes outside the
+    // sync loop, so a pull may have stored a listing in the meantime.
     listing = null;
-    return next;
+    const next = body?.content?.sha;
+    return typeof next === "string" ? next : null;
   }
 
   async function remove(url: string, sha: string, message: string): Promise<boolean> {
@@ -245,16 +235,8 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
     const response = await api(markdownUrl);
     if (response.status === 404) return new Map();
     if (!response.ok) throw new Error(`github mirror list failed: ${response.status}`);
-    const body = (await response.json()) as unknown;
-    if (!Array.isArray(body)) return new Map();
-    const found = new Map<string, string>();
-    for (const item of body) {
-      if (!item || typeof item !== "object") continue;
-      const { name, sha, type } = item as { name?: unknown; sha?: unknown; type?: unknown };
-      if (type !== "file" || typeof name !== "string" || typeof sha !== "string") continue;
-      if (name.endsWith(".md")) found.set(name, sha);
-    }
-    return found;
+    const files = fileEntries(await response.json()) ?? [];
+    return new Map(files.filter(([name]) => name.endsWith(".md")));
   }
 
   /**
@@ -280,7 +262,7 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
       const sha = markdownShas.get(file.name) ?? null;
       if (sha && markdownText.get(file.name) === file.text) continue;
       const written = await write(
-        contents([...folder, "markdown", file.name]),
+        at("markdown", file.name),
         file.text,
         sha,
         `outliner: markdown ${file.name.replace(/\.md$/, "")}`
@@ -296,7 +278,7 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
 
     for (const [name, sha] of [...markdownShas]) {
       if (keep.has(name)) continue;
-      if (!(await remove(contents([...folder, "markdown", name]), sha, "outliner: remove markdown"))) {
+      if (!(await remove(at("markdown", name), sha, "outliner: remove markdown"))) {
         markdownShas = null;
         return;
       }
@@ -320,7 +302,7 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
      */
     files: {
       async put(name, bytes) {
-        const url = contents([...folder, "files", name]);
+        const url = at("files", name);
         const existing = await api(url);
         // Names are content-addressed, so a file that is already there is the
         // same file: uploading it again would only add a commit.
@@ -330,12 +312,13 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
       },
 
       async get(name) {
-        const response = await api(contents([...folder, "files", name]));
+        const response = await api(at("files", name));
         if (response.status === 404) return null;
         if (!response.ok) throw new Error(`github attach read failed: ${response.status}`);
         const body = (await response.json()) as { content?: string; encoding?: string };
-        if (body.encoding !== "base64" || typeof body.content !== "string") return null;
-        return fromBinaryString(await keys.open(fromBase64(body.content)));
+        const content = inlineContent(body);
+        if (content === null) return null;
+        return fromBinaryString(await keys.open(fromBase64(content)));
       }
     },
 
@@ -349,9 +332,7 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
         const name = fileNameOf(docId);
         if (!name) return [];
         const path = [...folder, "docs", name].join("/");
-        const response = await api(
-          `https://api.github.com/repos/${config.repo}/commits?per_page=40&path=${encodeURIComponent(path)}`
-        );
+        const response = await api(`${repoApi}/commits?per_page=40&path=${encodeURIComponent(path)}`);
         if (!response.ok) return [];
         const body = (await response.json()) as unknown;
         if (!Array.isArray(body)) return [];
@@ -372,11 +353,12 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
       async read(docId, revision) {
         const name = fileNameOf(docId);
         if (!name) return null;
-        const response = await api(`${contents([...folder, "docs", name])}?ref=${encodeURIComponent(revision)}`);
+        const response = await api(`${at("docs", name)}?ref=${encodeURIComponent(revision)}`);
         if (!response.ok) return null;
         const body = (await response.json()) as { content?: string; encoding?: string };
-        if (body.encoding !== "base64" || typeof body.content !== "string") return null;
-        return readDoc(docId, parse(await keys.open(fromBase64(body.content))));
+        const content = inlineContent(body);
+        if (content === null) return null;
+        return readDoc(docId, parse(await keys.open(fromBase64(content))));
       }
     },
 
@@ -442,24 +424,19 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
       // reading in between would see the row in both places until it caught
       // up. Same family as gravestones-before-deletions, one level down.
       const buried = (id: Id, doc: Doc) => {
-        const known = mirror.get(id)?.doc;
-        return known ? Object.keys(doc.graves).length > Object.keys(known.graves).length : false;
+        const held = mirror.get(id)?.doc;
+        return held ? Object.keys(doc.graves).length > Object.keys(held.graves).length : false;
       };
-      const changed = Object.entries(payload.docs).sort(
+      const ordered = Object.entries(payload.docs).sort(
         ([a, left], [b, right]) => Number(buried(b, right)) - Number(buried(a, left))
       );
 
-      for (const [id, doc] of changed) {
+      for (const [id, doc] of ordered) {
         const name = fileNameOf(id);
         if (!name) continue;
         const text = serialize(doc);
         if (mirror.get(id)?.text === text) continue;
-        const written = await write(
-          contents([...folder, "docs", name]),
-          text,
-          shas[id] ?? null,
-          `outliner: ${subject(doc.title)}`
-        );
+        const written = await write(at("docs", name), text, shas[id] ?? null, `outliner: ${subject(doc.title)}`);
         if (!written) return null;
         shas[id] = written;
         mirror.set(id, { sha: written, text, doc });
@@ -472,7 +449,7 @@ export function createGithubBackend(config: Extract<SyncConfig, { kind: "github"
         if (payload.docs[id] || !payload.graves[id]) continue;
         const name = fileNameOf(id);
         if (!name) continue;
-        if (!(await remove(contents([...folder, "docs", name]), known.docs[id], "outliner: remove document"))) {
+        if (!(await remove(at("docs", name), known.docs[id], "outliner: remove document"))) {
           return null;
         }
         delete shas[id];
@@ -510,7 +487,29 @@ export function repoFolder(path: string): string {
     .trim()
     .replace(/^\/+|\/+$/g, "")
     .replace(/\.json$/i, "");
-  return trimmed === "" ? "outliner" : trimmed;
+  return trimmed === "" ? DEFAULT_FOLDER : trimmed;
+}
+
+/**
+ * The bytes a contents API answer carries inline, still base64, or `null` when
+ * it carries none: past the inline limit the answer is metadata with
+ * `encoding: "none"`. What that means is each caller's call.
+ */
+function inlineContent(body: { content?: string; encoding?: string }): string | null {
+  return body.encoding === "base64" && typeof body.content === "string" ? body.content : null;
+}
+
+/** The files in a contents API folder listing, name and blob sha each; `null` when the body is no listing. */
+function fileEntries(body: unknown): [string, string][] | null {
+  if (!Array.isArray(body)) return null;
+  const files: [string, string][] = [];
+  for (const item of body) {
+    if (!item || typeof item !== "object") continue;
+    const { name, sha, type } = item as { name?: unknown; sha?: unknown; type?: unknown };
+    if (type !== "file" || typeof name !== "string" || typeof sha !== "string") continue;
+    files.push([name, sha]);
+  }
+  return files;
 }
 
 /**

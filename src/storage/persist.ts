@@ -1,6 +1,10 @@
-import { migrate } from "./migrate";
+/**
+ * IndexedDB with a localStorage fallback. IndexedDB is the primary store
+ * because a large outline outgrows the 5MB localStorage budget. Inside the
+ * native shell every save also goes to the app's own file, the replica.
+ */
+import { readStored } from "./migrate";
 import type { Workspace } from "../types";
-import { readWorkspace } from "./validate";
 import { invokeNative, isNative } from "../shared/native";
 
 const DB_NAME = "outliner";
@@ -10,16 +14,16 @@ const KEY = "current";
 const SAVED_AT = "savedAt";
 
 /**
- * IndexedDB with a localStorage fallback. IndexedDB is the primary store
- * because a large outline outgrows the 5MB localStorage budget.
+ * The browser's copy alone, never the shell's replica. Start-up reads through
+ * `loadLocal`; this is for the readers that come later — another tab's save
+ * (`useSync`'s cross-tab watcher) and the rescue download (`ErrorBoundary`).
+ * `null` when nothing usable is stored.
  */
-/** Returns `null` when there is nothing usable stored, so the caller can start fresh. */
 export async function loadWorkspace(): Promise<Workspace | null> {
-  const db = await openDb();
-  const raw = (db ? await readDb(db) : null) ?? readLocalStorage();
-  if (raw === null) return null;
+  const { value } = await readBrowserCopy();
+  if (value === null) return null;
   // Storage can be corrupted by a half-written record or an older build.
-  return readWorkspace(migrate(raw));
+  return readStored(value);
 }
 
 export async function saveWorkspace(workspace: Workspace): Promise<void> {
@@ -58,13 +62,22 @@ function writeReplica(workspace: Workspace, savedAt: number): Promise<void> {
  * device's history, not two devices, so the later copy is simply the truth.
  */
 export async function loadLocal(): Promise<Workspace | null> {
-  const db = await openDb();
-  const stored = db ? await readDb(db) : null;
-  const fromDb = stored ?? readLocalStorage();
+  const { db, stored, value: fromDb } = await readBrowserCopy();
   const dbAt = db && stored ? await readSavedAt(db) : 0;
   const replica = await readReplica();
   const pick = replica && (!fromDb || replica.savedAt > dbAt) ? replica.value : fromDb;
-  return pick === null ? null : readWorkspace(migrate(pick));
+  return pick === null ? null : readStored(pick);
+}
+
+/**
+ * Opens the database and reads the workspace from it, falling back to
+ * localStorage when there is no database or it holds nothing. `stored` is the
+ * database's answer alone; `value` is what the browser holds either way.
+ */
+async function readBrowserCopy(): Promise<{ db: IDBDatabase | null; stored: unknown; value: unknown }> {
+  const db = await openDb();
+  const stored = db ? await readDb(db) : null;
+  return { db, stored, value: stored ?? readLocalStorage() };
 }
 
 async function readReplica(): Promise<{ savedAt: number; value: unknown } | null> {
@@ -73,8 +86,13 @@ async function readReplica(): Promise<{ savedAt: number; value: unknown } | null
     const text = await invokeNative<string | null>("replica_read");
     if (!text) return null;
     const parsed = JSON.parse(text) as { savedAt?: unknown; workspace?: unknown };
+    if (typeof parsed?.savedAt !== "number") return null;
+    // A file with no workspace in it is no copy at all. Counted as the newer
+    // one, it would reach `migrate` and come back as a fresh workspace, and the
+    // next save would write that over the database.
+    if (typeof parsed.workspace !== "object" || parsed.workspace === null) return null;
     // Validated by the caller, like anything else from outside the page.
-    return typeof parsed?.savedAt === "number" ? { savedAt: parsed.savedAt, value: parsed.workspace } : null;
+    return { savedAt: parsed.savedAt, value: parsed.workspace };
   } catch {
     return null;
   }

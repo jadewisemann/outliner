@@ -14,7 +14,7 @@ import { exportDoc } from "../../../transfer/formats";
  * Turning it into a second source of truth is the failure Logseq lived through
  * and retreated from — see `docs/research/logseq-prior-art.md`.
  */
-export type MirrorFile = { name: string; text: string };
+type MirrorFile = { name: string; text: string };
 
 /** Windows refuses these outright, whatever the extension. */
 const DEVICE_NAMES = new Set([

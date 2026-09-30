@@ -38,21 +38,16 @@ export function toBinaryString(bytes: Uint8Array): string {
   return out;
 }
 
-export function fromBinaryString(text: string): Uint8Array {
+/** Backed by a plain `ArrayBuffer`, which is what `crypto.subtle` accepts as a `BufferSource`. */
+export function fromBinaryString(text: string): Uint8Array<ArrayBuffer> {
   return Uint8Array.from(text, (char) => char.charCodeAt(0) & 0xff);
 }
 
 /** btoa/atob speak latin-1 only; the notes are UTF-8. */
 export function toBase64(text: string): string {
-  const bytes = new TextEncoder().encode(text);
-  let binary = "";
-  for (let at = 0; at < bytes.length; at += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
-  }
-  return btoa(binary);
+  return btoa(toBinaryString(new TextEncoder().encode(text)));
 }
 
 export function fromBase64(encoded: string): string {
-  const binary = atob(encoded.replace(/\s/g, ""));
-  return new TextDecoder().decode(Uint8Array.from(binary, (char) => char.charCodeAt(0)));
+  return new TextDecoder().decode(fromBinaryString(atob(encoded.replace(/\s/g, ""))));
 }

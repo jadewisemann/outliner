@@ -5,9 +5,14 @@ export type SyncStatus = "off" | "idle" | "syncing" | "offline" | "error" | "loc
 /** A request that never answers would otherwise wedge the sync loop for good. */
 export const TIMEOUT_MS = 15_000;
 
+/** The folder a GitHub workspace lives in when no `path` names one. */
+export const DEFAULT_FOLDER = "outliner";
+
 /**
- * Two kinds of remote, one contract: read a versioned JSON document, write it
+ * Three kinds of remote, one contract: read a versioned JSON document, write it
  * back with compare-and-swap. Anything that can do that can hold the notes.
+ * The folder's compare-and-swap holds only on this device, since a sync service
+ * can replace the file without asking, which is why that backend is `unguarded`.
  */
 export type SyncConfig =
   | {
@@ -77,8 +82,9 @@ export type Revision = { id: string; message: string; at: string; author: string
 
 /**
  * Reading the past. Only a backend that keeps history can offer this — a plain
- * `GET`/`PUT` URL has no memory, which is exactly the difference between the
- * two backends and why this is optional rather than part of the contract.
+ * `GET`/`PUT` URL has no memory, and neither does a file in a folder, which is
+ * exactly why this is optional rather than part of the contract. Today only
+ * GitHub offers it.
  */
 export type History = {
   list(docId: Id): Promise<Revision[]>;

@@ -57,7 +57,7 @@ describe("mergeWorkspace", () => {
   });
 
   it("keeps a text edit and a move made on different devices", () => {
-    const { doc, a, b } = seed();
+    const { doc, b } = seed();
     const [mine, theirs] = fork(doc);
 
     const merged = mergeWorkspace(

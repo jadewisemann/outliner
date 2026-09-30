@@ -1,6 +1,18 @@
 import { keyBetween, keysAfter } from "../shared/order";
 import { linkChildren } from "../outline/tree";
 import { makeWorkspace, stamp, type Doc, type Id, type Node, type Workspace } from "../types";
+import { readWorkspace } from "./validate";
+
+/**
+ * Stored data as the app may use it: brought up to the current shape, then
+ * validated. The order is the point — validation after the upgrade is what
+ * lets the additive steps below be bare version bumps. `null` when no usable
+ * document is left; but anything `migrate` cannot read at all comes back as a
+ * fresh workspace, so a caller with nothing stored has to say so first.
+ */
+export function readStored(raw: unknown): Workspace | null {
+  return readWorkspace(migrate(raw));
+}
 
 /**
  * Brings stored data up to the current shape.

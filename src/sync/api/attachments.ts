@@ -21,8 +21,6 @@ import type { Files } from "./remote";
  */
 export const MAX_ATTACHMENT_BYTES = 1024 * 1024;
 
-export const FILE_SCHEME = "file:";
-
 const objectUrls = new Map<string, string>();
 const inFlight = new Map<string, Promise<string | null>>();
 
@@ -32,24 +30,25 @@ export async function nameFor(bytes: Uint8Array<ArrayBuffer>, type: string): Pro
   return `${hash}${extensionOf(type)}`;
 }
 
-function extensionOf(type: string): string {
-  const known: Record<string, string> = {
-    "image/png": ".png",
-    "image/jpeg": ".jpg",
-    "image/gif": ".gif",
-    "image/webp": ".webp",
-    "image/svg+xml": ".svg"
-  };
-  return known[type] ?? ".bin";
-}
-
-const MIME: Record<string, string> = {
-  png: "image/png",
-  jpg: "image/jpeg",
-  gif: "image/gif",
-  webp: "image/webp",
-  svg: "image/svg+xml"
+/**
+ * The types an attachment is named for, one extension each. Serving reads the
+ * same table backwards, so every name written here is one it can serve.
+ */
+const EXTENSIONS: Record<string, string> = {
+  "image/png": ".png",
+  "image/jpeg": ".jpg",
+  "image/gif": ".gif",
+  "image/webp": ".webp",
+  "image/svg+xml": ".svg"
 };
+
+const MIME: Record<string, string> = Object.fromEntries(
+  Object.entries(EXTENSIONS).map(([type, extension]) => [extension.slice(1), type])
+);
+
+function extensionOf(type: string): string {
+  return EXTENSIONS[type] ?? ".bin";
+}
 
 /**
  * A local URL for an attachment, fetched once per session.

@@ -34,7 +34,7 @@ export function invokeNative<T>(command: string, args?: Record<string, unknown>)
   return invoke<T>(command, args);
 }
 
-export type NativeInfo = {
+type NativeInfo = {
   /** Android (or iOS). The folder backend needs a real filesystem path, which a phone does not hand out. */
   mobile: boolean;
   /** The platform name from Rust's `std::env::consts::OS`. */

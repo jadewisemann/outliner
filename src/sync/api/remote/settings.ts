@@ -1,7 +1,10 @@
-import type { SyncConfig } from "./contract";
+import { DEFAULT_FOLDER, type SyncConfig } from "./contract";
 
 const CONFIG_KEY = "outliner:sync";
 const SYNCED_KEY = "outliner:synced";
+/** The cross-tab ping. Every open tab, whatever build it is running, has to agree on both. */
+const TAB_CHANNEL = "outliner";
+const TAB_CHANGED = "changed";
 
 export function loadSyncConfig(): SyncConfig | null {
   try {
@@ -15,7 +18,7 @@ export function loadSyncConfig(): SyncConfig | null {
       return {
         kind: "github",
         repo: parsed.repo,
-        path: typeof parsed.path === "string" && parsed.path !== "" ? parsed.path : "outliner",
+        path: typeof parsed.path === "string" && parsed.path !== "" ? parsed.path : DEFAULT_FOLDER,
         token: parsed.token,
         passphrase,
         // Absent means off, the same shape `passphrase` uses: the stored
@@ -78,16 +81,16 @@ export function markSynced(key: string): void {
  */
 export function watchOtherTabs(onChanged: () => void): () => void {
   if (typeof BroadcastChannel === "undefined") return () => {};
-  const channel = new BroadcastChannel("outliner");
+  const channel = new BroadcastChannel(TAB_CHANNEL);
   channel.onmessage = (event) => {
-    if (event.data === "changed") onChanged();
+    if (event.data === TAB_CHANGED) onChanged();
   };
   return () => channel.close();
 }
 
 export function announceToOtherTabs(): void {
   if (typeof BroadcastChannel === "undefined") return;
-  const channel = new BroadcastChannel("outliner");
-  channel.postMessage("changed");
+  const channel = new BroadcastChannel(TAB_CHANNEL);
+  channel.postMessage(TAB_CHANGED);
   channel.close();
 }

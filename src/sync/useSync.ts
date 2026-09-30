@@ -21,7 +21,7 @@ import { payloadOf, type SyncPayload, type Workspace } from "../types";
 /** Longest gap between retries after the endpoint starts failing. */
 const MAX_BACKOFF_MS = 5 * 60_000;
 
-export type SyncApi = {
+type SyncApi = {
   status: SyncStatus;
   config: SyncConfig | null;
   setConfig(next: SyncConfig | null): void;
@@ -54,24 +54,36 @@ export function useSync(options: {
   const { live, apply, onAbsorb, ready } = options;
 
   const [config, setConfigState] = useState<SyncConfig | null>(() => loadSyncConfig());
-  const [status, setStatus] = useState<SyncStatus>(() => (loadSyncConfig() ? "idle" : "off"));
+  const [status, setStatus] = useState<SyncStatus>(() => (config ? "idle" : "off"));
 
-  const backend = useMemo(() => (config ? createBackend(config) : null), [config]);
+  /**
+   * The backend for the current config, and that remote's identity for the
+   * has-ever-synced marker. A new object exactly when the config changes, which
+   * is what restarts the loop below.
+   */
+  const remote = useMemo(() => (config ? { backend: createBackend(config), key: configKey(config) } : null), [config]);
   const running = useRef(false);
   const failures = useRef(0);
   const retryAfter = useRef(0);
   const edits = useRef(0);
   const pushed = useRef(0);
 
+  const resetBackoff = useCallback(() => {
+    failures.current = 0;
+    retryAfter.current = 0;
+  }, []);
+
   /** Applies a merge result, but only when it actually brought something in. */
   const absorb = useCallback(
     (payload: SyncPayload): boolean => {
       const current = live.current;
       if (!current || !changedBy(payloadOf(current), payload)) return false;
-      onAbsorb();
 
       const active = payload.docs[current.activeDocId] ? current.activeDocId : Object.keys(payload.docs)[0];
+      // Checked before `onAbsorb`: a merge that left no document at all applies
+      // nothing, and must not cost the undo history either.
       if (!active) return false;
+      onAbsorb();
       const views = { ...current.views };
       for (const id of Object.keys(views)) if (!payload.docs[id]) delete views[id];
       apply({ ...current, ...payload, activeDocId: active, views });
@@ -81,7 +93,8 @@ export function useSync(options: {
   );
 
   const now = useCallback(async () => {
-    if (!backend || running.current || !live.current || Date.now() < retryAfter.current) return;
+    if (!remote || running.current || !live.current || Date.now() < retryAfter.current) return;
+    const { backend, key } = remote;
     running.current = true;
     setStatus("syncing");
     try {
@@ -90,33 +103,33 @@ export function useSync(options: {
       let absorbed = false;
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const stored = await backend.pull();
-        if (!stored) break;
         const merged = mergeWorkspace(payloadOf(live.current!), stored.payload, {
           // Nothing typed here yet, and never synced with this remote:
           // this device is joining, not contributing a blank document.
-          adoptRemote: edits.current === 0 && !hasSynced(configKey(config!))
+          adoptRemote: edits.current === 0 && !hasSynced(key)
         });
+        // Read `live` again below, not before this: absorbing replaces it.
         if (absorb(merged)) absorbed = true;
 
         // Usually: only when there is something of ours to send (see push.ts
-        // for why, and for the two remotes that need more than that).
+        // for why, and for the two exceptions a remote without
+        // compare-and-swap needs).
         const unpushed = edits.current !== pushed.current;
-        if (!shouldPush({ stored, local: payloadOf(live.current!), unpushed, unguarded: backend.unguarded === true })) {
-          break;
-        }
+        // One read serves the check and the push: nothing awaits in between.
+        const local = payloadOf(live.current!);
+        if (!shouldPush({ stored, local, unpushed, unguarded: backend.unguarded === true })) break;
 
         // Captured before the request: anything typed during the round trip
         // must stay pending rather than be marked as sent.
         const covered = edits.current;
-        const accepted = await backend.push(payloadOf(live.current!), stored.version);
+        const accepted = await backend.push(local, stored.version);
         if (accepted !== null) {
           pushed.current = covered;
           break;
         }
       }
-      failures.current = 0;
-      retryAfter.current = 0;
-      markSynced(configKey(config!));
+      resetBackoff();
+      markSynced(key);
       setStatus("idle");
       // Only when something arrived: an idle round has nothing new to keep,
       // and in the native shell every save is also a file write.
@@ -137,13 +150,13 @@ export function useSync(options: {
     } finally {
       running.current = false;
     }
-  }, [backend, absorb, config, live]);
+  }, [remote, absorb, live, resetBackoff]);
 
   // Push shortly after edits settle, pull on a slow timer, and catch up
   // whenever the tab or the network comes back. Waits for the local workspace
   // to load first, since there is nothing to merge against before then.
   useEffect(() => {
-    if (!backend) {
+    if (!remote) {
       setStatus("off");
       return;
     }
@@ -153,11 +166,11 @@ export function useSync(options: {
 
     const push = setInterval(() => {
       if (edits.current !== pushed.current) void now();
-    }, backend.cadence.pushMs);
+    }, remote.backend.cadence.pushMs);
     const pull = setInterval(() => {
       // A hidden tab catches up on the visibilitychange below instead.
       if (!document.hidden) void now();
-    }, backend.cadence.pullMs);
+    }, remote.backend.cadence.pullMs);
     const wake = () => {
       if (document.visibilityState === "visible") void now();
     };
@@ -169,7 +182,7 @@ export function useSync(options: {
       window.removeEventListener("online", wake);
       document.removeEventListener("visibilitychange", wake);
     };
-  }, [backend, ready, now]);
+  }, [remote, ready, now]);
 
   // Another tab of this browser is just another device: re-read the shared
   // database and merge it the same way. The caller's save path does the
@@ -190,12 +203,14 @@ export function useSync(options: {
     };
   }, [absorb, live]);
 
-  const setConfig = useCallback((next: SyncConfig | null) => {
-    saveSyncConfig(next);
-    failures.current = 0;
-    retryAfter.current = 0;
-    setConfigState(next);
-  }, []);
+  const setConfig = useCallback(
+    (next: SyncConfig | null) => {
+      saveSyncConfig(next);
+      resetBackoff();
+      setConfigState(next);
+    },
+    [resetBackoff]
+  );
 
   const noteEdit = useCallback(() => {
     edits.current += 1;
@@ -206,8 +221,8 @@ export function useSync(options: {
     config,
     setConfig,
     now,
-    history: backend?.history ?? null,
-    files: backend?.files ?? null,
+    history: remote?.backend.history ?? null,
+    files: remote?.backend.files ?? null,
     noteEdit
   };
 }
