@@ -10,6 +10,10 @@
 > IMPLEMENTATION_NOTES.md 2026-08-20). `Choice`/`Completion` 타입은 `useCompletion.ts`가
 > 정의하고 `useOutline.ts`가 재수출해 기존 import 경로를 보존한다.
 
+> **읽는 법 (2026-09-30):** R1~R6은 끝난 계획의 기록이라 당시의 경로(`outline/`, `sync/`, `store.ts` …)를
+> 그대로 쓴다. 지금의 경로는 [ADR-0013](../adr/0013-fsd-light.md)의 「옛 경로에서 새 경로로」 표로 읽는다.
+> 마지막 정리는 아래 「R7. FSD light」에 있다.
+
 > 기능을 더하지 않는 작업만 모았다. **동작이 하나라도 바뀌면 그건 이 문서의 실패다.**
 > 아키텍처·설계 근거는 [DESIGN.md](../../DESIGN.md), 기능 로드맵은 [parity.md](../parity.md)가 정본이다.
 
@@ -245,6 +249,36 @@ export function useSync(options: {
 > 인용/코드, 아이템 메뉴, focus/motion 꼬리)은 도메인상 outline이어도 `panels.css`에
 > 원래 위치대로 남는다. import 순서가 곧 cascade 순서라는 것은 `main.tsx`와 각 파일
 > 헤더에 명시했다.
+>
+> **2026-09-30 후속:** `panels.css`에 남아 있던 행 스타일 꼬리를 **순서 그대로** `outline.css`의 끝으로
+> 옮겼다. main 빌드와 옮긴 뒤의 빌드로 찍은 스크린샷 12장(밝은·어두운 테마, 여섯 장면)이 바이트 단위로
+> 같았다. 꼬리를 위로 올리거나
+> 위의 절과 합치면 승자가 뒤집힌다는 것은 `outline.css` 머리말에 적었다. 파일은 지금 `src/app/styles/`에 있다.
+
+---
+
+## R7. FSD light — 완료 (2026-09-30)
+
+도메인 폴더 사이에 의존 방향의 규칙이 없어서, R1~R4를 끝낸 뒤에도 import가 여러 방향으로 얽혀 있었다.
+`store.ts`는 팔레트 모듈에서 최근 문서 목록을 읽었고, 동기화의 Markdown 미러는 `transfer/`의 내보내기
+함수를 썼다. 사용자 요청으로 Feature-Sliced Design을 가볍게 따르는 구조로 옮겼다. 결정과 옛 경로 표는
+[ADR-0013](../adr/0013-fsd-light.md)에 있다.
+
+- **옮기기와 고치기를 나눴다.** 먼저 제자리가 아닌 코드를 떼어 냈다(퍼지 매칭은 `markdown.ts` 밖으로,
+  공유 캡처는 표시 설정 밖으로, 최근 문서와 즐겨찾기는 팔레트 밖으로). 그다음 파일을 `git mv`로 옮기고
+  import를 기계적으로 고쳤다. 이력은 `git log --follow`로 이어진다.
+- **규칙은 스크립트로 강제한다.** `scripts/check-layers.mjs`가 층 방향, 공개 API 경유, entities 순서,
+  슬라이스 밖으로 나가는 상대 경로를 검사하고 CI의 `Check`와 `Pages`가 실행한다. 처음 돌렸을 때 테스트를
+  거쳐 생긴 순환이 나왔고, 두 슬라이스를 함께 시험하는 테스트를 위쪽 슬라이스로 옮겨 풀었다.
+- **App은 조립만 한다.** 도구 막대(`widgets/topbar`), 필터 막대(`features/filter`), 숨은 가져오기 선택기
+  (`features/transfer`), 저장 경고(`entities/workspace`), 문서 제목(`widgets/editor`)을 떼어 내
+  `App.tsx`가 422줄에서 140줄이 됐다. 같은 정리에서 `store.ts`는 554줄에서 343줄로, 동기화 패널은
+  376줄에서 301줄로 줄었다(문서 연산은 `documents.ts`, 저장은 `usePersistence.ts`, 폼 상태는
+  `useSyncForm.ts`로 갔다).
+- **CSS는 흩지 않았다.** 네 파일을 `app/styles/`로 옮겼을 뿐 순서는 그대로다(R6).
+
+끝났다는 기준은 이 문서의 「검증 기준」과 같다. typecheck, `check:layers`, 유닛 277개, 빌드, e2e 78개가
+통과했고, main 빌드와 이 구조의 빌드로 찍은 스크린샷 12장이 바이트 단위로 같았다.
 
 ---
 
@@ -276,5 +310,6 @@ export function useSync(options: {
 | R4 | 동기화 루프 분리 | 중간 | R3 뒤가 편하다 |
 | R5 | `Doc` 판별 유니온 | 중간 | **물면 그때** |
 | R6 | CSS 분할 | 낮음 | 급하지 않음 |
+| R7 | FSD light 재배치 | 중간 | R1~R6 뒤. 경계가 정리된 뒤라야 파일을 기계적으로 옮길 수 있다 |
 
 R1과 R2만 해도 이 문서의 값어치는 다 나온다.

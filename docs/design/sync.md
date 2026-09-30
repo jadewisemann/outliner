@@ -1,10 +1,11 @@
 # 동기화 — 병합 규칙 · 전송 계약 · GitHub 배치 · 종단 간 암호화
 
-> SSOT 코드: `src/sync/merge.ts`(병합 규칙), `src/sync/useSync.ts`(동기화 루프),
-> `src/sync/api/remote/`(전송 — contract·rest·github·file·codec·settings, 입구는 index.ts),
+> SSOT 코드: `src/entities/sync/model/merge.ts`(병합 규칙), `src/entities/sync/model/useSync.ts`(동기화 루프),
+> `src/entities/sync/model/push.ts`(언제 푸시하나),
+> `src/entities/sync/api/remote/`(전송: contract·rest·github·file·payload·codec·mirror·settings, 입구는 index.ts),
 > `src-tauri/src/folder.rs`(폴더 백엔드의 디스크 쪽),
-> `src/sync/api/cipher.ts`(E2EE), `src/sync/api/githubAuth.ts`(OAuth 플로),
-> `src/shared/order.ts`(정렬 키), `src/shared/clock.ts`(논리 시계)
+> `src/entities/sync/api/cipher.ts`(E2EE), `src/features/sync-settings/api/githubAuth.ts`(OAuth 플로),
+> `src/shared/lib/order.ts`(정렬 키), `src/shared/lib/clock.ts`(논리 시계)
 
 ## 병합 모델 (DESIGN.md 원칙 3·4)
 
@@ -27,7 +28,9 @@ P0~P2 기능 확장(스키마 v6)이 병합 모델에 더한 것은 **규칙 하
 절반과 다른 쪽의 절반을 섞으면 누구도 고른 적 없는 표가 되기 때문이다. 표를 고른 적 없는
 기기(`keymap: null`)는 고른 기기의 표를 빼앗지 않는다
 ([ADR-0008](../adr/0008-keymap-travels.md)). 화면 설정과 테마는 여전히 기기 로컬이다: 측정값은
-화면의 것이고 단축키는 사람의 것이라는 것이 그 판정의 축이다.
+화면의 것이고 단축키는 사람의 것이라는 것이 그 판정의 축이다. 받아 온 표에 이 빌드가 모르는 액션
+이름이 있어도 버리지 않는다(`validate.ts`의 `readKeymap`). 버리면 구버전 기기가 신버전이 더한 바인딩을
+지우고 그 결과를 다시 올린다. 바깥에서 온 값이므로 개수(200)와 길이(64)로만 막는다.
 
 폴더·저장된 검색·휴지통도 **전부 문서다** (DESIGN.md 원칙 15). `deleted` 스탬프가 붙으면
 휴지통이고 파일은 그대로다 — 묘비는 내용을 안 들고 있어서(id와 시각뿐) 하드 삭제는 복구가
@@ -38,7 +41,7 @@ P0~P2 기능 확장(스키마 v6)이 병합 모델에 더한 것은 **규칙 하
 병합은 `merge.ts`의 순수 함수 하나이고 순서 무관·멱등이다. 원격에서 새로 가져온 게 없으면
 **같은 객체를 그대로 돌려준다** — 이 객체 동일성이 no-op 판별과 React 렌더 스킵의 근거다.
 "두 기기가 각자 편집", "삭제가 되살아나지 않음", "서로를 서로의 자식으로 옮겨 생긴 순환
-복구" 같은 실제 사고는 `sync/__tests__/merge.test.ts`가 고정한다.
+복구" 같은 실제 사고는 `entities/sync/model/__tests__/merge.test.ts`가 고정한다.
 
 ## 전송 계약
 
@@ -46,7 +49,10 @@ P0~P2 기능 확장(스키마 v6)이 병합 모델에 더한 것은 **규칙 하
 pull → merge → push를 재시도한다. 구현이 셋 있다:
 
 - **아무 `GET`/`PUT` 엔드포인트** (Firebase RTDB 경로 포함). URL 하나가 계약이고 파일 하나
-  통짜다.
+  통짜다. `GET`은 본문과 `ETag`를 주고, `PUT`은 `If-Match`가 맞을 때만 바꾸며, 어긋나면 412다.
+  `If-Match`가 없는 `PUT`은 "원격이 비어 있다"는 주장이므로, 이미 무언가 있으면 두 레퍼런스 구현
+  (`server/outliner-server.mjs`, Cloudflare Worker)도 412로 답한다. GitHub이 sha 없는 쓰기에 주는 답과
+  같은 규칙이다.
 - **폴더의 파일 하나** (데스크톱 셸만). CAS가 기기 안에서만 성립하므로 루프의 보정을 받는다.
   아래 「폴더 백엔드」.
 - **GitHub contents API** — `GET`이 내용+`sha`를 주고 `PUT`이 그 `sha`를 요구하는 구조가
@@ -66,8 +72,12 @@ pull → merge → push를 재시도한다. 구현이 셋 있다:
 않기로 한 판정과 뒤집을 조건은 [ADR-0009](../adr/0009-delta-sync.md)에 있다.
 
 원격이 이미 다 가진 상태에서는 푸시 자체를 건너뛴다(놀고 있는 기기가 빈 커밋을 남기지
-않는다). 푸시 여부 비교는 **평문 직렬화**로 한다 (원칙 9). 같은 브라우저의 다른 탭도 병합
-관점에서는 그냥 또 하나의 기기다.
+않는다). 루프는 마지막으로 받아들여진 푸시 뒤에 이 기기에서 편집이 있었는지로 정하고
+(`push.ts`의 `shouldPush`), GitHub 백엔드는 파일마다 **평문 직렬화**를 지난번에 쓴 것과 비교해 바뀐
+파일만 쓴다 (원칙 9). 같은 브라우저의 다른 탭도 병합 관점에서는 그냥 또 하나의 기기다.
+
+본문 전체를 한 번에 주고받는 REST와 폴더 백엔드는 여는 길과 봉하는 길이 `remote/payload.ts` 하나다.
+여는 쪽은 반드시 `validate.ts`를 지나고(원칙 6), 봉하는 쪽은 압축 JSON을 쓴다(원칙 13).
 
 ## GitHub: 문서 하나 = 파일 하나
 
@@ -78,6 +88,7 @@ pull → merge → push를 재시도한다. 구현이 셋 있다:
 {폴더}/files/{내용해시}.png  첨부
 ```
 
+`{폴더}`는 동기화 설정의 경로이고, 비워 두면 `outliner`다(`contract.ts`의 `DEFAULT_FOLDER`). 앱 안의
 폴더 소속은 문서의 **필드**이지 경로가 아니다 — GitHub 레이아웃은 폴더가 생겨도 평평하다.
 
 - **왜 쪼개나:** 파일 하나면 모든 커밋이 "전부 다시 씀"이라 히스토리가 무엇이 바뀌었는지
@@ -95,7 +106,7 @@ pull → merge → push를 재시도한다. 구현이 셋 있다:
   문서를 먼저 푸시한다.** 반대면 중간에 읽은 기기가 같은 항목을 두 곳에서 본다. 데이터가
   깨지지는 않지만(다음 주기에 수렴한다) 그 창은 작을수록 좋다. 항목은 id를 그대로 들고
   간다 — `((id))` 링크가 살아야 하므로.
-- 예전 단일 파일 레이아웃에서의 이행은 `sync/__tests__/github.test.ts`가 고정한다.
+- 예전 단일 파일 레이아웃에서의 이행은 `entities/sync/api/__tests__/github.test.ts`가 고정한다.
 
 REST 백엔드는 파일 하나 그대로다 — 커밋 히스토리가 없으니 쪼갤 이유도 없다.
 
@@ -158,7 +169,7 @@ REST 백엔드는 파일 하나 그대로다 — 커밋 히스토리가 없으�
 
 - **히스토리 복원은 재스탬프한다** — 안 하면 다음 sync가 복원을 되돌린다 (undo와 같은 이유,
   원칙 10).
-- **첨부**는 내용 해시로 이름 짓고(`sync/api/attachments.ts`) 1MB 상한(contents API가 그보다
+- **첨부**는 내용 해시로 이름 짓고(`entities/sync/api/attachments.ts`) 1MB 상한(contents API가 그보다
   큰 파일의 바이트를 인라인으로 안 준다), E2EE가 켜져 있으면 노트와 같이 봉해진다.
 
 ## 종단 간 암호화 (선택)
@@ -176,4 +187,4 @@ REST 백엔드는 파일 하나 그대로다 — 커밋 히스토리가 없으�
 - 암호를 걸기 전에 쓰인 평문 워크스페이스는 그대로 읽히고, 다음 푸시에서 암호화된다.
 - AES-GCM은 매번 새 IV를 쓰므로 같은 내용도 암호문은 매번 다르다 — 봉하는 건 (평문 비교로)
   쓰기로 결정한 다음이다.
-- 봉투 왕복과 틀린 암호 거부는 `sync/__tests__/cipher.test.ts`가 고정한다.
+- 봉투 왕복과 틀린 암호 거부는 `entities/sync/api/__tests__/cipher.test.ts`가 고정한다.

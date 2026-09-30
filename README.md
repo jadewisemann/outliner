@@ -13,6 +13,7 @@ npm run dev        # http://localhost:5173
 npm test           # 코어 로직 단위 테스트
 npm run test:e2e   # 실제 브라우저에서의 편집·동기화 시나리오
 npm run typecheck
+npm run check:layers   # 소스 구조 규칙 (docs/adr/0013-fsd-light.md)
 ```
 
 ## 지금 되는 것
@@ -124,6 +125,7 @@ npm run tauri -- android dev             # 연결된 폰이나 에뮬레이터�
 ```
 
 폴더 백엔드의 디스크 쪽은 Tauri 없이 테스트된다: `rustc --edition 2021 --test src-tauri/src/folder.rs -o /tmp/folder && /tmp/folder`.
+Rust 서식은 `rustfmt --edition 2021 --check src-tauri/src/*.rs`로 확인한다(설정은 `src-tauri/rustfmt.toml`).
 
 ## 문서 지도
 
@@ -141,7 +143,7 @@ npm run tauri -- android dev             # 연결된 폰이나 에뮬레이터�
 
 ## 테스트
 
-`src/*/__tests__/`는 깨지기 쉬운 순수 로직만 본다 — 정렬 키, 트리 연산, 병합 규칙,
+유닛 테스트는 모듈 옆의 `__tests__/`에 있고(`src/entities/outline/model/__tests__/` 등), 깨지기 쉬운 순수 로직만 본다 — 정렬 키, 트리 연산, 병합 규칙,
 가져오기/내보내기 왕복, 인라인 파싱, 질의 언어, 서식 조작. UI 동작은 실제 브라우저에서
 확인한다 — `e2e/outline.spec.ts`(편집·IME·드래그), `e2e/markdown.spec.ts`(서식 키보드),
 `e2e/sync.spec.ts`(가짜 원격 서버를 사이에 둔 두 기기, 적대적인 서버, 죽은 서버, 두 탭, 암호),
@@ -176,7 +178,8 @@ worker는 **이 출처의 GET만** 만진다. 동기화는 GitHub이나 사용�
 
 ### GitHub Pages
 
-`.github/workflows/pages.yml`이 main에 push될 때마다 typecheck·유닛 테스트·빌드를 거쳐 올린다.
+`.github/workflows/pages.yml`이 main에 push될 때마다 typecheck·구조 검사·유닛 테스트·빌드를 거쳐 올린다.
+같은 검사를 PR과 브랜치 push마다 `check.yml`이 돌린다.
 저장소 Settings → Pages에서 source를 **GitHub Actions**로 바꾸는 것 하나만 하면 된다. 결과는
 `https://<owner>.github.io/<repo>/`.
 

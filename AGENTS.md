@@ -18,7 +18,7 @@
 - 사용자가 명시적으로 요청하지 않는 한 push·PR 생성은 먼저 확인받는다.
 - 문서와 코드가 충돌하면 **조용히 코드를 따르지 않는다.** 대신 아래 판정 규칙대로 판정한다.
 - 바깥에서 오는 데이터(동기화 응답, 가져오기 파일, 저장소에 남아 있던 값)는 반드시
-  `src/storage/validate.ts`를 통과시킨다.
+  `src/entities/outline/model/validate.ts`를 통과시킨다.
 - **한국어를 출력할 때는 [docs/korean-output.md](./docs/korean-output.md)를 준수한다.** 이
   지침은 작업 종류와 무관하게 항상 적용되므로, 하위 문서에 관한 「필요한 것만 연다」 규칙의
   예외다. 그 문서는 요약하지 않고 전문을 읽는다(이유가 문서 안에 서술되어 있다). 코드 주석·커밋
@@ -130,10 +130,13 @@ korean-output.md의 「구 단위」 3번 조항과, 관용구를 삭제하라�
 | 명령 | 무엇을 보나 | 언제 돌리나 |
 |---|---|---|
 | `npm run typecheck` | `tsc --noEmit` | 모든 코드 변경 |
+| `npm run check:layers` | 층·슬라이스 import 규칙 (ADR-0013) | `src/`에 파일을 더하거나 옮기거나 import를 바꿨을 때 |
 | `npm test` | 순수 로직 유닛 (Vitest) | 트리·병합·정렬 키·검증·변환 등 순수 로직을 변경했을 때 |
 | `npx vitest run <경로>` | 특정 테스트만 | 변경 범위와 직접 관련된 테스트를 우선한다 |
 | `npm run build` | `tsc -b` + Vite 빌드 | 번들·CSP·에셋 경로에 영향을 주는 변경. **테스트 파일의 타입 오류는 typecheck가 놓치고 build가 잡는다.** 그래서 커밋 전에 한 번 실행한다 |
 | `npm run test:e2e` | 실제 브라우저 시나리오 (Playwright) | UI 동작·동기화·CSP·터치를 변경했을 때 |
+| `rustc --edition 2021 --test src-tauri/src/folder.rs -o <출력> && <출력>` | 셸의 디스크 작업 (Tauri 없이 std만으로) | `folder.rs`를 변경했을 때 |
+| `rustfmt --edition 2021 --check src-tauri/src/*.rs` | Rust 서식 (`src-tauri/rustfmt.toml`) | `src-tauri/src/`를 변경했을 때 |
 
 e2e는 웹 서버를 **둘** 띄운다. 하나는 dev(5173)이고, 다른 하나는 `vite preview`(4173)이다.
 `csp.spec.ts`와 `install.spec.ts`는 빌드 결과(4173)를 대상으로 실행된다. GitHub 백엔드 스펙은
@@ -160,14 +163,24 @@ e2e는 웹 서버를 **둘** 띄운다. 하나는 dev(5173)이고, 다른 하나
 
 ## 코드 배치 규칙
 
-- 코드는 도메인별 폴더(`outline/`, `palette/`, `sync/`, `storage/`, `search/`, `transfer/`,
-  `shared/`, `app/`)로 나뉜다. 각 도메인 안에서 로직은 `.ts` 순수 함수와 훅으로, 렌더링은
-  `components/`로 나뉜다.
-- **컴포넌트는 렌더링만 한다.** 동작은 훅(`useOutline.ts` 등)과 순수 함수에 둔다. 예컨대
-  `Outline.tsx`는 50줄이다.
+- `src/`는 FSD light 구조다([ADR-0013](./docs/adr/0013-fsd-light.md)). 층은 위에서부터 `app` → `widgets` →
+  `features` → `entities` → `shared`이고, 파일은 자기보다 아래층만 import한다. 층마다 무엇이 있는지는
+  DESIGN.md 「코드 구조와 경계 규칙」에 있다.
+- **새 코드의 자리는 그 코드가 무엇을 아는가로 정한다.** 데이터만 알면 `entities`, 사용자의 한 가지
+  동작이면 `features`, 여러 feature를 한 화면 조각으로 묶으면 `widgets`, 앱 전체의 연결이면 `app`이다.
+  도메인을 전혀 모르면 `shared`다.
+- 다른 슬라이스는 그 슬라이스의 `index.ts`를 통해 `@/층/슬라이스`로만 import한다. 공개할 것이 늘면
+  `index.ts`에 더한다. `shared`는 모듈 경로(`@/shared/lib/order`)로, 슬라이스 안은 상대 경로로 import한다.
+  `entities`끼리는 `outline` → `keymap` → `text` → `search` → `sync` → `workspace` 순서로만 import한다.
+- 슬라이스 안은 쓰는 세그먼트만 둔다. `model`(상태와 순수 로직, 훅), `api`(바깥과의 입출력),
+  `lib`(보조 변환), `ui`(컴포넌트)다. 테스트는 모듈 옆 `__tests__/`에 두고, 두 슬라이스가 만나는 것을
+  시험하는 테스트는 위쪽 슬라이스에 둔다.
+- **컴포넌트는 렌더링만 한다.** 동작은 `model/`의 훅(`useOutline.ts` 등)과 순수 함수에 둔다. 예컨대
+  `App.tsx`는 층들을 조립만 한다.
+- 전역 CSS는 `src/app/styles/`의 네 파일이고, 규칙의 순서가 곧 동작이므로 슬라이스로 흩지 않는다.
 - `api/`는 Vercel serverless function을 두는 폴더이고, client secret을 브라우저에 보내지 않기 위한
   OAuth code↔token 교환 외의 역할을 갖지 않는다.
-- 새 트리 연산은 `outline/__tests__/tree.test.ts`의 `shape()` 자동 검사(파생 캐시 일관성)를
+- 새 트리 연산은 `entities/outline/model/__tests__/tree.test.ts`의 `shape()` 자동 검사(파생 캐시 일관성)를
   통과해야 한다.
 
 ## 커밋 게이트 훅

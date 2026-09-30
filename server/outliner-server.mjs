@@ -2,7 +2,7 @@
 /**
  * The reference self-hosted backend: static files plus one versioned document.
  *
- * The REST backend asks for exactly three things (`src/sync/api/remote/rest.ts`):
+ * The REST backend asks for exactly three things (`src/entities/sync/api/remote/rest.ts`):
  * `GET` returns the stored body with an `ETag`, `PUT` with a matching
  * `If-Match` replaces it, and a mismatch answers 412 so the client re-merges.
  * That is the whole contract, so the whole server fits in one file with no

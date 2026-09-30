@@ -3,7 +3,7 @@
  * of one Durable Object that holds the workspace.
  *
  * Same contract as `server/outliner-server.mjs`, and the app cannot tell the
- * two apart (`src/sync/api/remote/rest.ts`): `GET` returns the stored body
+ * two apart (`src/entities/sync/api/remote/rest.ts`): `GET` returns the stored body
  * with an `ETag`, `PUT` with a matching `If-Match` replaces it, a mismatch is
  * 412, an empty remote is 404. Nothing else — the merge is in the client, so
  * this stores bytes and arbitrates writes.

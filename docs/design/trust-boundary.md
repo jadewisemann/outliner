@@ -1,7 +1,7 @@
 # 신뢰 경계와 실패 처리
 
-> SSOT 코드: `src/storage/validate.ts`(검증), `index.html`(CSP — **정책 값은 코드가 정본**),
-> `src/app/ErrorBoundary.tsx`, `src/storage/persist.ts`, `api/github-oauth.ts`
+> SSOT 코드: `src/entities/outline/model/validate.ts`(검증), `index.html`(CSP — **정책 값은 코드가 정본**),
+> `src/app/ui/ErrorBoundary.tsx`, `src/entities/outline/api/persist.ts`, `api/github-oauth.ts`
 
 ## 외부 데이터 검증 — 던지지 말고 버리기
 
@@ -12,11 +12,17 @@
 아주 먼 미래의 타임스탬프는 현재로 당겨온다. 그대로 받아들이면 이 기기의 논리 시계가 포화돼
 이후 모든 편집이 병합에서 지기 때문이다.
 
+이 기기에 남아 있던 값도 바깥 데이터다. 셸의 로컬 사본(`workspace.json`)에 `workspace`가 객체로 들어
+있지 않으면 사본이 없는 것으로 본다. 그런 파일을 더 최근의 사본으로 세면 `migrate`가 빈 워크스페이스를
+만들고, 다음 저장이 그것으로 IndexedDB를 덮어쓴다(2026-09-30에 고쳤다). `localStorage`의 테마 값은
+`light`·`dark`만 받는다.
+
 ## 네이티브 셸의 명령
 
 셸의 명령은 페이지의 어떤 스크립트든 부를 수 있다. 그래서 명령 자체가 경계를 가진다. 폴더 명령은 셸이
 허용한 폴더에만 닿고(허용은 셸의 대화상자로만 일어난다), 외부 링크 열기는 `http`·`https`·`mailto`만
-받는다. 셸에서 돌아온 파일 내용은 원격과 똑같이 `validate.ts`를 지난다. 상세는
+받는다. 줄바꿈이나 NUL이 든 폴더 이름은 목록을 보기 전에 거절한다. 허용 목록이 한 줄에 폴더 하나라서,
+그런 이름 하나가 확인 한 번으로 폴더 둘을 허용받을 수 있었다. 셸에서 돌아온 파일 내용은 원격과 똑같이 `validate.ts`를 지난다. 상세는
 [native.md](./native.md) 「폴더 허용 목록」.
 
 ## CSP

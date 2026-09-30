@@ -1,7 +1,7 @@
 # 네이티브 셸 — 명령 · 로컬 사본 · 폴더 허용 · 빌드와 검증
 
 > SSOT 코드: `src-tauri/src/lib.rs`(명령과 플러그인), `src-tauri/src/folder.rs`(디스크 작업, std만 사용),
-> `src-tauri/tauri.conf.json`, `src-tauri/android/MainActivity.kt`, `src/shared/native.ts`(웹 쪽 다리),
+> `src-tauri/tauri.conf.json`, `src-tauri/android/MainActivity.kt`, `src/shared/api/native.ts`(웹 쪽 다리),
 > `.github/workflows/native.yml`(빌드·서명·스모크), `e2e/native/`(실제 앱을 구동하는 스모크 테스트)
 >
 > 결정은 [ADR-0010](../adr/0010-native-shell.md)(셸)과 [ADR-0011](../adr/0011-folder-backend.md)(폴더
@@ -25,7 +25,7 @@ Electron이 아니라 Tauri를 고른 이유는 설치 파일 크기(수 MB 대 
 | `native_info` | `{ mobile, os }` | 없음 |
 | `open_external` | 시스템 브라우저로 링크 열기 | `http`·`https`·`mailto`가 아닌 주소 |
 | `folder_pick` | 폴더 고르기 대화상자. 고른 폴더는 허용 목록에 들어간다 | 모바일 |
-| `folder_allow` | 입력한 경로를 네이티브 확인 대화상자로 허용 | 절대 경로가 아님, 사용자가 취소 |
+| `folder_allow` | 입력한 경로를 네이티브 확인 대화상자로 허용 | 절대 경로가 아님, 줄바꿈이나 NUL이 든 이름, 사용자가 취소 |
 | `folder_read` | `outliner.json`과 충돌 사본을 읽는다 | 허용되지 않은 폴더 |
 | `folder_write` | 해시가 그대로일 때만 `outliner.json`을 바꾸고, 합친 사본을 옮긴다 | 허용되지 않은 폴더 |
 | `folder_retire` | 이미 반영된 사본을 `.outliner-merged/`로 옮긴다 | 허용되지 않은 폴더 |
@@ -36,9 +36,16 @@ Electron이 아니라 Tauri를 고른 이유는 설치 파일 크기(수 MB 대 
 웹 코드가 판정하고, 셸은 그 판정대로 바이트를 옮긴다. 그래서 암호가 걸린 워크스페이스도 셸에게는 특별한
 경우가 아니다.
 
-디스크 작업은 전부 `spawn_blocking`에서 돈다. 느린 네트워크 드라이브가 창을 멈추거나 다른 명령을 막지
-않게 하기 위해서다. 동기화 폴더와 로컬 사본은 서로 다른 잠금을 쓴다. 동기화 폴더의 쓰기가 느려도 로컬
-저장이 기다리지 않는다.
+디스크 작업은 허용 목록을 읽는 것까지 전부 `spawn_blocking`에서 돈다. 느린 네트워크 드라이브가 창을
+멈추거나 다른 명령을 막지 않게 하기 위해서다. 동기화 폴더와 로컬 사본은 서로 다른 잠금을 쓴다. 동기화
+폴더의 쓰기가 느려도 로컬 저장이 기다리지 않는다. 기다림이 있는 명령은 전부 `async`다. `async`가 아닌
+명령은 메인 스레드에서 도는데, 거기서 막는 대화상자를 띄우면 대화상자가 자기가 막은 이벤트 루프를
+기다린다.
+
+웹 코드와 셸 사이의 계약은 문자열이다. 명령 이름, 인자 이름, 주고받는 JSON의 필드 이름(`FolderRead`의
+`canonical`·`copies`, `Entry`의 `name`·`text`·`stamp`)을 양쪽이 따로 적는다. 웹 쪽은 `remote/file.ts`와
+`src/shared/api/native.ts`에 있다. 어느 한쪽에서 이름을 바꾸면 양쪽 다 컴파일은 되고 실행할 때 깨지므로,
+이름은 두 곳을 함께 고친다. 이 계약을 확인하는 것은 Linux 스모크(`smoke.mjs`)뿐이다.
 
 ## 폴더 허용 목록
 
@@ -49,6 +56,13 @@ Electron이 아니라 Tauri를 고른 이유는 설치 파일 크기(수 MB 대 
 어떤 스크립트든 부를 수 있다. 경로가 절대 경로인지만 보면, 스크립트 주입이 한 번이라도 일어났을 때
 사용자가 쓸 수 있는 아무 폴더에나 파일을 만들 수 있게 된다. 허용 목록이 있으면 주입된 스크립트가 닿는
 곳은 사용자가 이미 고른 폴더뿐이다.
+
+- **폴더를 만지는 명령은 문 하나를 지난다.** `folder_read`·`folder_write`·`folder_retire`·`folder_set_aside`는
+  모두 `in_folder`를 거치고, 거기서 `folder::permitted`가 이름이 목록에 **글자 그대로** 있는지 본다.
+  목록에 더할 수 있는 것은 `folder_pick`과 `folder_allow`뿐이다.
+- **줄바꿈이나 NUL이 든 이름은 거절한다.** 목록은 한 줄에 폴더 하나이고 `lines()`로 다시 읽는다. 이름에
+  `\n`이 들어 있으면 확인 한 번으로 폴더 둘이 목록에 오르고, 줄 끝의 `\r`은 읽을 때 떨어져 나가 다른 폴더가
+  허용된다. 이 구멍은 2026-09-30 감사에서 찾았고, 이제는 목록을 보기 전에 거절한다.
 
 ## 로컬 사본 — 웹뷰 저장소에 기대지 않는다
 
@@ -110,14 +124,20 @@ shell-tests ─┬─ desktop (macOS universal · Windows · Linux) ──┬─
 
 | 층 | 무엇을 보나 | 어디서 |
 |---|---|---|
-| `folder.rs` 단독 테스트 | CAS, 사본 이름 규칙, 바뀐 사본은 옮기지 않음, 읽지 못한 파일 비켜 두기, 로컬 사본, 허용 목록 | `rustc --test`, CI의 `shell-tests` |
-| `src/sync/__tests__/file.test.ts` | 웹 쪽 폴더 백엔드와 `shouldPush` — 덮어쓰인 파일 복구, 사본 병합, 암호 걸린 사본 건너뛰기, 캐시 | Vitest |
+| `folder.rs` 단독 테스트 9개 | CAS, 사본 이름 규칙, 바뀐 사본은 옮기지 않음, 읽지 못한 파일 비켜 두기, 로컬 사본, 허용 목록(절대 경로, 글자 그대로 일치, 줄바꿈 거절) | `rustc --test`, CI의 `shell-tests` |
+| `src/entities/sync/api/__tests__/file.test.ts` | 웹 쪽 폴더 백엔드와 `shouldPush`: 덮어쓰인 파일 복구, 사본 병합, 암호 걸린 사본 건너뛰기, 캐시 | Vitest |
 | `e2e/native/smoke.mjs` | **실제 Linux 앱**을 tauri-driver로 구동. IPC, 입력, 로컬 사본 파일, 허용되지 않은 폴더 거절, `outliner.json` 쓰기, 충돌 사본 병합과 이동 | CI `desktop (linux)` |
 | `e2e/native/launch.sh` | **실제 macOS·Windows 앱**을 실행만 한다. 앱이 살아 있고, 페이지가 첫 저장을 IPC로 보내 셸이 로컬 사본(`workspace.json`)을 디스크에 썼는지 | CI `desktop (macos)`·`desktop (windows)` |
 | `e2e/native/android.sh` | **에뮬레이터에 설치한 APK**. 실행, 입력, 편집 중 터치 바, 머리말이 상태 표시줄 밑에 있지 않은지, 앱 충돌과 페이지 오류 | CI `android-smoke` |
 
+`run-driver.sh`는 tauri-driver가 `/status`에 답할 때까지 최대 10초 기다린 뒤 스모크를 시작한다. 고정된
+대기로는 느린 러너에서 첫 요청이 드라이버보다 먼저 도착한다.
+
 스모크 테스트의 스크린샷과 결과는 `ci-evidence/<이름>` 브랜치에 남는다. 아티팩트 저장소에 닿지 못하는
-환경에서도 git만으로 읽을 수 있게 하기 위해서다.
+환경에서도 git만으로 읽을 수 있게 하기 위해서다. 증거는 스모크가 실패해도 올린다(그때가 가장 필요하다).
+다만 취소된 실행은 올리지 않는다(`if: ${{ !cancelled() }}`). 새 push에 밀려 취소된 실행이 새 실행의 증거를
+덮어쓰지 않게 하기 위해서다. `launch.sh`와 `smoke.mjs`는 앱의 실제 데이터 폴더를 지우거나 덮어쓰므로
+CI 러너에서만 돌린다.
 
 **macOS와 Windows는 입력까지 구동하지 않는다.** macOS의 WKWebView에는 WebDriver가 없다. Windows는
 tauri-driver와 WebView2 버전에 맞춘 msedgedriver로 시도했지만, 드라이버가 Tauri 웹뷰에 붙지 못하고

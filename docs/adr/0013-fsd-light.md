@@ -122,5 +122,6 @@ Markdown 미러는 `transfer/`의 내보내기 함수를 썼으며, `shared/keym
   도메인을 전혀 모르면 `shared`다.
 - 슬라이스의 `index.ts`가 공개 API이므로, 슬라이스 안의 파일을 나누거나 이름을 바꿔도 다른 슬라이스는
   영향을 받지 않는다.
-- 살아 있는 문서(DESIGN.md, AGENTS.md, README.md, `docs/design/*`)는 새 경로로 고쳤다. 기록으로 남는
-  문서(ADR, `docs/research/*`, `IMPLEMENTATION_NOTES.md`의 지난 항목)는 고치지 않고 위 표로 읽는다.
+- 살아 있는 문서(DESIGN.md, AGENTS.md, README.md, PLANS.md, `docs/overview.md`, `docs/design/*`)는 새
+  경로로 고쳤다. 기록으로 남는 문서(ADR, `docs/research/*`, `docs/parity.md`의 날짜 붙은 실사 기록,
+  refactor-plan.md의 R1~R6, `IMPLEMENTATION_NOTES.md`의 지난 항목)는 고치지 않고 위 표로 읽는다.

@@ -3,33 +3,14 @@
 계획마다 **목표 / 원칙 / 단계별 체크리스트 / 완료 기준**을 적는다. 끝난 계획은 지우고 결과를
 DESIGN.md(및 하위 문서)에 반영한다.
 
-## 네이티브 앱과 무료 동기화 선택지
+## 네이티브 앱과 무료 동기화 선택지 — 사용자가 할 일 둘
 
-> **상태: 코드·파이프라인·자동 검증 완료 (2026-09-29).** 데스크톱 셋과 Android가 CI에서 빌드되고, Linux 앱과
-> Android APK는 실제로 구동하는 스모크 테스트를 통과한다. 남은 것은 사용자가 해야 하는 일(서명 키)과
-> 실물 서비스로만 확인되는 관찰(충돌 사본 이름) 둘이다. 검증 기록은
-> [IMPLEMENTATION_NOTES.md](./IMPLEMENTATION_NOTES.md) 2026-09-29 항목들.
+> **상태: 1~8단계 완료 (2026-09-29).** 셸, 폴더 백엔드, 무료 서버, 빌드·서명·스모크 파이프라인, 독립
+> 리뷰의 반영, Dynalist 날짜가 끝났다. 결과는 DESIGN.md 원칙 20·21과 「알려진 한계」,
+> [native.md](./docs/design/native.md), ADR-0010·0011·0012에 있다. 2026-09-30 정리에서 허용 목록의 줄바꿈
+> 결함을 하나 더 고쳤다. 남은 것은 사용자가 해야 하는 일(서명 키)과 실물 서비스로만 확인되는 관찰
+> (충돌 사본 이름) 둘이다.
 
-**목표.** 데스크톱(macOS·Windows·Linux)과 Android에 설치되는 앱을 만들고, 각 플랫폼에서 로컬로만
-쓰거나 무료 원격과 연결할 수 있게 한다. 원격은 GitHub, 동기화 서비스 폴더의 파일 하나, 무료 서버를
-모두 열어 둔다.
-
-**원칙.** 셸은 판정하지 않는다(원칙 20). 새 백엔드는 기존 계약 안에 들어가고, 계약이 지켜지지 않는
-부분은 백엔드가 밝히고 루프가 보정하며, 그 보정은 남의 바이트를 지우지 않는다(원칙 21).
-
-**단계별 체크리스트.**
-
-- [x] **1. 결정** — ADR-0010(셸), ADR-0011(폴더 백엔드), ADR-0012(날짜).
-- [x] **2. 셸** — `src-tauri/`. 명령 열 개, 폴더 허용 목록, 로컬 사본, 전역 단축키 ⌘⌥O / Ctrl+Alt+O,
-      Android 창 인셋. 상세는 [native.md](./docs/design/native.md).
-- [x] **3. 폴더 백엔드** — `remote/file.ts` + `folder.rs`, `shouldPush`의 `unguarded`·`rewrite` 보정, 설정 패널.
-- [x] **4. 무료 서버** — `server/cloudflare/` (Durable Object, 1MB 조각 저장).
-- [x] **5. 파이프라인** — `native.yml`(빌드 → 서명 분리 → 스모크 → 증거 → 초안 릴리스), `check.yml`(브랜치 검사).
-- [x] **6. CI 통과와 실제 구동** — 데스크톱 셋·Android 빌드 green, Linux·Android 구동 스모크와 macOS·Windows
-      실행 스모크 green.
-- [x] **7. 독립 리뷰와 반영** — 데이터 손실 경로 셋(읽지 못한 파일 덮어쓰기, 사본 삭제, 로컬 사본 병합)과
-      멈춤 경로 둘을 고쳤다. ADR-0011 「리뷰 후기」.
-- [x] **8. Dynalist 날짜** — 렌더·검색·`!!` 입력·팔레트 명령.
 - [ ] **9. Android 서명 키** — 사용자가 키스토어를 한 번 만들어 저장소 비밀값에 넣는다(README
       「Android 서명 키」). 넣기 전까지는 빌드마다 키가 달라 업데이트 설치가 안 된다.
 - [ ] **10. 실사용 관찰** — iCloud Drive·Dropbox 중 하나로 두 컴퓨터를 붙여 충돌 사본이 실제로 어떤 이름으로
@@ -70,10 +51,10 @@ DESIGN.md(및 하위 문서)에 반영한다.
 **단계별 체크리스트.**
 
 - [ ] **1. 실물 OPML 픽스처** — *사용자가 Dynalist 내보내기 파일을 줘야 한다. 여기서 막혀 있다.*
-      `transfer/__tests__/formats.test.ts`의 손으로 쓴 한 줄을 실물로 교체하고 왕복
+      `entities/outline/lib/__tests__/formats.test.ts`의 손으로 쓴 한 줄을 실물로 교체하고 왕복
       테스트로 고정한다. 이때 실제 속성 철자와 **내부 링크·첨부·날짜의 실제 표기**를
       확인해서 3단계의 근거로 쓴다. 개인 노트가 섞이지 않은 최소 문서면 된다.
-- [x] **2. `navigator.storage.persist()`** — 완료. `storage/persist.ts`의
+- [x] **2. `navigator.storage.persist()`** — 완료. `entities/outline/api/persist.ts`의
       `requestPersistence()`를 store가 **켤 때마다** 부르고(등급은 사용자가 정착하면서 바뀐다),
       등급은 동기화 패널에 늘 적혀 있고 「저장 보장 요청」 버튼이 다시 묻는다(Firefox는 프롬프트라
       버튼이 필요하다). **알릴지의 판정: 알린다 — 단, 실제 손실 조건에서만.** 배너는 거절 +
@@ -138,7 +119,13 @@ DESIGN.md(및 하위 문서)에 반영한다.
 모듈 리팩터 R1~R4는 2026-08-20 완료.
 실행 기록은 [docs/design/refactor-plan.md](./docs/design/refactor-plan.md)의 「실행 현황」,
 결과는 DESIGN.md 구조 트리에 반영. R2 완료 기준 전부 충족: 유닛 191·e2e 64 개수 불변
-전부 green, `Outline.tsx`/`Row.tsx` 무변경, `useOutline.ts` 834 → 566줄.)
+전부 green, `Outline.tsx`/`Row.tsx` 무변경, `useOutline.ts` 834 → 566줄.
+
+R7(FSD light 재배치)은 2026-09-30 완료. 결정은 [ADR-0013](./docs/adr/0013-fsd-light.md), 실행 기록은
+refactor-plan.md 「R7」, 결과는 DESIGN.md 「코드 구조와 경계 규칙」. 검증: 유닛 277·e2e 78 전부 green,
+main 빌드와 스크린샷 12장이 바이트 단위로 같다.
+
+네이티브 앱 1~8단계는 2026-09-29 완료. 위 「네이티브 앱과 무료 동기화 선택지」의 상태 참고.)
 
 ## 대기열 — 계획으로 승격 전
 
@@ -164,7 +151,8 @@ DESIGN.md(및 하위 문서)에 반영한다.
    팔레트)을 실사용에서 Dynalist 손이 어디로 찾는지 관찰한 뒤 조정하는 것. **물면 그때.**
 
 (R6 CSS 분할은 2026-08-20 완료 — tokens/chrome/outline/panels 네 파일, 규칙 순서 불변.
-[refactor-plan.md](./docs/design/refactor-plan.md) 「R6」.)
+2026-09-30에 `src/app/styles/`로 옮기면서 `panels.css`에 있던 행 스타일 꼬리를 순서 그대로 `outline.css` 끝으로
+보냈다. [refactor-plan.md](./docs/design/refactor-plan.md) 「R6」.)
 
 (백엔드 능력 비대칭의 결정은 2026-08-20 해소 — 선을 긋는 쪽으로,
 [ADR-0005](./docs/adr/0005-backend-capability-line.md).)

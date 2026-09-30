@@ -124,7 +124,7 @@ export type DocView = {
  * "preset plus edits" because a table is what the app and the rebinding panel
  * already pass around ([ADR-0008](./docs/adr/0008-keymap-travels.md)).
  *
- * Typed structurally rather than as `Keymap` so that `shared/keymap.ts` can go
+ * Typed structurally rather than as `Keymap` so that `entities/keymap` can go
  * on importing this module: what an action *means* stays there, and what is
  * stored is a table of names to chords.
  */

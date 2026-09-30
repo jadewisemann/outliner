@@ -8,7 +8,7 @@
 //! crates.
 //!
 //! Nothing here looks inside a file. Parsing, validation and the merge all
-//! happen in the web code (`src/sync/api/remote/file.ts`), the same code a
+//! happen in the web code (`src/entities/sync/api/remote/file.ts`), the same code a
 //! browser runs — the shell moves bytes and nothing else (DESIGN.md
 //! principle 20). That is also why a sealed workspace needs no special case.
 //!
@@ -155,7 +155,7 @@ pub fn read(dir: &Path) -> Result<Read, String> {
             copies.push(entry);
         }
     }
-    // The order is part of the answer: `src/sync/api/remote/file.ts` keys its
+    // The order is part of the answer: `src/entities/sync/api/remote/file.ts` keys its
     // "folder unchanged" cache on the copies in this order. Directory order is
     // arbitrary, so without the sort an unchanged folder could miss that cache
     // on every poll and hand the merge a fresh object each time — the idle

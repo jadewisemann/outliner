@@ -4,8 +4,8 @@
 조용히 코드를 따르지 않고 [AGENTS.md](./AGENTS.md)의 판정 규칙대로 판정한다. 이 문서를
 정본으로 승격한 결정 자체는 [ADR-0001](./docs/adr/0001-design-doc-authority.md)에 있다.
 
-> **작성 기준: 2026-09-29, 스키마 v8(`Workspace.keymap`)과 네이티브 셸(ADR-0010·0011) 반영.** 이 문서는 코드에서 추출해
-> 동기화한 것이며, 이 시점 이후에 생긴 어긋남만 판정 대상이다.
+> **작성 기준: 2026-09-30, 스키마 v8(`Workspace.keymap`), 네이티브 셸(ADR-0010·0011), FSD light 구조(ADR-0013)
+> 반영.** 이 문서는 코드에서 추출해 동기화한 것이며, 이 시점 이후에 생긴 어긋남만 판정 대상이다.
 
 ## 무엇인가
 
@@ -35,24 +35,28 @@ Linux·Android용 Tauri 셸(`src-tauri/`) 안에서 돈다
    불필요한 객체 재생성은 위반이다 (전적: 유휴 탭이 분당 50회 리렌더).
 5. **`children` 배열은 `parent`/`sort`에서 파생된 캐시다.** children을 정본으로 읽거나
    parent/sort 갱신 없이 children만 고치는 코드는 위반이다. 일관성은
-   `outline/__tests__/tree.test.ts`의 `shape()`가 모든 연산에서 자동 검사한다.
-6. **바깥에서 오는 데이터는 전부 `src/storage/validate.ts`를 통과한다.** 원칙은 **던지지 말고
+   `entities/outline/model/__tests__/tree.test.ts`의 `shape()`가 모든 연산에서 자동 검사한다.
+6. **바깥에서 오는 데이터는 전부 `src/entities/outline/model/validate.ts`를 통과한다.** 원칙은 **던지지 말고
    버리기** — 망가진 항목만 버리고 나머지는 살린다. 적대적이거나 고장 난 서버가 문서를
    지우거나 앱을 죽일 수 없어야 한다.
 7. **못 읽는 원격(`locked`)은 실패와 구분하고, locked면 푸시를 멈춘다.** 못 읽은 것을 없는
    것으로 보고 밀어 올리는 구현은 위반이다 — 아무도 복구할 수 없는 노트를 덮어쓴다.
 8. **파일 삭제는 묘비만이 시킨다. 묘비를 먼저 쓰고 파일을 나중에 지운다.** 페이로드에 없다는
    것을 삭제의 증거로 쓰는 구현은 위반이다 — 그것은 읽지 못한 파일의 모습이기도 하다.
-9. **푸시 여부는 평문 직렬화 비교로 정한다.** AES-GCM은 매번 새 IV를 쓰므로 암호문 비교는
-   언제나 "다르다"가 된다.
-10. **undo는 스냅샷 복원이 아니라 재스탬프다** (`src/history.ts`). 스냅샷 복원이면 다음
+9. **쓸지 말지는 평문으로 정한다. 암호문을 비교하는 구현은 위반이다.** AES-GCM은 매번 새 IV를 쓰므로
+   암호문 비교는 언제나 "다르다"가 된다. 루프는 이 기기에 밀지 않은 편집이 있는지로 푸시를 정하고
+   (`shouldPush`), GitHub 백엔드는 파일마다 평문 직렬화를 지난번에 쓴 것과 비교한다.
+10. **undo는 스냅샷 복원이 아니라 재스탬프다** (`src/entities/outline/model/history.ts`). 스냅샷 복원이면 다음
     동기화가 undo를 도로 되돌린다.
 11. **컴포넌트는 렌더링만 한다.** 동작은 훅과 순수 `.ts`에 둔다. 컴포넌트에 도메인 로직이
     들어가면 위반이다.
 12. **런타임 의존성은 react/react-dom, 그리고 지연 로드되는 katex 뿐이다**
     ([ADR-0004](./docs/adr/0004-katex-lazy-load.md)). 새 런타임 의존성 추가는 ADR을 요구한다.
-13. **원격에 쓰는 JSON은 키를 정렬해 들여쓴다.** "같은 내용 = 같은 바이트"가 no-op 푸시
-    스킵과 GitHub 커밋 소음 억제의 전제다.
+13. **GitHub 저장소에 쓰는 파일은 키를 정렬해 들여쓴다.** "같은 내용 = 같은 바이트"가 바뀌지 않은
+    파일의 쓰기 생략과 커밋 소음 억제의 전제이고, 들여쓰기는 한 줄 편집을 한 줄 diff로 만든다
+    (`remote/codec.ts`). REST 본문과 폴더의 `outliner.json`은 워크스페이스 전체를 매번 싣는 한 덩어리라
+    압축 JSON으로 쓴다 (`remote/payload.ts`). 읽는 diff가 없고, 페이로드 한도에 먼저 닿는 쪽이 그
+    백엔드이기 때문이다 ([ADR-0009](./docs/adr/0009-delta-sync.md)).
 14. **서식은 전부 `text` 안의 마크다운 문자열이다.** 서식을 위한 별도 필드나 리치텍스트
     구조를 들이는 구현은 위반이다 — 내보내기에서 살아남고 동기화 페이로드가 그대로인 것의
     전제다. (표시 전용 플래그 `checklist`/`numbered`/`color`/`quote`는 노드 필드이고 기존
@@ -92,7 +96,7 @@ Linux·Android용 Tauri 셸(`src-tauri/`) 안에서 돈다
     쓰기, 폴더 고르기, 외부 링크 열기, 창 불러오기만 한다. 노트를 파싱·검증·병합하는 코드를 Rust 쪽에
     두는 구현은 위반이다. 그러면 브라우저와 앱이 서로 다른 규칙으로 병합하고, 신뢰 경계(원칙 6)가
     둘로 갈라진다. 웹 코드는 `@tauri-apps/api` 없이 `window.__TAURI__` 전역만
-    `src/shared/native.ts`에서 읽는다. 그래서 원칙 12의 의존성 목록이 셸 때문에 늘지 않는다
+    `src/shared/api/native.ts`에서 읽는다. 그래서 원칙 12의 의존성 목록이 셸 때문에 늘지 않는다
     ([ADR-0010](./docs/adr/0010-native-shell.md)).
 21. **CAS가 없는 원격은 스스로 `unguarded`라고 밝히고, 그때 루프는 원격이 빠뜨린 것이 있으면
     편집이 없어도 푸시한다.** 동기화 서비스가 옮기는 폴더의 파일은 묻지 않고 바뀔 수 있어서,
@@ -107,68 +111,82 @@ Linux·Android용 Tauri 셸(`src-tauri/`) 안에서 돈다
 ## 아키텍처
 
 ```
-기기 A (브라우저)                                        기기 B (또는 같은 브라우저의 다른 탭)
-┌──────────────────────────────┐                       ┌──────────────────────────────┐
-│ components/  ── 렌더링만      │                       │                              │
-│ 훅(useOutline …) ── 모든 동작 │                       │            (동일)             │
-│ tree.ts ── 순수 트리 연산     │                       │                              │
-│ store.ts ── 상태+저장+동기화 루프│                     │                              │
-│ merge.ts ── 병합 판정(여기서만)│                       │                              │
-│ persist ── IndexedDB 자동 저장│                       │                              │
-└──────────┬───────────────────┘                       └──────────┬───────────────────┘
+기기 A (브라우저 또는 셸)                             기기 B (또는 같은 브라우저의 다른 탭)
+┌──────────────────────────────────────────┐          ┌──────────────────────────────────────────┐
+│ ui/ 컴포넌트 ── 렌더링만                 │          │                                          │
+│ model/ 훅(useOutline …) ── 모든 동작     │          │                  (동일)                  │
+│ tree.ts ── 순수 트리 연산                │          │                                          │
+│ useStore ── 상태 + 문서·폴더 조작        │          │                                          │
+│ useSync ── 동기화 루프·백오프·탭 간 핑   │          │                                          │
+│ merge.ts ── 병합 판정(여기서만)          │          │                                          │
+│ persist ── IndexedDB·셸 파일에 자동 저장 │          │                                          │
+└──────────┬───────────────────────────────┘          └──────────┬───────────────────────────────┘
            │ pull → merge → push (compare-and-swap, 지면 pull부터 재시도)
-           ▼                                                      ▼
-      ┌────────────────────────────────────────────────────────────────┐
+           ▼                                                     ▼
+      ┌──────────────────────────────────────────────────────────────────────┐
       │ 백엔드 = "버전 붙은 JSON을 읽고 CAS로 쓴다"는 계약의 구현체 셋:      │
-      │  · 아무 GET/PUT JSON 엔드포인트 (레퍼런스 서버, Cloudflare Worker, │
-      │    Firebase RTDB 경로)                                          │
-      │  · GitHub 저장소 (contents API, 문서당 파일 하나)                 │
-      │  · 폴더의 outliner.json (데스크톱 셸만, CAS는 기기 안에서만)       │
-      │ (선택) 종단 간 암호화 — 기기를 떠나기 전에 봉하고, 원격은 크기만 본다 │
-      └────────────────────────────────────────────────────────────────┘
+      │  · 아무 GET/PUT JSON 엔드포인트 (레퍼런스 서버, Cloudflare           │
+      │    Worker, Firebase RTDB 경로)                                       │
+      │  · GitHub 저장소 (contents API, 문서당 파일 하나)                    │
+      │  · 폴더의 outliner.json (데스크톱 셸만, CAS는 기기 안에서만)         │
+      │ (선택) 종단 간 암호화: 기기를 떠나기 전에 봉하고, 원격은 크기만 본다 │
+      └──────────────────────────────────────────────────────────────────────┘
 ```
 
 ## 코드 구조와 경계 규칙
 
 ```
-api/            Vercel serverless — OAuth code↔token 교환 (client secret 보관처)
-server/         레퍼런스 셀프 호스트 백엔드 — 정적 파일 + GET/PUT + If-Match, 의존성 0.
+api/            Vercel serverless. OAuth code↔token 교환만 한다 (client secret 보관처)
+server/         레퍼런스 셀프 호스트 백엔드. 정적 파일 + GET/PUT + If-Match, 의존성 0.
                 앱은 이것을 import 하지 않는다. REST 백엔드가 요구하는 계약의 구현 하나일 뿐이다
   cloudflare/     같은 계약을 Workers Free 플랜의 Durable Object 위에 (worker.mjs, wrangler.toml)
-src-tauri/      네이티브 셸 (Tauri 2) — 판정하지 않는다(원칙 20). folder.rs는 std만 쓰고 단독으로
+src-tauri/      네이티브 셸 (Tauri 2). 판정하지 않는다(원칙 20). folder.rs는 std만 쓰고 단독으로
                 테스트된다. icons/·gen/은 생성물이라 커밋하지 않는다
-public/sw.js    셸 캐시 — 오프라인으로 "여는" 것만 담당
-src/
-  types.ts      Node / Doc / Workspace 모델, 문서 트리(폴더) (코드가 정본)
-  store.ts      상태 + 자동 저장 + 문서·폴더 조작 (동기화 루프는 sync/useSync.ts)
-  history.ts    실행 취소 — 재스탬프 (원칙 10)
-  app/          레이아웃 껍데기: App, Sidebar, Backlinks, Settings, Keys, Shortcuts
-                appearance.ts(글꼴·너비·공유 캡처)
-  outline/      트리 연산(tree.ts), 인라인 마크다운, markdown.ts(서식 키보드), dates.ts(날짜 표기),
-                highlight.tsx(라이브러리 없는 코드 색), 가상화·스와이프,
-                useOutline(조립 + 행 키보드·메모·확대·첨부)와 관심사별 훅 —
-                useLive(공유 최신값) · useRowDrag(드래그) · useRowMenu(메뉴) ·
-                useCompletion([[/#/@ 자동완성) · useRowSelection(행 선택)
-    components/   Outline, Row, RowMenu, Editable, TouchBar, TeX, Attachment — 렌더링만
-  palette/      palette.ts(후보 랭킹), commands.ts(앱의 모든 명령) + Palette
-  sync/         merge.ts(병합 규칙), useSync.ts(pull–merge–push 루프·백오프·탭 간 핑),
-                push.ts(언제 푸시하나 — CAS 없는 원격의 보정 포함)
-    api/          remote/(전송 — contract·rest·github·file·codec·settings·mirror, 입구는 index.ts),
-                  cipher.ts(E2EE), attachments.ts(내용 해시 이름과 object URL),
-                  githubAuth.ts(OAuth 플로)
-    components/   SyncSettings(+SyncBadge), HistoryPanel
-  storage/      persist(IndexedDB + 지속성 등급), migrate(스키마 — v8), validate(신뢰 경계)
-  search/       query.ts(질의 언어), search.ts(전체 검색), links.ts(항목 링크·백링크)
-                + SearchPanel
-  transfer/     Markdown/OPML/백업 변환, paths(피커가 준 경로) + useTransfer(파일 입출력)
-  shared/       order(정렬 키), clock(논리 시계),
-                keymap.ts(재바인딩 가능한 키 전부 + editor·dynalist 두 프리셋),
-                native.ts(네이티브 셸 다리 — 브라우저에서는 전부 no-op), useDay(자정에 바뀌는 오늘),
-                download, Panel(모달)
+public/sw.js    셸 캐시. 오프라인으로 "여는" 것만 담당
+scripts/        check-layers.mjs: 아래 층 규칙의 검사기 (npm run check:layers)
+src/            FSD light (ADR-0013). app → widgets → features → entities → shared
+  app/          main.tsx(진입점), ui/App(조립만)·ErrorBoundary,
+                model/ 창 전체 단축키(useWindowKeys)·항해(navigate)·공유 캡처·OAuth 복귀,
+                styles/ 전역 CSS 네 파일 (순서가 곧 동작이라 흩지 않는다)
+  widgets/
+    editor/       아웃라인 편집기. ui/ Outline·Row·RowMenu·Editable·TouchBar·DocTitle은 렌더링만,
+                  model/ useOutline(조립 + 행 키보드·메모·확대·첨부)과 관심사별 훅:
+                  useLive(공유 최신값) · useRowDrag(드래그) · useRowMenu(메뉴) ·
+                  useRowSelection(행 선택) · useCompletion([[/#/@ 자동완성) · useAutoFormat(자동 서식) ·
+                  useVirtualRows(가상화) · useSwipe · useTouchBar
+    topbar/       도구 막대 (브레드크럼, 동기화 배지, 메뉴)
+    sidebar/      문서 목록, 폴더, 즐겨찾기, 태그, 휴지통
+    backlinks/    이 항목을 가리키는 곳
+  features/     palette(후보 랭킹, 앱의 모든 명령) · search(전체 검색 패널) · filter(문서 안 필터 막대) ·
+                sync-settings(설정 패널, 배지, GitHub OAuth 플로) · history(히스토리 패널) ·
+                transfer(가져오기·내보내기 동작, 피커가 준 경로) · appearance(표시 설정, 테마) ·
+                shortcuts(도움말, 재바인딩)
+  entities/     슬라이스 순서 outline → keymap → text → search → sync → workspace (앞은 뒤를 모른다)
+    outline/      model/ types.ts(Node / Doc / Workspace, 코드가 정본) · tree.ts(순수 트리 연산) ·
+                  documents.ts(문서 트리·폴더) · history.ts(재스탬프 undo, 원칙 10) ·
+                  validate.ts(신뢰 경계) · migrate.ts(스키마 v8),
+                  lib/formats.ts(Markdown·OPML·백업 변환), api/persist.ts(IndexedDB, 셸 파일, 지속성 등급)
+    keymap/       keymap.ts(재바인딩 가능한 키 전부 + editor·dynalist 두 프리셋, 키 판정과 표기)
+    text/         lib/ markdown.ts(서식 문자열 조작) · dates.ts(날짜 표기),
+                  ui/ inline(인라인 마크다운) · highlight(라이브러리 없는 코드 색) · TeX · Attachment
+    search/       query.ts(질의 언어) · search.ts(전체 검색) · links.ts(항목 링크·백링크) · bookmarks.ts
+    sync/         model/ merge.ts(병합 규칙, 여기서만) · push.ts(언제 푸시하나, CAS 없는 원격의 보정 포함) ·
+                  useSync.ts(pull–merge–push 루프·백오프·탭 간 핑),
+                  api/ remote/(전송: contract·rest·github·file·payload·codec·mirror·settings, 입구는 index.ts) ·
+                  cipher.ts(E2EE) · attachments.ts(내용 해시 이름과 object URL)
+    workspace/    store.ts(useStore: 상태 + 문서·폴더 조작) · usePersistence.ts(자동 저장) · recent.ts ·
+                  StorageWarnings(저장이 위험할 때의 경고)
+  shared/       lib/ order(정렬 키) · clock(논리 시계) · fuzzy · download · useDay(자정에 바뀌는 오늘),
+                api/native.ts(네이티브 셸 다리, 브라우저에서는 전부 no-op), ui/ Panel(모달) · Icon
 ```
 
-경계 규칙: 도메인 폴더를 가로지르는 import는 `shared/`·`types.ts`·`store.ts`를 통해서만.
-렌더링은 각 도메인의 `components/`에, 동작은 훅·순수 함수에 (원칙 11).
+경계 규칙([ADR-0013](./docs/adr/0013-fsd-light.md)):
+
+- 파일은 자기보다 아래층만 import한다. `entities`의 슬라이스끼리는 위의 순서대로만 import한다.
+- 다른 슬라이스는 그 슬라이스의 `index.ts`(공개 API)를 통해서만 만난다(`@/entities/outline`).
+  `shared`는 모듈 경로로 import하고(`@/shared/lib/order`), 슬라이스 안에서는 상대 경로를 쓴다.
+- 렌더링은 `ui/`에, 동작은 `model/`의 훅과 순수 함수에 둔다 (원칙 11).
+- `npm run check:layers`가 이 규칙을 검사하고, CI의 `Check`와 `Pages`가 실행한다.
 
 ## 하위 문서 지도 — 필요한 것만 연다
 
@@ -182,7 +200,7 @@ src/
 | [docs/parity.md](./docs/parity.md) | 기능 방향의 근거 — Dynalist 격차 분석, P0~P2 이력, 스키마 변경 총계 |
 | [docs/research/logseq-prior-art.md](./docs/research/logseq-prior-art.md) | Markdown 파일을 정본으로 두는 방안이나 파생 Markdown 미러를 검토할 때. Logseq이 같은 선택을 하고 물러난 기록이다 |
 | [docs/research/backend-capacity.md](./docs/research/backend-capacity.md) | 자체 서버 도입, GitHub 백엔드의 한계, delta 동기화를 검토할 때 |
-| [docs/design/refactor-plan.md](./docs/design/refactor-plan.md) | 진행 중 모듈 리팩터(R1~R6)의 상세 계획 — PLANS.md가 가리킨다 |
+| [docs/design/refactor-plan.md](./docs/design/refactor-plan.md) | 모듈 리팩터 R1~R7의 계획과 실행 기록. 구조를 다시 크게 바꾸기 전에 연다 |
 | [docs/adr/](./docs/adr/) | 구조적 결정의 이유 — "왜 이렇게 안 했는가" |
 | [docs/korean-output.md](./docs/korean-output.md) | 한국어를 출력할 때. **작업 종류와 무관하게 항상 적용되므로, 이 표의 「필요한 것만 연다」 규칙의 예외다** |
 
@@ -191,8 +209,8 @@ src/
 기계가 소비하는 계약 파일은 계속 코드가 정본이다. 문서는 이들을 서술만 하고, 어긋나면 문서를
 고친다:
 
-- `src/types.ts` — Node / Doc / Workspace 데이터 모델 타입
-- `src/shared/keymap.ts` — 재바인딩 가능한 키의 전체 테이블
+- `src/entities/outline/model/types.ts` — Node / Doc / Workspace 데이터 모델 타입
+- `src/entities/keymap/model/keymap.ts` — 재바인딩 가능한 키의 전체 테이블
 - `index.html`의 CSP 정책 값
 - `public/manifest.webmanifest`, `public/icon.svg`(아이콘의 정본은 SVG, PNG는 파생), `public/sw.js`
 - `package.json`의 스크립트·의존성 목록
@@ -251,8 +269,9 @@ src/
 - **날짜는 첫 날짜 하나만 읽고, 반복 규칙은 해석하지 않는다.** `!(2026-09-29 | 1w)`의 `| 1w`는 그대로
   보일 뿐이다. `!!`는 단어 시작에서만 날짜가 되고, Android에서는 팔레트 명령이 그 자리를 대신한다
   (ADR-0012).
-- **macOS·Windows 앱은 빌드까지만 자동으로 확인된다.** 실제 앱을 구동하는 스모크 테스트는 Linux와
-  Android에서만 돈다 ([native.md](./docs/design/native.md) 「검증」).
+- **macOS·Windows 앱은 실행까지만 자동으로 확인된다.** CI는 두 앱을 띄워 첫 저장이 로컬 사본에
+  닿는지만 본다. 입력·IPC·폴더 동기화를 구동하는 스모크 테스트는 Linux와 Android에서만 돈다
+  ([native.md](./docs/design/native.md) 「검증」).
 - **셸 안에서는 GitHub 로그인 버튼이 없다.** OAuth 콜백이 웹 origin으로 돌아와야 하기 때문이다.
   PAT 붙여넣기는 그대로 된다.
 - `Node` 타입 이름이 DOM의 `Node`를 가린다.
