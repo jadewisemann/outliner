@@ -1,0 +1,37 @@
+[
+  {
+    "name": "native_info answers over IPC",
+    "ok": true,
+    "detail": "{\"os\":\"linux\",\"mobile\":false}"
+  },
+  {
+    "name": "typing reaches the outline",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "local save writes the replica",
+    "ok": true,
+    "detail": "/home/runner/.local/share/io.github.jadewisemann.outliner/workspace.json"
+  },
+  {
+    "name": "an unallowed folder is refused",
+    "ok": true,
+    "detail": "this folder has not been allowed"
+  },
+  {
+    "name": "folder backend writes outliner.json",
+    "ok": true,
+    "detail": "/tmp/outliner-native-1790756064235/outliner.json"
+  },
+  {
+    "name": "conflict copy is merged and moved into .outliner-merged",
+    "ok": true,
+    "detail": ""
+  },
+  {
+    "name": "sync badge is not in error",
+    "ok": true,
+    "detail": "sync-badge sync-idle"
+  }
+]
