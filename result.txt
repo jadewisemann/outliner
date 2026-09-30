@@ -1,0 +1,5 @@
+info title at y=116..152 (accessibility tree)
+ok   the touch bar is up while editing
+ok   typing reaches the outline (accessibility tree)
+info header top=34 status bar bottom=24
+ok   android smoke
